@@ -306,6 +306,82 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
     return builder_to_string(*sb,, allocator = temp);
 }
 
+// ── Interface struct, opcodes, and descriptor generation ──
+
+// Generates the interface struct definition with doc comments.
+generate_interface_struct :: (iface: *Interface) -> string {
+    sb: String_Builder;
+    sb.allocator = temp;
+
+    type_name := to_jai_type_name(iface.name);
+
+    // Header comment block
+    print_to_builder(*sb, "//\n");
+    if iface.description.summary.count > 0 {
+        print_to_builder(*sb, "// % — %\n", iface.name, iface.description.summary);
+    } else {
+        print_to_builder(*sb, "// %\n", iface.name);
+    }
+    print_to_builder(*sb, "//\n");
+
+    if iface.description.body.count > 0 {
+        emit_description_body(*sb, iface.description.body);
+        print_to_builder(*sb, "//\n");
+    }
+
+    print_to_builder(*sb, "% :: struct {\n", type_name);
+    print_to_builder(*sb, "    id: u32;\n");
+    print_to_builder(*sb, "    version: u32;\n");
+    print_to_builder(*sb, "}\n");
+
+    return builder_to_string(*sb,, allocator = temp);
+}
+
+// Generates opcode constants for requests and events.
+// Returns empty string if no requests AND no events.
+generate_opcodes :: (iface: *Interface) -> string {
+    if iface.requests.count == 0 && iface.events.count == 0 return "";
+
+    sb: String_Builder;
+    sb.allocator = temp;
+
+    if iface.requests.count > 0 {
+        print_to_builder(*sb, "// Request opcodes\n");
+        for req, idx: iface.requests {
+            print_to_builder(*sb, "% :: %;\n", opcode_name(iface.name, req.name), idx);
+        }
+    }
+
+    if iface.requests.count > 0 && iface.events.count > 0 {
+        print_to_builder(*sb, "\n");
+    }
+
+    if iface.events.count > 0 {
+        print_to_builder(*sb, "// Event opcodes\n");
+        for ev, idx: iface.events {
+            print_to_builder(*sb, "% :: %;\n", opcode_name(iface.name, ev.name), idx);
+        }
+    }
+
+    return builder_to_string(*sb,, allocator = temp);
+}
+
+// Generates an interface descriptor constant.
+generate_interface_descriptor :: (iface: *Interface) -> string {
+    sb: String_Builder;
+    sb.allocator = temp;
+
+    descriptor_name := tprint("%_INTERFACE", to_upper_snake(iface.name));
+    print_to_builder(*sb, "% :: Interface_Descriptor.{\n", descriptor_name);
+    print_to_builder(*sb, "    name = \"%\",\n", iface.name);
+    print_to_builder(*sb, "    version = %,\n", iface.version);
+    print_to_builder(*sb, "    request_count = %,\n", iface.requests.count);
+    print_to_builder(*sb, "    event_count = %,\n", iface.events.count);
+    print_to_builder(*sb, "};\n");
+
+    return builder_to_string(*sb,, allocator = temp);
+}
+
 // ── Shared types file generation ──
 
 // Returns the content of types.jai — shared type definitions used by all

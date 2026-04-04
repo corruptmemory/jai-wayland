@@ -316,6 +316,68 @@ test_generate_request_untyped_new_id :: () {
     print("  PASS: test_generate_request_untyped_new_id\n");
 }
 
+// ── interface components tests ──
+
+test_generate_interface_struct :: () {
+    iface: Interface;
+    iface.name = "wl_surface";
+    iface.version = 6;
+    iface.description.summary = "a compositable surface";
+
+    result := generate_interface_struct(*iface);
+    assert(contains(result, "Wl_Surface :: struct"), "Missing struct");
+    assert(contains(result, "id: u32"), "Missing id field");
+    assert(contains(result, "version: u32"), "Missing version field");
+    assert(contains(result, "a compositable surface"), "Missing summary comment");
+    print("  PASS: test_generate_interface_struct\n");
+}
+
+test_generate_opcodes :: () {
+    iface: Interface;
+    iface.name = "wl_surface";
+
+    req1: Message; req1.name = "destroy";
+    req2: Message; req2.name = "attach";
+    req3: Message; req3.name = "damage";
+    array_add(*iface.requests, req1);
+    array_add(*iface.requests, req2);
+    array_add(*iface.requests, req3);
+
+    ev1: Message; ev1.name = "enter";
+    ev2: Message; ev2.name = "leave";
+    array_add(*iface.events, ev1);
+    array_add(*iface.events, ev2);
+
+    result := generate_opcodes(*iface);
+    assert(contains(result, "WL_SURFACE_DESTROY :: 0"), "Missing destroy opcode");
+    assert(contains(result, "WL_SURFACE_ATTACH :: 1"), "Missing attach opcode");
+    assert(contains(result, "WL_SURFACE_DAMAGE :: 2"), "Missing damage opcode");
+    assert(contains(result, "WL_SURFACE_ENTER :: 0"), "Missing enter event opcode");
+    assert(contains(result, "WL_SURFACE_LEAVE :: 1"), "Missing leave event opcode");
+    print("  PASS: test_generate_opcodes\n");
+}
+
+test_generate_interface_descriptor :: () {
+    iface: Interface;
+    iface.name = "wl_surface";
+    iface.version = 6;
+    req1: Message; req1.name = "a";
+    req2: Message; req2.name = "b";
+    array_add(*iface.requests, req1);
+    array_add(*iface.requests, req2);
+    ev1: Message; ev1.name = "c";
+    array_add(*iface.events, ev1);
+
+    result := generate_interface_descriptor(*iface);
+    assert(contains(result, "WL_SURFACE_INTERFACE"), "Missing descriptor name");
+    assert(contains(result, "Interface_Descriptor"), "Missing type");
+    assert(contains(result, "\"wl_surface\""), "Missing name string");
+    assert(contains(result, "version = 6"), "Missing version");
+    assert(contains(result, "request_count = 2"), "Missing request count");
+    assert(contains(result, "event_count = 1"), "Missing event count");
+    print("  PASS: test_generate_interface_descriptor\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -366,6 +428,11 @@ main :: () {
     test_generate_request_constructor();
     test_generate_request_destructor();
     test_generate_request_untyped_new_id();
+
+    print("\ninterface components:\n");
+    test_generate_interface_struct();
+    test_generate_opcodes();
+    test_generate_interface_descriptor();
 
     print("\nAll tests passed.\n");
 }
