@@ -1,0 +1,63 @@
+// ── Naming utilities for the Wayland code generator ──
+//
+// All returned strings are temp-allocated.
+
+// Converts snake_case to Title_Snake_Case for Jai type names.
+// "wl_surface" → "Wl_Surface", "xdg_toplevel" → "Xdg_Toplevel",
+// "zwp_linux_dmabuf_v1" → "Zwp_Linux_Dmabuf_V1"
+to_jai_type_name :: (name: string) -> string {
+    sb: String_Builder;
+    sb.allocator = temp;
+
+    capitalize_next := true;
+    for i: 0..name.count-1 {
+        c := name[i];
+        if c == #char "_" {
+            append(*sb, c);
+            capitalize_next = true;
+        } else {
+            if capitalize_next {
+                append(*sb, to_upper(c));
+                capitalize_next = false;
+            } else {
+                append(*sb, c);
+            }
+        }
+    }
+    return builder_to_string(*sb,, allocator = temp);
+}
+
+// Converts snake_case to UPPER_SNAKE_CASE.
+// "wl_surface" → "WL_SURFACE"
+to_upper_snake :: (name: string) -> string {
+    sb: String_Builder;
+    sb.allocator = temp;
+
+    for i: 0..name.count-1 {
+        append(*sb, to_upper(name[i]));
+    }
+    return builder_to_string(*sb,, allocator = temp);
+}
+
+// Builds an opcode constant name from interface and message names.
+// ("wl_surface", "attach") → "WL_SURFACE_ATTACH"
+opcode_name :: (interface_name: string, message_name: string) -> string {
+    return tprint("%_%", to_upper_snake(interface_name), to_upper_snake(message_name));
+}
+
+// Builds a Jai enum type name from interface and enum names.
+// ("wl_surface", "error") → "Wl_Surface_Error"
+to_jai_enum_name :: (interface_name: string, enum_name: string) -> string {
+    return tprint("%_%", to_jai_type_name(interface_name), to_jai_type_name(enum_name));
+}
+
+// Resolves an enum reference (possibly cross-interface) to a Jai type name.
+// "wl_shm.format" → "Wl_Shm_Format" (cross-interface)
+// "error" within "wl_display" → "Wl_Display_Error" (local)
+resolve_enum_type :: (enum_ref: string, current_interface: string) -> string {
+    found, left, right := split_from_left(enum_ref, #char ".");
+    if found {
+        return to_jai_enum_name(left, right);
+    }
+    return to_jai_enum_name(current_interface, enum_ref);
+}

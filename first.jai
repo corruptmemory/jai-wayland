@@ -15,8 +15,10 @@ build :: () {
         if arg == {
           case "test";
             build_tests(options);
+          case "gen_test";
+            build_gen_tests(options);
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test'.\n", arg));
         }
     }
 }
@@ -66,6 +68,11 @@ build_and_run_test :: (workspace_name: string, executable_name: string, test_fil
 
 build_tests :: (options: Build_Options) {
     build_and_run_test("xml_tests", "xml_tests", "tests/xml_test.jai", "build_tests");
+    set_build_options_dc(.{do_output=false});
+}
+
+build_gen_tests :: (options: Build_Options) {
+    build_and_run_test("gen_tests", "gen_tests", "tests/generator_test.jai", "build_tests");
     set_build_options_dc(.{do_output=false});
 }
 
