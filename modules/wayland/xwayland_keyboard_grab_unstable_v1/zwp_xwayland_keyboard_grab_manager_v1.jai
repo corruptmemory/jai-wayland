@@ -8,16 +8,28 @@
 Zwp_Xwayland_Keyboard_Grab_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_DESTROY :: 0;
 ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_GRAB_KEYBOARD :: 1;
 
+Zwp_Xwayland_Keyboard_Grab_Manager_V1_Destroy_Args :: struct {
+}
+
+Zwp_Xwayland_Keyboard_Grab_Manager_V1_Grab_Keyboard_Args :: struct {
+    surface: u32;
+    seat: u32;
+}
+
+
 // destroy the keyboard grab manager (destructor)
 // Destroy the keyboard grab manager.
 zwp_xwayland_keyboard_grab_manager_v1_destroy :: (self: *Zwp_Xwayland_Keyboard_Grab_Manager_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Xwayland_Keyboard_Grab_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // grab the keyboard to a surface
@@ -41,7 +53,9 @@ zwp_xwayland_keyboard_grab_manager_v1_destroy :: (self: *Zwp_Xwayland_Keyboard_G
 // a compositor may change and reroute keyboard events while the grab
 // is nominally active.
 zwp_xwayland_keyboard_grab_manager_v1_grab_keyboard :: (self: *Zwp_Xwayland_Keyboard_Grab_Manager_V1, surface: *Wl_Surface, seat: *Wl_Seat) -> *Zwp_Xwayland_Keyboard_Grab_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_GRAB_KEYBOARD, ...);
+    args := Zwp_Xwayland_Keyboard_Grab_Manager_V1_Grab_Keyboard_Args.{ surface = surface.id, seat = seat.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_GRAB_KEYBOARD, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

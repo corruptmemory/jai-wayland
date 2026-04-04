@@ -18,6 +18,7 @@
 Xdg_Toplevel_Tag_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -25,11 +26,27 @@ XDG_TOPLEVEL_TAG_MANAGER_V1_DESTROY :: 0;
 XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_TAG :: 1;
 XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_DESCRIPTION :: 2;
 
+Xdg_Toplevel_Tag_Manager_V1_Destroy_Args :: struct {
+}
+
+Xdg_Toplevel_Tag_Manager_V1_Set_Toplevel_Tag_Args :: struct {
+    toplevel: u32;
+    tag: string;
+}
+
+Xdg_Toplevel_Tag_Manager_V1_Set_Toplevel_Description_Args :: struct {
+    toplevel: u32;
+    description: string;
+}
+
+
 // destroy toplevel tag object (destructor)
 // Destroy this toplevel tag manager object. This request has no other
 // effects.
 xdg_toplevel_tag_manager_v1_destroy :: (self: *Xdg_Toplevel_Tag_Manager_V1) {
-    // TODO(Phase 3): marshal(self, XDG_TOPLEVEL_TAG_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Xdg_Toplevel_Tag_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, XDG_TOPLEVEL_TAG_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set tag
@@ -48,7 +65,8 @@ xdg_toplevel_tag_manager_v1_destroy :: (self: *Xdg_Toplevel_Tag_Manager_V1) {
 // associated toplevel, but it may set it at any time afterwards as well,
 // for example if the purpose of the toplevel changes.
 xdg_toplevel_tag_manager_v1_set_toplevel_tag :: (self: *Xdg_Toplevel_Tag_Manager_V1, toplevel: *Xdg_Toplevel, tag: string) {
-    // TODO(Phase 3): marshal(self, XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_TAG, ...);
+    args := Xdg_Toplevel_Tag_Manager_V1_Set_Toplevel_Tag_Args.{ toplevel = toplevel.id, tag = tag };
+    marshal(self.conn, self.id, XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_TAG, *args);
 }
 
 // set description
@@ -61,7 +79,8 @@ xdg_toplevel_tag_manager_v1_set_toplevel_tag :: (self: *Xdg_Toplevel_Tag_Manager
 // the associated toplevel, but it may set it at any time afterwards as
 // well, for example if the purpose of the toplevel changes.
 xdg_toplevel_tag_manager_v1_set_toplevel_description :: (self: *Xdg_Toplevel_Tag_Manager_V1, toplevel: *Xdg_Toplevel, description: string) {
-    // TODO(Phase 3): marshal(self, XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_DESCRIPTION, ...);
+    args := Xdg_Toplevel_Tag_Manager_V1_Set_Toplevel_Description_Args.{ toplevel = toplevel.id, description = description };
+    marshal(self.conn, self.id, XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_DESCRIPTION, *args);
 }
 
 XDG_TOPLEVEL_TAG_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

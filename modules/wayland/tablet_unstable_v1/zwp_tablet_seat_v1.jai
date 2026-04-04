@@ -10,6 +10,7 @@
 Zwp_Tablet_Seat_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -39,11 +40,17 @@ Zwp_Tablet_Seat_V1_Event :: union kind: Zwp_Tablet_Seat_V1_Event_Kind {
     .TOOL_ADDED ,, tool_added: Zwp_Tablet_Seat_V1_Tool_Added_Args;
 }
 
+Zwp_Tablet_Seat_V1_Destroy_Args :: struct {
+}
+
+
 // release the memory for the tablet seat object (destructor)
 // Destroy the wp_tablet_seat object. Objects created from this
 // object are unaffected and should be destroyed separately.
 zwp_tablet_seat_v1_destroy :: (self: *Zwp_Tablet_Seat_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_TABLET_SEAT_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Tablet_Seat_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_TABLET_SEAT_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_TABLET_SEAT_V1_INTERFACE :: Interface_Descriptor.{

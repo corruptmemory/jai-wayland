@@ -14,6 +14,7 @@
 Wp_Alpha_Modifier_Surface_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -25,12 +26,22 @@ Wp_Alpha_Modifier_Surface_V1_Error :: enum u32 {
     NO_SURFACE :: 0;
 }
 
+Wp_Alpha_Modifier_Surface_V1_Destroy_Args :: struct {
+}
+
+Wp_Alpha_Modifier_Surface_V1_Set_Multiplier_Args :: struct {
+    factor: u32;
+}
+
+
 // destroy the alpha modifier object (destructor)
 // This destroys the object, and is equivalent to set_multiplier with
 // a value of UINT32_MAX, with the same double-buffered semantics as
 // set_multiplier.
 wp_alpha_modifier_surface_v1_destroy :: (self: *Wp_Alpha_Modifier_Surface_V1) {
-    // TODO(Phase 3): marshal(self, WP_ALPHA_MODIFIER_SURFACE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Alpha_Modifier_Surface_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_ALPHA_MODIFIER_SURFACE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // specify the alpha multiplier
@@ -48,7 +59,8 @@ wp_alpha_modifier_surface_v1_destroy :: (self: *Wp_Alpha_Modifier_Surface_V1) {
 //
 // Zero means completely transparent, UINT32_MAX means completely opaque.
 wp_alpha_modifier_surface_v1_set_multiplier :: (self: *Wp_Alpha_Modifier_Surface_V1, factor: u32) {
-    // TODO(Phase 3): marshal(self, WP_ALPHA_MODIFIER_SURFACE_V1_SET_MULTIPLIER, ...);
+    args := Wp_Alpha_Modifier_Surface_V1_Set_Multiplier_Args.{ factor = factor };
+    marshal(self.conn, self.id, WP_ALPHA_MODIFIER_SURFACE_V1_SET_MULTIPLIER, *args);
 }
 
 WP_ALPHA_MODIFIER_SURFACE_V1_INTERFACE :: Interface_Descriptor.{

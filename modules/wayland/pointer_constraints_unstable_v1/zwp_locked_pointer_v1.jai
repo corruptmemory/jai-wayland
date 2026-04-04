@@ -30,6 +30,7 @@
 Zwp_Locked_Pointer_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -59,11 +60,26 @@ Zwp_Locked_Pointer_V1_Event :: union kind: Zwp_Locked_Pointer_V1_Event_Kind {
     .UNLOCKED ,, unlocked: Zwp_Locked_Pointer_V1_Unlocked_Args;
 }
 
+Zwp_Locked_Pointer_V1_Destroy_Args :: struct {
+}
+
+Zwp_Locked_Pointer_V1_Set_Cursor_Position_Hint_Args :: struct {
+    surface_x: Fixed;
+    surface_y: Fixed;
+}
+
+Zwp_Locked_Pointer_V1_Set_Region_Args :: struct {
+    region: u32;
+}
+
+
 // destroy the locked pointer object (destructor)
 // Destroy the locked pointer object. If applicable, the compositor will
 // unlock the pointer.
 zwp_locked_pointer_v1_destroy :: (self: *Zwp_Locked_Pointer_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_LOCKED_POINTER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Locked_Pointer_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_LOCKED_POINTER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set the pointer cursor position hint
@@ -78,7 +94,8 @@ zwp_locked_pointer_v1_destroy :: (self: *Zwp_Locked_Pointer_V1) {
 // The cursor position hint is double-buffered state, see
 // wl_surface.commit.
 zwp_locked_pointer_v1_set_cursor_position_hint :: (self: *Zwp_Locked_Pointer_V1, surface_x: Fixed, surface_y: Fixed) {
-    // TODO(Phase 3): marshal(self, ZWP_LOCKED_POINTER_V1_SET_CURSOR_POSITION_HINT, ...);
+    args := Zwp_Locked_Pointer_V1_Set_Cursor_Position_Hint_Args.{ surface_x = surface_x, surface_y = surface_y };
+    marshal(self.conn, self.id, ZWP_LOCKED_POINTER_V1_SET_CURSOR_POSITION_HINT, *args);
 }
 
 // set a new lock region
@@ -88,7 +105,8 @@ zwp_locked_pointer_v1_set_cursor_position_hint :: (self: *Zwp_Locked_Pointer_V1,
 //
 // For details about the lock region, see wp_locked_pointer.
 zwp_locked_pointer_v1_set_region :: (self: *Zwp_Locked_Pointer_V1, region: *Wl_Region) {
-    // TODO(Phase 3): marshal(self, ZWP_LOCKED_POINTER_V1_SET_REGION, ...);
+    args := Zwp_Locked_Pointer_V1_Set_Region_Args.{ region = region.id };
+    marshal(self.conn, self.id, ZWP_LOCKED_POINTER_V1_SET_REGION, *args);
 }
 
 ZWP_LOCKED_POINTER_V1_INTERFACE :: Interface_Descriptor.{

@@ -12,6 +12,7 @@
 Wp_Color_Representation_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -56,11 +57,21 @@ Wp_Color_Representation_Manager_V1_Event :: union kind: Wp_Color_Representation_
     .DONE ,, done: Wp_Color_Representation_Manager_V1_Done_Args;
 }
 
+Wp_Color_Representation_Manager_V1_Destroy_Args :: struct {
+}
+
+Wp_Color_Representation_Manager_V1_Get_Surface_Args :: struct {
+    surface: u32;
+}
+
+
 // destroy the manager (destructor)
 // Destroy the wp_color_representation_manager_v1 object. This does not
 // affect any other objects in any way.
 wp_color_representation_manager_v1_destroy :: (self: *Wp_Color_Representation_Manager_V1) {
-    // TODO(Phase 3): marshal(self, WP_COLOR_REPRESENTATION_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Color_Representation_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_COLOR_REPRESENTATION_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a color representation interface for a wl_surface
@@ -72,7 +83,9 @@ wp_color_representation_manager_v1_destroy :: (self: *Wp_Color_Representation_Ma
 //
 // See the wp_color_representation_surface_v1 interface for more details.
 wp_color_representation_manager_v1_get_surface :: (self: *Wp_Color_Representation_Manager_V1, surface: *Wl_Surface) -> *Wp_Color_Representation_Surface_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_COLOR_REPRESENTATION_MANAGER_V1_GET_SURFACE, ...);
+    args := Wp_Color_Representation_Manager_V1_Get_Surface_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_COLOR_REPRESENTATION_MANAGER_V1_GET_SURFACE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

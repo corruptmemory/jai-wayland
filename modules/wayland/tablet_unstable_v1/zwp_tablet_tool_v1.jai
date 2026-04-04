@@ -27,6 +27,7 @@
 Zwp_Tablet_Tool_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -261,6 +262,17 @@ Zwp_Tablet_Tool_V1_Event :: union kind: Zwp_Tablet_Tool_V1_Event_Kind {
     .FRAME ,, frame: Zwp_Tablet_Tool_V1_Frame_Args;
 }
 
+Zwp_Tablet_Tool_V1_Set_Cursor_Args :: struct {
+    serial: u32;
+    surface: u32;
+    hotspot_x: s32;
+    hotspot_y: s32;
+}
+
+Zwp_Tablet_Tool_V1_Destroy_Args :: struct {
+}
+
+
 // set the tablet tool's surface
 // Sets the surface of the cursor used for this tool on the given
 // tablet. This request only takes effect if the tool is in proximity
@@ -295,13 +307,16 @@ Zwp_Tablet_Tool_V1_Event :: union kind: Zwp_Tablet_Tool_V1_Event_Kind {
 // The surface may be used on multiple tablets and across multiple
 // seats.
 zwp_tablet_tool_v1_set_cursor :: (self: *Zwp_Tablet_Tool_V1, serial: u32, surface: *Wl_Surface, hotspot_x: s32, hotspot_y: s32) {
-    // TODO(Phase 3): marshal(self, ZWP_TABLET_TOOL_V1_SET_CURSOR, ...);
+    args := Zwp_Tablet_Tool_V1_Set_Cursor_Args.{ serial = serial, surface = surface.id, hotspot_x = hotspot_x, hotspot_y = hotspot_y };
+    marshal(self.conn, self.id, ZWP_TABLET_TOOL_V1_SET_CURSOR, *args);
 }
 
 // destroy the tool object (destructor)
 // This destroys the client's resource for this tool object.
 zwp_tablet_tool_v1_destroy :: (self: *Zwp_Tablet_Tool_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_TABLET_TOOL_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Tablet_Tool_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_TABLET_TOOL_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_TABLET_TOOL_V1_INTERFACE :: Interface_Descriptor.{

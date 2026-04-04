@@ -20,6 +20,7 @@
 Zwp_Pointer_Constraints_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -44,11 +45,31 @@ Zwp_Pointer_Constraints_V1_Lifetime :: enum u32 {
     PERSISTENT :: 2;
 }
 
+Zwp_Pointer_Constraints_V1_Destroy_Args :: struct {
+}
+
+Zwp_Pointer_Constraints_V1_Lock_Pointer_Args :: struct {
+    surface: u32;
+    pointer: u32;
+    region: u32;
+    lifetime: u32;
+}
+
+Zwp_Pointer_Constraints_V1_Confine_Pointer_Args :: struct {
+    surface: u32;
+    pointer: u32;
+    region: u32;
+    lifetime: u32;
+}
+
+
 // destroy the pointer constraints manager object (destructor)
 // Used by the client to notify the server that it will no longer use this
 // pointer constraints object.
 zwp_pointer_constraints_v1_destroy :: (self: *Zwp_Pointer_Constraints_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_POINTER_CONSTRAINTS_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Pointer_Constraints_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // lock pointer to a position
@@ -87,7 +108,9 @@ zwp_pointer_constraints_v1_destroy :: (self: *Zwp_Pointer_Constraints_V1) {
 // objects of the same seat. wl_pointer.axis and wl_pointer.button events
 // are unaffected.
 zwp_pointer_constraints_v1_lock_pointer :: (self: *Zwp_Pointer_Constraints_V1, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) -> *Zwp_Locked_Pointer_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_POINTER_CONSTRAINTS_V1_LOCK_POINTER, ...);
+    args := Zwp_Pointer_Constraints_V1_Lock_Pointer_Args.{ surface = surface.id, pointer = pointer.id, region = region.id, lifetime = lifetime };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_LOCK_POINTER, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -110,7 +133,9 @@ zwp_pointer_constraints_v1_lock_pointer :: (self: *Zwp_Pointer_Constraints_V1, s
 // state. See the the description of wp_confined_pointer for further
 // information.
 zwp_pointer_constraints_v1_confine_pointer :: (self: *Zwp_Pointer_Constraints_V1, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) -> *Zwp_Confined_Pointer_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_POINTER_CONSTRAINTS_V1_CONFINE_POINTER, ...);
+    args := Zwp_Pointer_Constraints_V1_Confine_Pointer_Args.{ surface = surface.id, pointer = pointer.id, region = region.id, lifetime = lifetime };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_CONFINE_POINTER, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

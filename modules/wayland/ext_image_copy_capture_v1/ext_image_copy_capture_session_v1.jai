@@ -23,6 +23,7 @@
 Ext_Image_Copy_Capture_Session_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -90,6 +91,13 @@ Ext_Image_Copy_Capture_Session_V1_Event :: union kind: Ext_Image_Copy_Capture_Se
     .STOPPED ,, stopped: Ext_Image_Copy_Capture_Session_V1_Stopped_Args;
 }
 
+Ext_Image_Copy_Capture_Session_V1_Create_Frame_Args :: struct {
+}
+
+Ext_Image_Copy_Capture_Session_V1_Destroy_Args :: struct {
+}
+
+
 // create a frame
 // Create a capture frame for this session.
 //
@@ -97,7 +105,9 @@ Ext_Image_Copy_Capture_Session_V1_Event :: union kind: Ext_Image_Copy_Capture_Se
 // a client sends a create_frame request before a previous frame object
 // has been destroyed, the duplicate_frame protocol error is raised.
 ext_image_copy_capture_session_v1_create_frame :: (self: *Ext_Image_Copy_Capture_Session_V1) -> *Ext_Image_Copy_Capture_Frame_V1 {
-    // TODO(Phase 3): marshal_constructor(self, EXT_IMAGE_COPY_CAPTURE_SESSION_V1_CREATE_FRAME, ...);
+    args := Ext_Image_Copy_Capture_Session_V1_Create_Frame_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_SESSION_V1_CREATE_FRAME, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -108,7 +118,9 @@ ext_image_copy_capture_session_v1_create_frame :: (self: *Ext_Image_Copy_Capture
 // This request doesn't affect ext_image_copy_capture_frame_v1 objects created by
 // this object.
 ext_image_copy_capture_session_v1_destroy :: (self: *Ext_Image_Copy_Capture_Session_V1) {
-    // TODO(Phase 3): marshal(self, EXT_IMAGE_COPY_CAPTURE_SESSION_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Image_Copy_Capture_Session_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_SESSION_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_IMAGE_COPY_CAPTURE_SESSION_V1_INTERFACE :: Interface_Descriptor.{

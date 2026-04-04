@@ -10,6 +10,7 @@
 Xdg_Toplevel_Session_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -31,11 +32,21 @@ Xdg_Toplevel_Session_V1_Event :: union kind: Xdg_Toplevel_Session_V1_Event_Kind 
     .RESTORED ,, restored: Xdg_Toplevel_Session_V1_Restored_Args;
 }
 
+Xdg_Toplevel_Session_V1_Destroy_Args :: struct {
+}
+
+Xdg_Toplevel_Session_V1_Rename_Args :: struct {
+    name: string;
+}
+
+
 // Destroy the object (destructor)
 // Destroy the object. This has no effect over window management of the
 // associated toplevel.
 xdg_toplevel_session_v1_destroy :: (self: *Xdg_Toplevel_Session_V1) {
-    // TODO(Phase 3): marshal(self, XDG_TOPLEVEL_SESSION_V1_DESTROY, ...); destroy_proxy(self);
+    args := Xdg_Toplevel_Session_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, XDG_TOPLEVEL_SESSION_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // change the name of toplevel session
@@ -46,7 +57,8 @@ xdg_toplevel_session_v1_destroy :: (self: *Xdg_Toplevel_Session_V1) {
 // If the xdg_session_v1 already contains a toplevel with the specified name,
 // the 'name_in_use' protocol error will be raised.
 xdg_toplevel_session_v1_rename :: (self: *Xdg_Toplevel_Session_V1, name: string) {
-    // TODO(Phase 3): marshal(self, XDG_TOPLEVEL_SESSION_V1_RENAME, ...);
+    args := Xdg_Toplevel_Session_V1_Rename_Args.{ name = name };
+    marshal(self.conn, self.id, XDG_TOPLEVEL_SESSION_V1_RENAME, *args);
 }
 
 XDG_TOPLEVEL_SESSION_V1_INTERFACE :: Interface_Descriptor.{

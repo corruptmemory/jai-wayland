@@ -18,6 +18,7 @@
 Ext_Workspace_Group_Handle_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -84,6 +85,14 @@ Ext_Workspace_Group_Handle_V1_Event :: union kind: Ext_Workspace_Group_Handle_V1
     .REMOVED ,, removed: Ext_Workspace_Group_Handle_V1_Removed_Args;
 }
 
+Ext_Workspace_Group_Handle_V1_Create_Workspace_Args :: struct {
+    workspace: string;
+}
+
+Ext_Workspace_Group_Handle_V1_Destroy_Args :: struct {
+}
+
+
 // create a new workspace
 // Request that the compositor create a new workspace with the given name
 // and assign it to this group.
@@ -91,7 +100,8 @@ Ext_Workspace_Group_Handle_V1_Event :: union kind: Ext_Workspace_Group_Handle_V1
 // There is no guarantee that the compositor will create a new workspace,
 // or that the created workspace will have the provided name.
 ext_workspace_group_handle_v1_create_workspace :: (self: *Ext_Workspace_Group_Handle_V1, workspace: string) {
-    // TODO(Phase 3): marshal(self, EXT_WORKSPACE_GROUP_HANDLE_V1_CREATE_WORKSPACE, ...);
+    args := Ext_Workspace_Group_Handle_V1_Create_Workspace_Args.{ workspace = workspace };
+    marshal(self.conn, self.id, EXT_WORKSPACE_GROUP_HANDLE_V1_CREATE_WORKSPACE, *args);
 }
 
 // destroy the ext_workspace_group_handle_v1 object (destructor)
@@ -101,7 +111,9 @@ ext_workspace_group_handle_v1_create_workspace :: (self: *Ext_Workspace_Group_Ha
 // use the workspace group object any more or after the removed event to finalize
 // the destruction of the object.
 ext_workspace_group_handle_v1_destroy :: (self: *Ext_Workspace_Group_Handle_V1) {
-    // TODO(Phase 3): marshal(self, EXT_WORKSPACE_GROUP_HANDLE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Workspace_Group_Handle_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_WORKSPACE_GROUP_HANDLE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_WORKSPACE_GROUP_HANDLE_V1_INTERFACE :: Interface_Descriptor.{

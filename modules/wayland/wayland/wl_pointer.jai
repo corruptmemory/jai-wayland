@@ -15,6 +15,7 @@
 Wl_Pointer :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -193,6 +194,17 @@ Wl_Pointer_Event :: union kind: Wl_Pointer_Event_Kind {
     .AXIS_RELATIVE_DIRECTION ,, axis_relative_direction: Wl_Pointer_Axis_Relative_Direction_Args;
 }
 
+Wl_Pointer_Set_Cursor_Args :: struct {
+    serial: u32;
+    surface: u32;
+    hotspot_x: s32;
+    hotspot_y: s32;
+}
+
+Wl_Pointer_Release_Args :: struct {
+}
+
+
 // set the pointer surface
 // Set the pointer surface, i.e., the surface that contains the
 // pointer image (cursor). This request gives the surface the role
@@ -228,7 +240,8 @@ Wl_Pointer_Event :: union kind: Wl_Pointer_Event_Kind {
 // serial number sent to the client. Otherwise the request will be
 // ignored.
 wl_pointer_set_cursor :: (self: *Wl_Pointer, serial: u32, surface: *Wl_Surface, hotspot_x: s32, hotspot_y: s32) {
-    // TODO(Phase 3): marshal(self, WL_POINTER_SET_CURSOR, ...);
+    args := Wl_Pointer_Set_Cursor_Args.{ serial = serial, surface = surface.id, hotspot_x = hotspot_x, hotspot_y = hotspot_y };
+    marshal(self.conn, self.id, WL_POINTER_SET_CURSOR, *args);
 }
 
 // release the pointer object (destructor)
@@ -238,7 +251,9 @@ wl_pointer_set_cursor :: (self: *Wl_Pointer, serial: u32, surface: *Wl_Surface, 
 // This request destroys the pointer proxy object, so clients must not call
 // wl_pointer_destroy() after using this request.
 wl_pointer_release :: (self: *Wl_Pointer) {
-    // TODO(Phase 3): marshal(self, WL_POINTER_RELEASE, ...); destroy_proxy(self);
+    args := Wl_Pointer_Release_Args.{};
+    marshal(self.conn, self.id, WL_POINTER_RELEASE, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WL_POINTER_INTERFACE :: Interface_Descriptor.{

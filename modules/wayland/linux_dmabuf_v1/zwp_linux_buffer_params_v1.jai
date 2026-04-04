@@ -23,6 +23,7 @@
 Zwp_Linux_Buffer_Params_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -82,11 +83,40 @@ Zwp_Linux_Buffer_Params_V1_Event :: union kind: Zwp_Linux_Buffer_Params_V1_Event
     .FAILED ,, failed: Zwp_Linux_Buffer_Params_V1_Failed_Args;
 }
 
+Zwp_Linux_Buffer_Params_V1_Destroy_Args :: struct {
+}
+
+Zwp_Linux_Buffer_Params_V1_Add_Args :: struct {
+    fd: Fd;
+    plane_idx: u32;
+    offset: u32;
+    stride: u32;
+    modifier_hi: u32;
+    modifier_lo: u32;
+}
+
+Zwp_Linux_Buffer_Params_V1_Create_Args :: struct {
+    width: s32;
+    height: s32;
+    format: u32;
+    flags: u32;
+}
+
+Zwp_Linux_Buffer_Params_V1_Create_Immed_Args :: struct {
+    width: s32;
+    height: s32;
+    format: u32;
+    flags: u32;
+}
+
+
 // delete this object, used or not (destructor)
 // Cleans up the temporary data sent to the server for dmabuf-based
 // wl_buffer creation.
 zwp_linux_buffer_params_v1_destroy :: (self: *Zwp_Linux_Buffer_Params_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_LINUX_BUFFER_PARAMS_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Linux_Buffer_Params_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // add a dmabuf to the temporary set
@@ -109,8 +139,9 @@ zwp_linux_buffer_params_v1_destroy :: (self: *Zwp_Linux_Buffer_Params_V1) {
 // This request raises the PLANE_IDX error if plane_idx is too large.
 // The error PLANE_SET is raised if attempting to set a plane that
 // was already set.
-zwp_linux_buffer_params_v1_add :: (self: *Zwp_Linux_Buffer_Params_V1, fd: s32, plane_idx: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_LINUX_BUFFER_PARAMS_V1_ADD, ...);
+zwp_linux_buffer_params_v1_add :: (self: *Zwp_Linux_Buffer_Params_V1, fd: Fd, plane_idx: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) {
+    args := Zwp_Linux_Buffer_Params_V1_Add_Args.{ fd = fd, plane_idx = plane_idx, offset = offset, stride = stride, modifier_hi = modifier_hi, modifier_lo = modifier_lo };
+    marshal(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_ADD, *args);
 }
 
 // create a wl_buffer from the given dmabufs
@@ -174,7 +205,8 @@ zwp_linux_buffer_params_v1_add :: (self: *Zwp_Linux_Buffer_Params_V1, fd: s32, p
 // It is not mandatory to issue 'create'. If a client wants to
 // cancel the buffer creation, it can just destroy this object.
 zwp_linux_buffer_params_v1_create :: (self: *Zwp_Linux_Buffer_Params_V1, width: s32, height: s32, format: u32, flags: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE, ...);
+    args := Zwp_Linux_Buffer_Params_V1_Create_Args.{ width = width, height = height, format = format, flags = flags };
+    marshal(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE, *args);
 }
 
 // immediately create a wl_buffer from the given dmabufs
@@ -202,7 +234,9 @@ zwp_linux_buffer_params_v1_create :: (self: *Zwp_Linux_Buffer_Params_V1, width: 
 // This takes the same arguments as a 'create' request, and obeys the
 // same restrictions.
 zwp_linux_buffer_params_v1_create_immed :: (self: *Zwp_Linux_Buffer_Params_V1, width: s32, height: s32, format: u32, flags: u32) -> *Wl_Buffer {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE_IMMED, ...);
+    args := Zwp_Linux_Buffer_Params_V1_Create_Immed_Args.{ width = width, height = height, format = format, flags = flags };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE_IMMED, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

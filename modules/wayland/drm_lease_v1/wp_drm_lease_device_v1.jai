@@ -37,6 +37,7 @@
 Wp_Drm_Lease_Device_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -51,7 +52,7 @@ WP_DRM_LEASE_DEVICE_V1_RELEASED :: 3;
 
 // open a non-master fd for this DRM node
 Wp_Drm_Lease_Device_V1_Drm_Fd_Args :: struct {
-    fd: s32;
+    fd: Fd;
 }
 
 // advertise connectors available for leases
@@ -81,12 +82,21 @@ Wp_Drm_Lease_Device_V1_Event :: union kind: Wp_Drm_Lease_Device_V1_Event_Kind {
     .RELEASED ,, released: Wp_Drm_Lease_Device_V1_Released_Args;
 }
 
+Wp_Drm_Lease_Device_V1_Create_Lease_Request_Args :: struct {
+}
+
+Wp_Drm_Lease_Device_V1_Release_Args :: struct {
+}
+
+
 // create a lease request object
 // Creates a lease request object.
 //
 // See the documentation for wp_drm_lease_request_v1 for details.
 wp_drm_lease_device_v1_create_lease_request :: (self: *Wp_Drm_Lease_Device_V1) -> *Wp_Drm_Lease_Request_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_DRM_LEASE_DEVICE_V1_CREATE_LEASE_REQUEST, ...);
+    args := Wp_Drm_Lease_Device_V1_Create_Lease_Request_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WP_DRM_LEASE_DEVICE_V1_CREATE_LEASE_REQUEST, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -98,7 +108,8 @@ wp_drm_lease_device_v1_create_lease_request :: (self: *Wp_Drm_Lease_Device_V1) -
 // requests after this one, doing so will raise a wl_display error.
 // Existing connectors, lease request and leases will not be affected.
 wp_drm_lease_device_v1_release :: (self: *Wp_Drm_Lease_Device_V1) {
-    // TODO(Phase 3): marshal(self, WP_DRM_LEASE_DEVICE_V1_RELEASE, ...);
+    args := Wp_Drm_Lease_Device_V1_Release_Args.{};
+    marshal(self.conn, self.id, WP_DRM_LEASE_DEVICE_V1_RELEASE, *args);
 }
 
 WP_DRM_LEASE_DEVICE_V1_INTERFACE :: Interface_Descriptor.{

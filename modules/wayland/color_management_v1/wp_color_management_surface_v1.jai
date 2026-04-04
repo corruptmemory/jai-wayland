@@ -12,6 +12,7 @@
 Wp_Color_Management_Surface_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -29,11 +30,25 @@ Wp_Color_Management_Surface_V1_Error :: enum u32 {
     INERT :: 2;
 }
 
+Wp_Color_Management_Surface_V1_Destroy_Args :: struct {
+}
+
+Wp_Color_Management_Surface_V1_Set_Image_Description_Args :: struct {
+    image_description: u32;
+    render_intent: u32;
+}
+
+Wp_Color_Management_Surface_V1_Unset_Image_Description_Args :: struct {
+}
+
+
 // destroy the color management interface for a surface (destructor)
 // Destroy the wp_color_management_surface_v1 object and do the same as
 // unset_image_description.
 wp_color_management_surface_v1_destroy :: (self: *Wp_Color_Management_Surface_V1) {
-    // TODO(Phase 3): marshal(self, WP_COLOR_MANAGEMENT_SURFACE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Color_Management_Surface_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_COLOR_MANAGEMENT_SURFACE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set the surface image description
@@ -77,7 +92,8 @@ wp_color_management_surface_v1_destroy :: (self: *Wp_Color_Management_Surface_V1
 // the image description can be immediately destroyed without affecting
 // the pending state of the surface.
 wp_color_management_surface_v1_set_image_description :: (self: *Wp_Color_Management_Surface_V1, image_description: *Wp_Image_Description_V1, render_intent: u32) {
-    // TODO(Phase 3): marshal(self, WP_COLOR_MANAGEMENT_SURFACE_V1_SET_IMAGE_DESCRIPTION, ...);
+    args := Wp_Color_Management_Surface_V1_Set_Image_Description_Args.{ image_description = image_description.id, render_intent = render_intent };
+    marshal(self.conn, self.id, WP_COLOR_MANAGEMENT_SURFACE_V1_SET_IMAGE_DESCRIPTION, *args);
 }
 
 // remove the surface image description
@@ -88,7 +104,8 @@ wp_color_management_surface_v1_set_image_description :: (self: *Wp_Color_Managem
 // an image description. This is double-buffered state, see
 // wl_surface.commit.
 wp_color_management_surface_v1_unset_image_description :: (self: *Wp_Color_Management_Surface_V1) {
-    // TODO(Phase 3): marshal(self, WP_COLOR_MANAGEMENT_SURFACE_V1_UNSET_IMAGE_DESCRIPTION, ...);
+    args := Wp_Color_Management_Surface_V1_Unset_Image_Description_Args.{};
+    marshal(self.conn, self.id, WP_COLOR_MANAGEMENT_SURFACE_V1_UNSET_IMAGE_DESCRIPTION, *args);
 }
 
 WP_COLOR_MANAGEMENT_SURFACE_V1_INTERFACE :: Interface_Descriptor.{

@@ -15,6 +15,7 @@
 Wp_Cursor_Shape_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -22,10 +23,24 @@ WP_CURSOR_SHAPE_MANAGER_V1_DESTROY :: 0;
 WP_CURSOR_SHAPE_MANAGER_V1_GET_POINTER :: 1;
 WP_CURSOR_SHAPE_MANAGER_V1_GET_TABLET_TOOL_V2 :: 2;
 
+Wp_Cursor_Shape_Manager_V1_Destroy_Args :: struct {
+}
+
+Wp_Cursor_Shape_Manager_V1_Get_Pointer_Args :: struct {
+    pointer: u32;
+}
+
+Wp_Cursor_Shape_Manager_V1_Get_Tablet_Tool_V2_Args :: struct {
+    tablet_tool: u32;
+}
+
+
 // destroy the manager (destructor)
 // Destroy the cursor shape manager.
 wp_cursor_shape_manager_v1_destroy :: (self: *Wp_Cursor_Shape_Manager_V1) {
-    // TODO(Phase 3): marshal(self, WP_CURSOR_SHAPE_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Cursor_Shape_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // manage the cursor shape of a pointer device
@@ -34,7 +49,9 @@ wp_cursor_shape_manager_v1_destroy :: (self: *Wp_Cursor_Shape_Manager_V1) {
 // When the pointer capability is removed from the wl_seat, the
 // wp_cursor_shape_device_v1 object becomes inert.
 wp_cursor_shape_manager_v1_get_pointer :: (self: *Wp_Cursor_Shape_Manager_V1, pointer: *Wl_Pointer) -> *Wp_Cursor_Shape_Device_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_CURSOR_SHAPE_MANAGER_V1_GET_POINTER, ...);
+    args := Wp_Cursor_Shape_Manager_V1_Get_Pointer_Args.{ pointer = pointer.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_POINTER, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -44,7 +61,9 @@ wp_cursor_shape_manager_v1_get_pointer :: (self: *Wp_Cursor_Shape_Manager_V1, po
 // When the zwp_tablet_tool_v2 is removed, the wp_cursor_shape_device_v1
 // object becomes inert.
 wp_cursor_shape_manager_v1_get_tablet_tool_v2 :: (self: *Wp_Cursor_Shape_Manager_V1, tablet_tool: *Zwp_Tablet_Tool_V2) -> *Wp_Cursor_Shape_Device_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_CURSOR_SHAPE_MANAGER_V1_GET_TABLET_TOOL_V2, ...);
+    args := Wp_Cursor_Shape_Manager_V1_Get_Tablet_Tool_V2_Args.{ tablet_tool = tablet_tool.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_TABLET_TOOL_V2, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

@@ -13,6 +13,7 @@
 Wl_Output :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -141,11 +142,17 @@ Wl_Output_Event :: union kind: Wl_Output_Event_Kind {
     .DESCRIPTION ,, description: Wl_Output_Description_Args;
 }
 
+Wl_Output_Release_Args :: struct {
+}
+
+
 // release the output object (destructor)
 // Using this request a client can tell the server that it is not going to
 // use the output object anymore.
 wl_output_release :: (self: *Wl_Output) {
-    // TODO(Phase 3): marshal(self, WL_OUTPUT_RELEASE, ...); destroy_proxy(self);
+    args := Wl_Output_Release_Args.{};
+    marshal(self.conn, self.id, WL_OUTPUT_RELEASE, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WL_OUTPUT_INTERFACE :: Interface_Descriptor.{

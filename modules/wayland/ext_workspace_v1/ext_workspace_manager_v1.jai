@@ -26,6 +26,7 @@
 Ext_Workspace_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -70,6 +71,13 @@ Ext_Workspace_Manager_V1_Event :: union kind: Ext_Workspace_Manager_V1_Event_Kin
     .FINISHED ,, finished: Ext_Workspace_Manager_V1_Finished_Args;
 }
 
+Ext_Workspace_Manager_V1_Commit_Args :: struct {
+}
+
+Ext_Workspace_Manager_V1_Stop_Args :: struct {
+}
+
+
 // all requests about the workspaces have been sent
 // The client must send this request after it has finished sending other
 // requests. The compositor must process a series of requests preceding a
@@ -80,7 +88,8 @@ Ext_Workspace_Manager_V1_Event :: union kind: Ext_Workspace_Manager_V1_Event_Kin
 // multiple ext_workspace_handle_v1 objects, for example, deactivating one
 // workspace and activating another.
 ext_workspace_manager_v1_commit :: (self: *Ext_Workspace_Manager_V1) {
-    // TODO(Phase 3): marshal(self, EXT_WORKSPACE_MANAGER_V1_COMMIT, ...);
+    args := Ext_Workspace_Manager_V1_Commit_Args.{};
+    marshal(self.conn, self.id, EXT_WORKSPACE_MANAGER_V1_COMMIT, *args);
 }
 
 // stop sending events
@@ -92,7 +101,8 @@ ext_workspace_manager_v1_commit :: (self: *Ext_Workspace_Manager_V1) {
 // The client must not send any requests after this one, doing so will raise a wl_display
 // invalid_object error.
 ext_workspace_manager_v1_stop :: (self: *Ext_Workspace_Manager_V1) {
-    // TODO(Phase 3): marshal(self, EXT_WORKSPACE_MANAGER_V1_STOP, ...);
+    args := Ext_Workspace_Manager_V1_Stop_Args.{};
+    marshal(self.conn, self.id, EXT_WORKSPACE_MANAGER_V1_STOP, *args);
 }
 
 EXT_WORKSPACE_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

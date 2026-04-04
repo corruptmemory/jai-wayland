@@ -49,6 +49,7 @@
 Wl_Surface :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -119,10 +120,63 @@ Wl_Surface_Event :: union kind: Wl_Surface_Event_Kind {
     .PREFERRED_BUFFER_TRANSFORM ,, preferred_buffer_transform: Wl_Surface_Preferred_Buffer_Transform_Args;
 }
 
+Wl_Surface_Destroy_Args :: struct {
+}
+
+Wl_Surface_Attach_Args :: struct {
+    buffer: u32;
+    x: s32;
+    y: s32;
+}
+
+Wl_Surface_Damage_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+Wl_Surface_Frame_Args :: struct {
+}
+
+Wl_Surface_Set_Opaque_Region_Args :: struct {
+    region: u32;
+}
+
+Wl_Surface_Set_Input_Region_Args :: struct {
+    region: u32;
+}
+
+Wl_Surface_Commit_Args :: struct {
+}
+
+Wl_Surface_Set_Buffer_Transform_Args :: struct {
+    transform: s32;
+}
+
+Wl_Surface_Set_Buffer_Scale_Args :: struct {
+    scale: s32;
+}
+
+Wl_Surface_Damage_Buffer_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+Wl_Surface_Offset_Args :: struct {
+    x: s32;
+    y: s32;
+}
+
+
 // delete surface (destructor)
 // Deletes the surface and invalidates its object ID.
 wl_surface_destroy :: (self: *Wl_Surface) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_DESTROY, ...); destroy_proxy(self);
+    args := Wl_Surface_Destroy_Args.{};
+    marshal(self.conn, self.id, WL_SURFACE_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set the surface contents
@@ -192,7 +246,8 @@ wl_surface_destroy :: (self: *Wl_Surface) {
 // ensure that they explicitly remove content from surfaces, even after
 // destroying buffers.
 wl_surface_attach :: (self: *Wl_Surface, buffer: *Wl_Buffer, x: s32, y: s32) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_ATTACH, ...);
+    args := Wl_Surface_Attach_Args.{ buffer = buffer.id, x = x, y = y };
+    marshal(self.conn, self.id, WL_SURFACE_ATTACH, *args);
 }
 
 // mark part of the surface damaged
@@ -218,7 +273,8 @@ wl_surface_attach :: (self: *Wl_Surface, buffer: *Wl_Buffer, x: s32, y: s32) {
 // posted with wl_surface.damage_buffer which uses buffer coordinates
 // instead of surface coordinates.
 wl_surface_damage :: (self: *Wl_Surface, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_DAMAGE, ...);
+    args := Wl_Surface_Damage_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, WL_SURFACE_DAMAGE, *args);
 }
 
 // request a frame throttling hint
@@ -255,7 +311,9 @@ wl_surface_damage :: (self: *Wl_Surface, x: s32, y: s32, width: s32, height: s32
 // The callback_data passed in the callback is the current time, in
 // milliseconds, with an undefined base.
 wl_surface_frame :: (self: *Wl_Surface) -> *Wl_Callback {
-    // TODO(Phase 3): marshal_constructor(self, WL_SURFACE_FRAME, ...);
+    args := Wl_Surface_Frame_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WL_SURFACE_FRAME, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -285,7 +343,8 @@ wl_surface_frame :: (self: *Wl_Surface) -> *Wl_Callback {
 // destroyed immediately. A NULL wl_region causes the pending opaque
 // region to be set to empty.
 wl_surface_set_opaque_region :: (self: *Wl_Surface, region: *Wl_Region) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_SET_OPAQUE_REGION, ...);
+    args := Wl_Surface_Set_Opaque_Region_Args.{ region = region.id };
+    marshal(self.conn, self.id, WL_SURFACE_SET_OPAQUE_REGION, *args);
 }
 
 // set input region
@@ -312,7 +371,8 @@ wl_surface_set_opaque_region :: (self: *Wl_Surface, region: *Wl_Region) {
 // immediately. A NULL wl_region causes the input region to be set
 // to infinite.
 wl_surface_set_input_region :: (self: *Wl_Surface, region: *Wl_Region) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_SET_INPUT_REGION, ...);
+    args := Wl_Surface_Set_Input_Region_Args.{ region = region.id };
+    marshal(self.conn, self.id, WL_SURFACE_SET_INPUT_REGION, *args);
 }
 
 // commit pending surface state
@@ -336,7 +396,8 @@ wl_surface_set_input_region :: (self: *Wl_Surface, region: *Wl_Region) {
 //
 // Other interfaces may add further double-buffered surface state.
 wl_surface_commit :: (self: *Wl_Surface) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_COMMIT, ...);
+    args := Wl_Surface_Commit_Args.{};
+    marshal(self.conn, self.id, WL_SURFACE_COMMIT, *args);
 }
 
 // sets the buffer transformation
@@ -372,7 +433,8 @@ wl_surface_commit :: (self: *Wl_Surface) {
 // wl_output.transform enum the invalid_transform protocol error
 // is raised.
 wl_surface_set_buffer_transform :: (self: *Wl_Surface, transform: s32) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_SET_BUFFER_TRANSFORM, ...);
+    args := Wl_Surface_Set_Buffer_Transform_Args.{ transform = transform };
+    marshal(self.conn, self.id, WL_SURFACE_SET_BUFFER_TRANSFORM, *args);
 }
 
 // sets the buffer scaling factor
@@ -400,7 +462,8 @@ wl_surface_set_buffer_transform :: (self: *Wl_Surface, transform: s32) {
 // If scale is not greater than 0 the invalid_scale protocol error is
 // raised.
 wl_surface_set_buffer_scale :: (self: *Wl_Surface, scale: s32) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_SET_BUFFER_SCALE, ...);
+    args := Wl_Surface_Set_Buffer_Scale_Args.{ scale = scale };
+    marshal(self.conn, self.id, WL_SURFACE_SET_BUFFER_SCALE, *args);
 }
 
 // mark part of the surface damaged using buffer coordinates
@@ -437,7 +500,8 @@ wl_surface_set_buffer_scale :: (self: *Wl_Surface, scale: s32) {
 // two requests separately and only transform from one to the other
 // after receiving the wl_surface.commit.
 wl_surface_damage_buffer :: (self: *Wl_Surface, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_DAMAGE_BUFFER, ...);
+    args := Wl_Surface_Damage_Buffer_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, WL_SURFACE_DAMAGE_BUFFER, *args);
 }
 
 // set the surface contents offset
@@ -457,7 +521,8 @@ wl_surface_damage_buffer :: (self: *Wl_Surface, x: s32, y: s32, width: s32, heig
 // arguments in the wl_surface.attach request in wl_surface versions prior
 // to 5. See wl_surface.attach for details.
 wl_surface_offset :: (self: *Wl_Surface, x: s32, y: s32) {
-    // TODO(Phase 3): marshal(self, WL_SURFACE_OFFSET, ...);
+    args := Wl_Surface_Offset_Args.{ x = x, y = y };
+    marshal(self.conn, self.id, WL_SURFACE_OFFSET, *args);
 }
 
 WL_SURFACE_INTERFACE :: Interface_Descriptor.{

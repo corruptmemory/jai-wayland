@@ -10,12 +10,25 @@
 Xdg_Activation_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 XDG_ACTIVATION_V1_DESTROY :: 0;
 XDG_ACTIVATION_V1_GET_ACTIVATION_TOKEN :: 1;
 XDG_ACTIVATION_V1_ACTIVATE :: 2;
+
+Xdg_Activation_V1_Destroy_Args :: struct {
+}
+
+Xdg_Activation_V1_Get_Activation_Token_Args :: struct {
+}
+
+Xdg_Activation_V1_Activate_Args :: struct {
+    token: string;
+    surface: u32;
+}
+
 
 // destroy the xdg_activation object (destructor)
 // Notify the compositor that the xdg_activation object will no longer be
@@ -24,7 +37,9 @@ XDG_ACTIVATION_V1_ACTIVATE :: 2;
 // The child objects created via this interface are unaffected and should
 // be destroyed separately.
 xdg_activation_v1_destroy :: (self: *Xdg_Activation_V1) {
-    // TODO(Phase 3): marshal(self, XDG_ACTIVATION_V1_DESTROY, ...); destroy_proxy(self);
+    args := Xdg_Activation_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, XDG_ACTIVATION_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // requests a token
@@ -32,7 +47,9 @@ xdg_activation_v1_destroy :: (self: *Xdg_Activation_V1) {
 // the initiating client with a unique token for this activation. This
 // token should be offered to the clients to be activated.
 xdg_activation_v1_get_activation_token :: (self: *Xdg_Activation_V1) -> *Xdg_Activation_Token_V1 {
-    // TODO(Phase 3): marshal_constructor(self, XDG_ACTIVATION_V1_GET_ACTIVATION_TOKEN, ...);
+    args := Xdg_Activation_V1_Get_Activation_Token_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, XDG_ACTIVATION_V1_GET_ACTIVATION_TOKEN, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -48,7 +65,8 @@ xdg_activation_v1_get_activation_token :: (self: *Xdg_Activation_V1) -> *Xdg_Act
 // Compositors can ignore unknown activation tokens when an invalid
 // token is passed.
 xdg_activation_v1_activate :: (self: *Xdg_Activation_V1, token: string, surface: *Wl_Surface) {
-    // TODO(Phase 3): marshal(self, XDG_ACTIVATION_V1_ACTIVATE, ...);
+    args := Xdg_Activation_V1_Activate_Args.{ token = token, surface = surface.id };
+    marshal(self.conn, self.id, XDG_ACTIVATION_V1_ACTIVATE, *args);
 }
 
 XDG_ACTIVATION_V1_INTERFACE :: Interface_Descriptor.{

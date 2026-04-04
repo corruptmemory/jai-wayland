@@ -30,6 +30,7 @@
 Zwp_Input_Method_Context_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -102,9 +103,86 @@ Zwp_Input_Method_Context_V1_Event :: union kind: Zwp_Input_Method_Context_V1_Eve
     .PREFERRED_LANGUAGE ,, preferred_language: Zwp_Input_Method_Context_V1_Preferred_Language_Args;
 }
 
+Zwp_Input_Method_Context_V1_Destroy_Args :: struct {
+}
+
+Zwp_Input_Method_Context_V1_Commit_String_Args :: struct {
+    serial: u32;
+    text: string;
+}
+
+Zwp_Input_Method_Context_V1_Preedit_String_Args :: struct {
+    serial: u32;
+    text: string;
+    commit: string;
+}
+
+Zwp_Input_Method_Context_V1_Preedit_Styling_Args :: struct {
+    index: u32;
+    length: u32;
+    style: u32;
+}
+
+Zwp_Input_Method_Context_V1_Preedit_Cursor_Args :: struct {
+    index: s32;
+}
+
+Zwp_Input_Method_Context_V1_Delete_Surrounding_Text_Args :: struct {
+    index: s32;
+    length: u32;
+}
+
+Zwp_Input_Method_Context_V1_Cursor_Position_Args :: struct {
+    index: s32;
+    anchor: s32;
+}
+
+Zwp_Input_Method_Context_V1_Modifiers_Map_Args :: struct {
+    map: [] u8;
+}
+
+Zwp_Input_Method_Context_V1_Keysym_Args :: struct {
+    serial: u32;
+    time: u32;
+    sym: u32;
+    state: u32;
+    modifiers: u32;
+}
+
+Zwp_Input_Method_Context_V1_Grab_Keyboard_Args :: struct {
+}
+
+Zwp_Input_Method_Context_V1_Key_Args :: struct {
+    serial: u32;
+    time: u32;
+    key: u32;
+    state: u32;
+}
+
+Zwp_Input_Method_Context_V1_Modifiers_Args :: struct {
+    serial: u32;
+    mods_depressed: u32;
+    mods_latched: u32;
+    mods_locked: u32;
+    group: u32;
+}
+
+Zwp_Input_Method_Context_V1_Language_Args :: struct {
+    serial: u32;
+    language: string;
+}
+
+Zwp_Input_Method_Context_V1_Text_Direction_Args :: struct {
+    serial: u32;
+    direction: u32;
+}
+
+
 // (destructor)
 zwp_input_method_context_v1_destroy :: (self: *Zwp_Input_Method_Context_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Input_Method_Context_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // commit string
@@ -118,7 +196,8 @@ zwp_input_method_context_v1_destroy :: (self: *Zwp_Input_Method_Context_V1) {
 //
 // Any previously set composing text will be removed.
 zwp_input_method_context_v1_commit_string :: (self: *Zwp_Input_Method_Context_V1, serial: u32, text: string) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_COMMIT_STRING, ...);
+    args := Zwp_Input_Method_Context_V1_Commit_String_Args.{ serial = serial, text = text };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_COMMIT_STRING, *args);
 }
 
 // pre-edit string
@@ -130,7 +209,8 @@ zwp_input_method_context_v1_commit_string :: (self: *Zwp_Input_Method_Context_V1
 // Previously sent preedit_style and preedit_cursor requests are also
 // processed by the text_input.
 zwp_input_method_context_v1_preedit_string :: (self: *Zwp_Input_Method_Context_V1, serial: u32, text: string, commit: string) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_PREEDIT_STRING, ...);
+    args := Zwp_Input_Method_Context_V1_Preedit_String_Args.{ serial = serial, text = text, commit = commit };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_PREEDIT_STRING, *args);
 }
 
 // pre-edit styling
@@ -141,7 +221,8 @@ zwp_input_method_context_v1_preedit_string :: (self: *Zwp_Input_Method_Context_V
 //
 // This request should be sent before sending a preedit_string request.
 zwp_input_method_context_v1_preedit_styling :: (self: *Zwp_Input_Method_Context_V1, index: u32, length: u32, style: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_PREEDIT_STYLING, ...);
+    args := Zwp_Input_Method_Context_V1_Preedit_Styling_Args.{ index = index, length = length, style = style };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_PREEDIT_STYLING, *args);
 }
 
 // pre-edit cursor
@@ -152,7 +233,8 @@ zwp_input_method_context_v1_preedit_styling :: (self: *Zwp_Input_Method_Context_
 //
 // This request should be sent before sending a preedit_string request.
 zwp_input_method_context_v1_preedit_cursor :: (self: *Zwp_Input_Method_Context_V1, index: s32) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_PREEDIT_CURSOR, ...);
+    args := Zwp_Input_Method_Context_V1_Preedit_Cursor_Args.{ index = index };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_PREEDIT_CURSOR, *args);
 }
 
 // delete text
@@ -161,7 +243,8 @@ zwp_input_method_context_v1_preedit_cursor :: (self: *Zwp_Input_Method_Context_V
 // This request will be handled on the text_input side directly following
 // a commit_string request.
 zwp_input_method_context_v1_delete_surrounding_text :: (self: *Zwp_Input_Method_Context_V1, index: s32, length: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_DELETE_SURROUNDING_TEXT, ...);
+    args := Zwp_Input_Method_Context_V1_Delete_Surrounding_Text_Args.{ index = index, length = length };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_DELETE_SURROUNDING_TEXT, *args);
 }
 
 // set cursor to a new position
@@ -176,11 +259,13 @@ zwp_input_method_context_v1_delete_surrounding_text :: (self: *Zwp_Input_Method_
 // This request will be handled on the text_input side directly following
 // a commit_string request.
 zwp_input_method_context_v1_cursor_position :: (self: *Zwp_Input_Method_Context_V1, index: s32, anchor: s32) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_CURSOR_POSITION, ...);
+    args := Zwp_Input_Method_Context_V1_Cursor_Position_Args.{ index = index, anchor = anchor };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_CURSOR_POSITION, *args);
 }
 
 zwp_input_method_context_v1_modifiers_map :: (self: *Zwp_Input_Method_Context_V1, map: [] u8) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_MODIFIERS_MAP, ...);
+    args := Zwp_Input_Method_Context_V1_Modifiers_Map_Args.{ map = map };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_MODIFIERS_MAP, *args);
 }
 
 // keysym
@@ -189,7 +274,8 @@ zwp_input_method_context_v1_modifiers_map :: (self: *Zwp_Input_Method_Context_V1
 // delete_surrounding_text, etc. The key event follows the wl_keyboard key
 // event convention. Sym is an XKB keysym, state is a wl_keyboard key_state.
 zwp_input_method_context_v1_keysym :: (self: *Zwp_Input_Method_Context_V1, serial: u32, time: u32, sym: u32, state: u32, modifiers: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_KEYSYM, ...);
+    args := Zwp_Input_Method_Context_V1_Keysym_Args.{ serial = serial, time = time, sym = sym, state = state, modifiers = modifiers };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_KEYSYM, *args);
 }
 
 // grab hardware keyboard
@@ -198,7 +284,9 @@ zwp_input_method_context_v1_keysym :: (self: *Zwp_Input_Method_Context_V1, seria
 // allows input methods which compose multiple key events for inputting
 // text like it is done for CJK languages.
 zwp_input_method_context_v1_grab_keyboard :: (self: *Zwp_Input_Method_Context_V1) -> *Wl_Keyboard {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_INPUT_METHOD_CONTEXT_V1_GRAB_KEYBOARD, ...);
+    args := Zwp_Input_Method_Context_V1_Grab_Keyboard_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_GRAB_KEYBOARD, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -210,7 +298,8 @@ zwp_input_method_context_v1_grab_keyboard :: (self: *Zwp_Input_Method_Context_V1
 //
 // For generating custom key events use the keysym request instead.
 zwp_input_method_context_v1_key :: (self: *Zwp_Input_Method_Context_V1, serial: u32, time: u32, key: u32, state: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_KEY, ...);
+    args := Zwp_Input_Method_Context_V1_Key_Args.{ serial = serial, time = time, key = key, state = state };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_KEY, *args);
 }
 
 // forward modifiers event
@@ -219,15 +308,18 @@ zwp_input_method_context_v1_key :: (self: *Zwp_Input_Method_Context_V1, serial: 
 // key events with grab_keyboard. The arguments should be the ones
 // from the wl_keyboard::modifiers event.
 zwp_input_method_context_v1_modifiers :: (self: *Zwp_Input_Method_Context_V1, serial: u32, mods_depressed: u32, mods_latched: u32, mods_locked: u32, group: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_MODIFIERS, ...);
+    args := Zwp_Input_Method_Context_V1_Modifiers_Args.{ serial = serial, mods_depressed = mods_depressed, mods_latched = mods_latched, mods_locked = mods_locked, group = group };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_MODIFIERS, *args);
 }
 
 zwp_input_method_context_v1_language :: (self: *Zwp_Input_Method_Context_V1, serial: u32, language: string) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_LANGUAGE, ...);
+    args := Zwp_Input_Method_Context_V1_Language_Args.{ serial = serial, language = language };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_LANGUAGE, *args);
 }
 
 zwp_input_method_context_v1_text_direction :: (self: *Zwp_Input_Method_Context_V1, serial: u32, direction: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_METHOD_CONTEXT_V1_TEXT_DIRECTION, ...);
+    args := Zwp_Input_Method_Context_V1_Text_Direction_Args.{ serial = serial, direction = direction };
+    marshal(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_TEXT_DIRECTION, *args);
 }
 
 ZWP_INPUT_METHOD_CONTEXT_V1_INTERFACE :: Interface_Descriptor.{

@@ -27,6 +27,7 @@
 Wl_Registry :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -58,11 +59,16 @@ Wl_Registry_Event :: union kind: Wl_Registry_Event_Kind {
     .GLOBAL_REMOVE ,, global_remove: Wl_Registry_Global_Remove_Args;
 }
 
+Wl_Registry_Bind_Args :: struct {
+    name: u32;
+}
+
+
 // bind an object to the display
 // Binds a new, client-created object to the server using the
 // specified name as the identifier.
 wl_registry_bind :: (self: *Wl_Registry, name: u32, $T: Type, version: u32) -> *T {
-    // TODO(Phase 3): marshal_constructor(self, WL_REGISTRY_BIND, ...);
+    // TODO(Phase 3): untyped new_id requires special wire encoding (interface_name + version + new_id)
     return null;
 }
 

@@ -37,6 +37,7 @@
 Zxdg_Surface_V6 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -68,13 +69,38 @@ Zxdg_Surface_V6_Event :: union kind: Zxdg_Surface_V6_Event_Kind {
     .CONFIGURE ,, configure: Zxdg_Surface_V6_Configure_Args;
 }
 
+Zxdg_Surface_V6_Destroy_Args :: struct {
+}
+
+Zxdg_Surface_V6_Get_Toplevel_Args :: struct {
+}
+
+Zxdg_Surface_V6_Get_Popup_Args :: struct {
+    parent: u32;
+    positioner: u32;
+}
+
+Zxdg_Surface_V6_Set_Window_Geometry_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+Zxdg_Surface_V6_Ack_Configure_Args :: struct {
+    serial: u32;
+}
+
+
 // destroy the xdg_surface (destructor)
 // Destroy the xdg_surface object. An xdg_surface must only be destroyed
 // after its role object has been destroyed. If the role object still
 // exists when this request is issued, the zxdg_shell_v6.defunct_surfaces
 // is raised.
 zxdg_surface_v6_destroy :: (self: *Zxdg_Surface_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_SURFACE_V6_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Surface_V6_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_SURFACE_V6_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // assign the xdg_toplevel surface role
@@ -85,7 +111,9 @@ zxdg_surface_v6_destroy :: (self: *Zxdg_Surface_V6) {
 // See the documentation of xdg_toplevel for more details about what an
 // xdg_toplevel is and how it is used.
 zxdg_surface_v6_get_toplevel :: (self: *Zxdg_Surface_V6) -> *Zxdg_Toplevel_V6 {
-    // TODO(Phase 3): marshal_constructor(self, ZXDG_SURFACE_V6_GET_TOPLEVEL, ...);
+    args := Zxdg_Surface_V6_Get_Toplevel_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, ZXDG_SURFACE_V6_GET_TOPLEVEL, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -97,7 +125,9 @@ zxdg_surface_v6_get_toplevel :: (self: *Zxdg_Surface_V6) -> *Zxdg_Toplevel_V6 {
 // See the documentation of xdg_popup for more details about what an
 // xdg_popup is and how it is used.
 zxdg_surface_v6_get_popup :: (self: *Zxdg_Surface_V6, parent: *Zxdg_Surface_V6, positioner: *Zxdg_Positioner_V6) -> *Zxdg_Popup_V6 {
-    // TODO(Phase 3): marshal_constructor(self, ZXDG_SURFACE_V6_GET_POPUP, ...);
+    args := Zxdg_Surface_V6_Get_Popup_Args.{ parent = parent.id, positioner = positioner.id };
+    new_id := marshal_constructor(self.conn, self.id, ZXDG_SURFACE_V6_GET_POPUP, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -126,7 +156,8 @@ zxdg_surface_v6_get_popup :: (self: *Zxdg_Surface_V6, parent: *Zxdg_Surface_V6, 
 // combined geometry of the surface of the xdg_surface and the associated
 // subsurfaces.
 zxdg_surface_v6_set_window_geometry :: (self: *Zxdg_Surface_V6, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, ZXDG_SURFACE_V6_SET_WINDOW_GEOMETRY, ...);
+    args := Zxdg_Surface_V6_Set_Window_Geometry_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, ZXDG_SURFACE_V6_SET_WINDOW_GEOMETRY, *args);
 }
 
 // ack a configure event
@@ -153,7 +184,8 @@ zxdg_surface_v6_set_window_geometry :: (self: *Zxdg_Surface_V6, x: s32, y: s32, 
 // If an invalid serial is used, the zxdg_shell_v6.invalid_surface_state
 // error is raised.
 zxdg_surface_v6_ack_configure :: (self: *Zxdg_Surface_V6, serial: u32) {
-    // TODO(Phase 3): marshal(self, ZXDG_SURFACE_V6_ACK_CONFIGURE, ...);
+    args := Zxdg_Surface_V6_Ack_Configure_Args.{ serial = serial };
+    marshal(self.conn, self.id, ZXDG_SURFACE_V6_ACK_CONFIGURE, *args);
 }
 
 ZXDG_SURFACE_V6_INTERFACE :: Interface_Descriptor.{

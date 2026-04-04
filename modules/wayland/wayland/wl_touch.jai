@@ -15,6 +15,7 @@
 Wl_Touch :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -95,9 +96,15 @@ Wl_Touch_Event :: union kind: Wl_Touch_Event_Kind {
     .ORIENTATION ,, orientation: Wl_Touch_Orientation_Args;
 }
 
+Wl_Touch_Release_Args :: struct {
+}
+
+
 // release the touch object (destructor)
 wl_touch_release :: (self: *Wl_Touch) {
-    // TODO(Phase 3): marshal(self, WL_TOUCH_RELEASE, ...); destroy_proxy(self);
+    args := Wl_Touch_Release_Args.{};
+    marshal(self.conn, self.id, WL_TOUCH_RELEASE, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WL_TOUCH_INTERFACE :: Interface_Descriptor.{

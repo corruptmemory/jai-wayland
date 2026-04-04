@@ -25,6 +25,7 @@
 Wp_Image_Description_Creator_Icc_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -44,6 +45,16 @@ Wp_Image_Description_Creator_Icc_V1_Error :: enum u32 {
     // offset + length exceeds file size
     OUT_OF_FILE :: 4;
 }
+
+Wp_Image_Description_Creator_Icc_V1_Create_Args :: struct {
+}
+
+Wp_Image_Description_Creator_Icc_V1_Set_Icc_File_Args :: struct {
+    icc_profile: Fd;
+    offset: u32;
+    length: u32;
+}
+
 
 // Create the image description object from ICC data (destructor)
 // Create an image description object based on the ICC information
@@ -66,7 +77,10 @@ Wp_Image_Description_Creator_Icc_V1_Error :: enum u32 {
 // The resulting image description object does not allow get_information
 // request.
 wp_image_description_creator_icc_v1_create :: (self: *Wp_Image_Description_Creator_Icc_V1) -> *Wp_Image_Description_V1 {
-    // TODO(Phase 3): marshal(self, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_CREATE, ...); destroy_proxy(self);
+    args := Wp_Image_Description_Creator_Icc_V1_Create_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_CREATE, *args);
+    // TODO(Phase 4): allocate proxy properly
+    return null;
 }
 
 // set the ICC profile file
@@ -109,8 +123,9 @@ wp_image_description_creator_icc_v1_create :: (self: *Wp_Image_Description_Creat
 //
 // If ICC file has already been set on this object, the protocol error
 // already_set is raised.
-wp_image_description_creator_icc_v1_set_icc_file :: (self: *Wp_Image_Description_Creator_Icc_V1, icc_profile: s32, offset: u32, length: u32) {
-    // TODO(Phase 3): marshal(self, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_SET_ICC_FILE, ...);
+wp_image_description_creator_icc_v1_set_icc_file :: (self: *Wp_Image_Description_Creator_Icc_V1, icc_profile: Fd, offset: u32, length: u32) {
+    args := Wp_Image_Description_Creator_Icc_V1_Set_Icc_File_Args.{ icc_profile = icc_profile, offset = offset, length = length };
+    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_SET_ICC_FILE, *args);
 }
 
 WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_INTERFACE :: Interface_Descriptor.{

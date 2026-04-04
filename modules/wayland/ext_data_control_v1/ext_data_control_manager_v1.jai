@@ -9,6 +9,7 @@
 Ext_Data_Control_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -16,17 +17,32 @@ EXT_DATA_CONTROL_MANAGER_V1_CREATE_DATA_SOURCE :: 0;
 EXT_DATA_CONTROL_MANAGER_V1_GET_DATA_DEVICE :: 1;
 EXT_DATA_CONTROL_MANAGER_V1_DESTROY :: 2;
 
+Ext_Data_Control_Manager_V1_Create_Data_Source_Args :: struct {
+}
+
+Ext_Data_Control_Manager_V1_Get_Data_Device_Args :: struct {
+    seat: u32;
+}
+
+Ext_Data_Control_Manager_V1_Destroy_Args :: struct {
+}
+
+
 // create a new data source
 // Create a new data source.
 ext_data_control_manager_v1_create_data_source :: (self: *Ext_Data_Control_Manager_V1) -> *Ext_Data_Control_Source_V1 {
-    // TODO(Phase 3): marshal_constructor(self, EXT_DATA_CONTROL_MANAGER_V1_CREATE_DATA_SOURCE, ...);
+    args := Ext_Data_Control_Manager_V1_Create_Data_Source_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_CREATE_DATA_SOURCE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
 // get a data device for a seat
 // Create a data device that can be used to manage a seat's selection.
 ext_data_control_manager_v1_get_data_device :: (self: *Ext_Data_Control_Manager_V1, seat: *Wl_Seat) -> *Ext_Data_Control_Device_V1 {
-    // TODO(Phase 3): marshal_constructor(self, EXT_DATA_CONTROL_MANAGER_V1_GET_DATA_DEVICE, ...);
+    args := Ext_Data_Control_Manager_V1_Get_Data_Device_Args.{ seat = seat.id };
+    new_id := marshal_constructor(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_GET_DATA_DEVICE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -34,7 +50,9 @@ ext_data_control_manager_v1_get_data_device :: (self: *Ext_Data_Control_Manager_
 // All objects created by the manager will still remain valid, until their
 // appropriate destroy request has been called.
 ext_data_control_manager_v1_destroy :: (self: *Ext_Data_Control_Manager_V1) {
-    // TODO(Phase 3): marshal(self, EXT_DATA_CONTROL_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Data_Control_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_DATA_CONTROL_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

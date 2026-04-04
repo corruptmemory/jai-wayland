@@ -40,6 +40,7 @@
 Zxdg_Popup_V6 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -77,6 +78,15 @@ Zxdg_Popup_V6_Event :: union kind: Zxdg_Popup_V6_Event_Kind {
     .POPUP_DONE ,, popup_done: Zxdg_Popup_V6_Popup_Done_Args;
 }
 
+Zxdg_Popup_V6_Destroy_Args :: struct {
+}
+
+Zxdg_Popup_V6_Grab_Args :: struct {
+    seat: u32;
+    serial: u32;
+}
+
+
 // remove xdg_popup interface (destructor)
 // This destroys the popup. Explicitly destroying the xdg_popup
 // object will also dismiss the popup, and unmap the surface.
@@ -84,7 +94,9 @@ Zxdg_Popup_V6_Event :: union kind: Zxdg_Popup_V6_Event_Kind {
 // If this xdg_popup is not the "topmost" popup, a protocol error
 // will be sent.
 zxdg_popup_v6_destroy :: (self: *Zxdg_Popup_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_POPUP_V6_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Popup_V6_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_POPUP_V6_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // make the popup take an explicit grab
@@ -130,7 +142,8 @@ zxdg_popup_v6_destroy :: (self: *Zxdg_Popup_V6) {
 // "owner-events" grab in X11 parlance), while the top most grabbing popup
 // will always have keyboard focus.
 zxdg_popup_v6_grab :: (self: *Zxdg_Popup_V6, seat: *Wl_Seat, serial: u32) {
-    // TODO(Phase 3): marshal(self, ZXDG_POPUP_V6_GRAB, ...);
+    args := Zxdg_Popup_V6_Grab_Args.{ seat = seat.id, serial = serial };
+    marshal(self.conn, self.id, ZXDG_POPUP_V6_GRAB, *args);
 }
 
 ZXDG_POPUP_V6_INTERFACE :: Interface_Descriptor.{

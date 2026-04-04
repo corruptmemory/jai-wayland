@@ -22,6 +22,7 @@
 Zwp_Pointer_Gesture_Pinch_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -68,9 +69,15 @@ Zwp_Pointer_Gesture_Pinch_V1_Event :: union kind: Zwp_Pointer_Gesture_Pinch_V1_E
     .END ,, end: Zwp_Pointer_Gesture_Pinch_V1_End_Args;
 }
 
+Zwp_Pointer_Gesture_Pinch_V1_Destroy_Args :: struct {
+}
+
+
 // destroy the pinch gesture object (destructor)
 zwp_pointer_gesture_pinch_v1_destroy :: (self: *Zwp_Pointer_Gesture_Pinch_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_POINTER_GESTURE_PINCH_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Pointer_Gesture_Pinch_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_POINTER_GESTURE_PINCH_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_POINTER_GESTURE_PINCH_V1_INTERFACE :: Interface_Descriptor.{

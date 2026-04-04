@@ -55,6 +55,7 @@
 Ext_Session_Lock_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -97,6 +98,18 @@ Ext_Session_Lock_V1_Event :: union kind: Ext_Session_Lock_V1_Event_Kind {
     .FINISHED ,, finished: Ext_Session_Lock_V1_Finished_Args;
 }
 
+Ext_Session_Lock_V1_Destroy_Args :: struct {
+}
+
+Ext_Session_Lock_V1_Get_Lock_Surface_Args :: struct {
+    surface: u32;
+    output: u32;
+}
+
+Ext_Session_Lock_V1_Unlock_And_Destroy_Args :: struct {
+}
+
+
 // destroy the session lock (destructor)
 // This informs the compositor that the lock object will no longer be
 // used. Existing objects created through this interface remain valid.
@@ -108,7 +121,9 @@ Ext_Session_Lock_V1_Event :: union kind: Ext_Session_Lock_V1_Event_Kind {
 // It is a protocol error to make this request if the locked event was
 // sent, the unlock_and_destroy request must be used instead.
 ext_session_lock_v1_destroy :: (self: *Ext_Session_Lock_V1) {
-    // TODO(Phase 3): marshal(self, EXT_SESSION_LOCK_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Session_Lock_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_SESSION_LOCK_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a lock surface for a given output
@@ -124,7 +139,9 @@ ext_session_lock_v1_destroy :: (self: *Ext_Session_Lock_V1) {
 // Attempting to create more than one lock surface for a given output
 // is a duplicate_output protocol error.
 ext_session_lock_v1_get_lock_surface :: (self: *Ext_Session_Lock_V1, surface: *Wl_Surface, output: *Wl_Output) -> *Ext_Session_Lock_Surface_V1 {
-    // TODO(Phase 3): marshal_constructor(self, EXT_SESSION_LOCK_V1_GET_LOCK_SURFACE, ...);
+    args := Ext_Session_Lock_V1_Get_Lock_Surface_Args.{ surface = surface.id, output = output.id };
+    new_id := marshal_constructor(self.conn, self.id, EXT_SESSION_LOCK_V1_GET_LOCK_SURFACE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -153,7 +170,9 @@ ext_session_lock_v1_get_lock_surface :: (self: *Ext_Session_Lock_V1, surface: *W
 // the server might terminate the client with a protocol error before
 // it processes the unlock_and_destroy request.
 ext_session_lock_v1_unlock_and_destroy :: (self: *Ext_Session_Lock_V1) {
-    // TODO(Phase 3): marshal(self, EXT_SESSION_LOCK_V1_UNLOCK_AND_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Session_Lock_V1_Unlock_And_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_SESSION_LOCK_V1_UNLOCK_AND_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_SESSION_LOCK_V1_INTERFACE :: Interface_Descriptor.{

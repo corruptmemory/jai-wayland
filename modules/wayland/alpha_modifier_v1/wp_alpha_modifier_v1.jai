@@ -15,6 +15,7 @@
 Wp_Alpha_Modifier_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -26,11 +27,21 @@ Wp_Alpha_Modifier_V1_Error :: enum u32 {
     ALREADY_CONSTRUCTED :: 0;
 }
 
+Wp_Alpha_Modifier_V1_Destroy_Args :: struct {
+}
+
+Wp_Alpha_Modifier_V1_Get_Surface_Args :: struct {
+    surface: u32;
+}
+
+
 // destroy the alpha modifier manager object (destructor)
 // Destroy the alpha modifier manager. This doesn't destroy objects
 // created with the manager.
 wp_alpha_modifier_v1_destroy :: (self: *Wp_Alpha_Modifier_V1) {
-    // TODO(Phase 3): marshal(self, WP_ALPHA_MODIFIER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Alpha_Modifier_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_ALPHA_MODIFIER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a new alpha modifier surface object
@@ -38,7 +49,9 @@ wp_alpha_modifier_v1_destroy :: (self: *Wp_Alpha_Modifier_V1) {
 // given wl_surface. If there is already such an object associated with
 // the wl_surface, the already_constructed error will be raised.
 wp_alpha_modifier_v1_get_surface :: (self: *Wp_Alpha_Modifier_V1, surface: *Wl_Surface) -> *Wp_Alpha_Modifier_Surface_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_ALPHA_MODIFIER_V1_GET_SURFACE, ...);
+    args := Wp_Alpha_Modifier_V1_Get_Surface_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_ALPHA_MODIFIER_V1_GET_SURFACE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

@@ -9,6 +9,7 @@
 Wp_Fifo_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -23,6 +24,16 @@ Wp_Fifo_V1_Error :: enum u32 {
     // the associated surface no longer exists
     SURFACE_DESTROYED :: 0;
 }
+
+Wp_Fifo_V1_Set_Barrier_Args :: struct {
+}
+
+Wp_Fifo_V1_Wait_Barrier_Args :: struct {
+}
+
+Wp_Fifo_V1_Destroy_Args :: struct {
+}
+
 
 // sets the start point for a fifo constraint
 // When the content update containing the "set_barrier" is applied,
@@ -40,7 +51,8 @@ Wp_Fifo_V1_Error :: enum u32 {
 // Requesting set_barrier after the fifo object's surface is
 // destroyed will generate a "surface_destroyed" error.
 wp_fifo_v1_set_barrier :: (self: *Wp_Fifo_V1) {
-    // TODO(Phase 3): marshal(self, WP_FIFO_V1_SET_BARRIER, ...);
+    args := Wp_Fifo_V1_Set_Barrier_Args.{};
+    marshal(self.conn, self.id, WP_FIFO_V1_SET_BARRIER, *args);
 }
 
 // adds a fifo constraint to a content update
@@ -65,7 +77,8 @@ wp_fifo_v1_set_barrier :: (self: *Wp_Fifo_V1) {
 // Requesting "wait_barrier" after the fifo object's surface is
 // destroyed will generate a "surface_destroyed" error.
 wp_fifo_v1_wait_barrier :: (self: *Wp_Fifo_V1) {
-    // TODO(Phase 3): marshal(self, WP_FIFO_V1_WAIT_BARRIER, ...);
+    args := Wp_Fifo_V1_Wait_Barrier_Args.{};
+    marshal(self.conn, self.id, WP_FIFO_V1_WAIT_BARRIER, *args);
 }
 
 // destroy the fifo interface (destructor)
@@ -75,7 +88,9 @@ wp_fifo_v1_wait_barrier :: (self: *Wp_Fifo_V1) {
 // Surface state changes previously made by this protocol are
 // unaffected by this object's destruction.
 wp_fifo_v1_destroy :: (self: *Wp_Fifo_V1) {
-    // TODO(Phase 3): marshal(self, WP_FIFO_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Fifo_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_FIFO_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WP_FIFO_V1_INTERFACE :: Interface_Descriptor.{

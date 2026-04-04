@@ -10,6 +10,7 @@
 Zwp_Primary_Selection_Source_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -23,7 +24,7 @@ ZWP_PRIMARY_SELECTION_SOURCE_V1_CANCELLED :: 1;
 // send the primary selection contents
 Zwp_Primary_Selection_Source_V1_Send_Args :: struct {
     mime_type: string;
-    fd: s32;
+    fd: Fd;
 }
 
 // request for primary selection contents was canceled
@@ -40,17 +41,28 @@ Zwp_Primary_Selection_Source_V1_Event :: union kind: Zwp_Primary_Selection_Sourc
     .CANCELLED ,, cancelled: Zwp_Primary_Selection_Source_V1_Cancelled_Args;
 }
 
+Zwp_Primary_Selection_Source_V1_Offer_Args :: struct {
+    mime_type: string;
+}
+
+Zwp_Primary_Selection_Source_V1_Destroy_Args :: struct {
+}
+
+
 // add an offered mime type
 // This request adds a mime type to the set of mime types advertised to
 // targets. Can be called several times to offer multiple types.
 zwp_primary_selection_source_v1_offer :: (self: *Zwp_Primary_Selection_Source_V1, mime_type: string) {
-    // TODO(Phase 3): marshal(self, ZWP_PRIMARY_SELECTION_SOURCE_V1_OFFER, ...);
+    args := Zwp_Primary_Selection_Source_V1_Offer_Args.{ mime_type = mime_type };
+    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_SOURCE_V1_OFFER, *args);
 }
 
 // destroy the primary selection source (destructor)
 // Destroy the primary selection source.
 zwp_primary_selection_source_v1_destroy :: (self: *Zwp_Primary_Selection_Source_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_PRIMARY_SELECTION_SOURCE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Primary_Selection_Source_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_SOURCE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_PRIMARY_SELECTION_SOURCE_V1_INTERFACE :: Interface_Descriptor.{

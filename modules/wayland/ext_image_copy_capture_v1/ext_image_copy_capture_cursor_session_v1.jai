@@ -9,6 +9,7 @@
 Ext_Image_Copy_Capture_Cursor_Session_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -60,6 +61,13 @@ Ext_Image_Copy_Capture_Cursor_Session_V1_Event :: union kind: Ext_Image_Copy_Cap
     .HOTSPOT ,, hotspot: Ext_Image_Copy_Capture_Cursor_Session_V1_Hotspot_Args;
 }
 
+Ext_Image_Copy_Capture_Cursor_Session_V1_Destroy_Args :: struct {
+}
+
+Ext_Image_Copy_Capture_Cursor_Session_V1_Get_Capture_Session_Args :: struct {
+}
+
+
 // delete this object (destructor)
 // Destroys the session. This request can be sent at any time by the
 // client.
@@ -67,7 +75,9 @@ Ext_Image_Copy_Capture_Cursor_Session_V1_Event :: union kind: Ext_Image_Copy_Cap
 // This request doesn't affect ext_image_copy_capture_frame_v1 objects created by
 // this object.
 ext_image_copy_capture_cursor_session_v1_destroy :: (self: *Ext_Image_Copy_Capture_Cursor_Session_V1) {
-    // TODO(Phase 3): marshal(self, EXT_IMAGE_COPY_CAPTURE_CURSOR_SESSION_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Image_Copy_Capture_Cursor_Session_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_CURSOR_SESSION_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // get image copy capturer session
@@ -79,7 +89,9 @@ ext_image_copy_capture_cursor_session_v1_destroy :: (self: *Ext_Image_Copy_Captu
 // This request must not be sent more than once, or else the
 // duplicate_session protocol error is raised.
 ext_image_copy_capture_cursor_session_v1_get_capture_session :: (self: *Ext_Image_Copy_Capture_Cursor_Session_V1) -> *Ext_Image_Copy_Capture_Session_V1 {
-    // TODO(Phase 3): marshal_constructor(self, EXT_IMAGE_COPY_CAPTURE_CURSOR_SESSION_V1_GET_CAPTURE_SESSION, ...);
+    args := Ext_Image_Copy_Capture_Cursor_Session_V1_Get_Capture_Session_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_CURSOR_SESSION_V1_GET_CAPTURE_SESSION, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

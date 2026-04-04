@@ -69,6 +69,7 @@
 Zwp_Linux_Dmabuf_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -103,11 +104,27 @@ Zwp_Linux_Dmabuf_V1_Event :: union kind: Zwp_Linux_Dmabuf_V1_Event_Kind {
     .MODIFIER ,, modifier: Zwp_Linux_Dmabuf_V1_Modifier_Args;
 }
 
+Zwp_Linux_Dmabuf_V1_Destroy_Args :: struct {
+}
+
+Zwp_Linux_Dmabuf_V1_Create_Params_Args :: struct {
+}
+
+Zwp_Linux_Dmabuf_V1_Get_Default_Feedback_Args :: struct {
+}
+
+Zwp_Linux_Dmabuf_V1_Get_Surface_Feedback_Args :: struct {
+    surface: u32;
+}
+
+
 // unbind the factory (destructor)
 // Objects created through this interface, especially wl_buffers, will
 // remain valid.
 zwp_linux_dmabuf_v1_destroy :: (self: *Zwp_Linux_Dmabuf_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_LINUX_DMABUF_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Linux_Dmabuf_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_LINUX_DMABUF_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a temporary object for buffer parameters
@@ -116,7 +133,9 @@ zwp_linux_dmabuf_v1_destroy :: (self: *Zwp_Linux_Dmabuf_V1) {
 // should be destroyed after a 'created' or 'failed' event has been
 // received.
 zwp_linux_dmabuf_v1_create_params :: (self: *Zwp_Linux_Dmabuf_V1) -> *Zwp_Linux_Buffer_Params_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_LINUX_DMABUF_V1_CREATE_PARAMS, ...);
+    args := Zwp_Linux_Dmabuf_V1_Create_Params_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_DMABUF_V1_CREATE_PARAMS, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -126,7 +145,9 @@ zwp_linux_dmabuf_v1_create_params :: (self: *Zwp_Linux_Dmabuf_V1) -> *Zwp_Linux_
 // parameters to use if the client doesn't support per-surface feedback
 // (see get_surface_feedback).
 zwp_linux_dmabuf_v1_get_default_feedback :: (self: *Zwp_Linux_Dmabuf_V1) -> *Zwp_Linux_Dmabuf_Feedback_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK, ...);
+    args := Zwp_Linux_Dmabuf_V1_Get_Default_Feedback_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -138,7 +159,9 @@ zwp_linux_dmabuf_v1_get_default_feedback :: (self: *Zwp_Linux_Dmabuf_V1) -> *Zwp
 // If the surface is destroyed before the wp_linux_dmabuf_feedback object,
 // the feedback object becomes inert.
 zwp_linux_dmabuf_v1_get_surface_feedback :: (self: *Zwp_Linux_Dmabuf_V1, surface: *Wl_Surface) -> *Zwp_Linux_Dmabuf_Feedback_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_LINUX_DMABUF_V1_GET_SURFACE_FEEDBACK, ...);
+    args := Zwp_Linux_Dmabuf_V1_Get_Surface_Feedback_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_DMABUF_V1_GET_SURFACE_FEEDBACK, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

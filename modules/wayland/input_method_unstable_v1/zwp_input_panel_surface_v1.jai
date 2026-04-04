@@ -6,6 +6,7 @@
 Zwp_Input_Panel_Surface_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -16,12 +17,22 @@ Zwp_Input_Panel_Surface_V1_Position :: enum u32 {
     CENTER_BOTTOM :: 0;
 }
 
+Zwp_Input_Panel_Surface_V1_Set_Toplevel_Args :: struct {
+    output: u32;
+    position: u32;
+}
+
+Zwp_Input_Panel_Surface_V1_Set_Overlay_Panel_Args :: struct {
+}
+
+
 // set the surface type as a keyboard
 // Set the input_panel_surface type to keyboard.
 //
 // A keyboard surface is only shown when a text input is active.
 zwp_input_panel_surface_v1_set_toplevel :: (self: *Zwp_Input_Panel_Surface_V1, output: *Wl_Output, position: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_PANEL_SURFACE_V1_SET_TOPLEVEL, ...);
+    args := Zwp_Input_Panel_Surface_V1_Set_Toplevel_Args.{ output = output.id, position = position };
+    marshal(self.conn, self.id, ZWP_INPUT_PANEL_SURFACE_V1_SET_TOPLEVEL, *args);
 }
 
 // set the surface type as an overlay panel
@@ -30,7 +41,8 @@ zwp_input_panel_surface_v1_set_toplevel :: (self: *Zwp_Input_Panel_Surface_V1, o
 // This is shown near the input cursor above the application window when
 // a text input is active.
 zwp_input_panel_surface_v1_set_overlay_panel :: (self: *Zwp_Input_Panel_Surface_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_PANEL_SURFACE_V1_SET_OVERLAY_PANEL, ...);
+    args := Zwp_Input_Panel_Surface_V1_Set_Overlay_Panel_Args.{};
+    marshal(self.conn, self.id, ZWP_INPUT_PANEL_SURFACE_V1_SET_OVERLAY_PANEL, *args);
 }
 
 ZWP_INPUT_PANEL_SURFACE_V1_INTERFACE :: Interface_Descriptor.{

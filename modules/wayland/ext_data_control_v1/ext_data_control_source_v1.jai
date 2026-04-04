@@ -11,6 +11,7 @@
 Ext_Data_Control_Source_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -29,7 +30,7 @@ Ext_Data_Control_Source_V1_Error :: enum u32 {
 // send the data
 Ext_Data_Control_Source_V1_Send_Args :: struct {
     mime_type: string;
-    fd: s32;
+    fd: Fd;
 }
 
 // selection was cancelled
@@ -46,6 +47,14 @@ Ext_Data_Control_Source_V1_Event :: union kind: Ext_Data_Control_Source_V1_Event
     .CANCELLED ,, cancelled: Ext_Data_Control_Source_V1_Cancelled_Args;
 }
 
+Ext_Data_Control_Source_V1_Offer_Args :: struct {
+    mime_type: string;
+}
+
+Ext_Data_Control_Source_V1_Destroy_Args :: struct {
+}
+
+
 // add an offered MIME type
 // This request adds a MIME type to the set of MIME types advertised to
 // targets. Can be called several times to offer multiple types.
@@ -53,13 +62,16 @@ Ext_Data_Control_Source_V1_Event :: union kind: Ext_Data_Control_Source_V1_Event
 // Calling this after ext_data_control_device.set_selection is a protocol
 // error.
 ext_data_control_source_v1_offer :: (self: *Ext_Data_Control_Source_V1, mime_type: string) {
-    // TODO(Phase 3): marshal(self, EXT_DATA_CONTROL_SOURCE_V1_OFFER, ...);
+    args := Ext_Data_Control_Source_V1_Offer_Args.{ mime_type = mime_type };
+    marshal(self.conn, self.id, EXT_DATA_CONTROL_SOURCE_V1_OFFER, *args);
 }
 
 // destroy this source (destructor)
 // Destroys the data source object.
 ext_data_control_source_v1_destroy :: (self: *Ext_Data_Control_Source_V1) {
-    // TODO(Phase 3): marshal(self, EXT_DATA_CONTROL_SOURCE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Data_Control_Source_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_DATA_CONTROL_SOURCE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_DATA_CONTROL_SOURCE_V1_INTERFACE :: Interface_Descriptor.{

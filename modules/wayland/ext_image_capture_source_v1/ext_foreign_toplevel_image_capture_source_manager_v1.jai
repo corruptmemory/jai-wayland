@@ -9,17 +9,28 @@
 Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE :: 0;
 EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_DESTROY :: 1;
 
+Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1_Create_Source_Args :: struct {
+    toplevel_handle: u32;
+}
+
+Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1_Destroy_Args :: struct {
+}
+
+
 // create source object for foreign toplevel
 // Creates a source object for a foreign toplevel handle. Images captured
 // from this source will show the same content as the toplevel.
 ext_foreign_toplevel_image_capture_source_manager_v1_create_source :: (self: *Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1, toplevel_handle: *Ext_Foreign_Toplevel_Handle_V1) -> *Ext_Image_Capture_Source_V1 {
-    // TODO(Phase 3): marshal_constructor(self, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, ...);
+    args := Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1_Create_Source_Args.{ toplevel_handle = toplevel_handle.id };
+    new_id := marshal_constructor(self.conn, self.id, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -28,7 +39,9 @@ ext_foreign_toplevel_image_capture_source_manager_v1_create_source :: (self: *Ex
 // and objects created by the manager will remain valid after its
 // destruction.
 ext_foreign_toplevel_image_capture_source_manager_v1_destroy :: (self: *Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1) {
-    // TODO(Phase 3): marshal(self, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

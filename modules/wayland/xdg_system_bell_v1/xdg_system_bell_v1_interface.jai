@@ -13,16 +13,27 @@
 Xdg_System_Bell_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 XDG_SYSTEM_BELL_V1_DESTROY :: 0;
 XDG_SYSTEM_BELL_V1_RING :: 1;
 
+Xdg_System_Bell_V1_Destroy_Args :: struct {
+}
+
+Xdg_System_Bell_V1_Ring_Args :: struct {
+    surface: u32;
+}
+
+
 // destroy the system bell object (destructor)
 // Notify that the object will no longer be used.
 xdg_system_bell_v1_destroy :: (self: *Xdg_System_Bell_V1) {
-    // TODO(Phase 3): marshal(self, XDG_SYSTEM_BELL_V1_DESTROY, ...); destroy_proxy(self);
+    args := Xdg_System_Bell_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, XDG_SYSTEM_BELL_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // ring the system bell
@@ -36,7 +47,8 @@ xdg_system_bell_v1_destroy :: (self: *Xdg_System_Bell_V1) {
 // wants to associate the bell ringing with. See the xdg-shell protocol
 // extension for a toplevel like surface role.
 xdg_system_bell_v1_ring :: (self: *Xdg_System_Bell_V1, surface: *Wl_Surface) {
-    // TODO(Phase 3): marshal(self, XDG_SYSTEM_BELL_V1_RING, ...);
+    args := Xdg_System_Bell_V1_Ring_Args.{ surface = surface.id };
+    marshal(self.conn, self.id, XDG_SYSTEM_BELL_V1_RING, *args);
 }
 
 XDG_SYSTEM_BELL_V1_INTERFACE :: Interface_Descriptor.{

@@ -29,6 +29,7 @@
 Wp_Image_Description_Info_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Event opcodes
@@ -50,7 +51,7 @@ Wp_Image_Description_Info_V1_Done_Args :: struct {
 
 // ICC profile matching the image description
 Wp_Image_Description_Info_V1_Icc_File_Args :: struct {
-    icc: s32;
+    icc: Fd;
     icc_size: u32;
 }
 

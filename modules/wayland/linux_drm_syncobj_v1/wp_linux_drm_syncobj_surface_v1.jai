@@ -32,6 +32,7 @@
 Wp_Linux_Drm_Syncobj_Surface_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -54,6 +55,22 @@ Wp_Linux_Drm_Syncobj_Surface_V1_Error :: enum u32 {
     CONFLICTING_POINTS :: 6;
 }
 
+Wp_Linux_Drm_Syncobj_Surface_V1_Destroy_Args :: struct {
+}
+
+Wp_Linux_Drm_Syncobj_Surface_V1_Set_Acquire_Point_Args :: struct {
+    timeline: u32;
+    point_hi: u32;
+    point_lo: u32;
+}
+
+Wp_Linux_Drm_Syncobj_Surface_V1_Set_Release_Point_Args :: struct {
+    timeline: u32;
+    point_hi: u32;
+    point_lo: u32;
+}
+
+
 // destroy the surface synchronization object (destructor)
 // Destroy this surface synchronization object.
 //
@@ -62,7 +79,9 @@ Wp_Linux_Drm_Syncobj_Surface_V1_Error :: enum u32 {
 // compositor. Any timeline point set by this object before the last
 // commit will not be affected.
 wp_linux_drm_syncobj_surface_v1_destroy :: (self: *Wp_Linux_Drm_Syncobj_Surface_V1) {
-    // TODO(Phase 3): marshal(self, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Linux_Drm_Syncobj_Surface_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set the acquire timeline point
@@ -89,7 +108,8 @@ wp_linux_drm_syncobj_surface_v1_destroy :: (self: *Wp_Linux_Drm_Syncobj_Surface_
 // acquire timeline point set, the no_acquire_point protocol error is
 // raised.
 wp_linux_drm_syncobj_surface_v1_set_acquire_point :: (self: *Wp_Linux_Drm_Syncobj_Surface_V1, timeline: *Wp_Linux_Drm_Syncobj_Timeline_V1, point_hi: u32, point_lo: u32) {
-    // TODO(Phase 3): marshal(self, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_SET_ACQUIRE_POINT, ...);
+    args := Wp_Linux_Drm_Syncobj_Surface_V1_Set_Acquire_Point_Args.{ timeline = timeline.id, point_hi = point_hi, point_lo = point_lo };
+    marshal(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_SET_ACQUIRE_POINT, *args);
 }
 
 // set the release timeline point
@@ -137,7 +157,8 @@ wp_linux_drm_syncobj_surface_v1_set_acquire_point :: (self: *Wp_Linux_Drm_Syncob
 // release timeline point set, the no_release_point protocol error is
 // raised.
 wp_linux_drm_syncobj_surface_v1_set_release_point :: (self: *Wp_Linux_Drm_Syncobj_Surface_V1, timeline: *Wp_Linux_Drm_Syncobj_Timeline_V1, point_hi: u32, point_lo: u32) {
-    // TODO(Phase 3): marshal(self, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_SET_RELEASE_POINT, ...);
+    args := Wp_Linux_Drm_Syncobj_Surface_V1_Set_Release_Point_Args.{ timeline = timeline.id, point_hi = point_hi, point_lo = point_lo };
+    marshal(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_SET_RELEASE_POINT, *args);
 }
 
 WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_INTERFACE :: Interface_Descriptor.{

@@ -28,6 +28,7 @@
 Wp_Image_Description_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -88,6 +89,13 @@ Wp_Image_Description_V1_Event :: union kind: Wp_Image_Description_V1_Event_Kind 
     .READY2 ,, ready2: Wp_Image_Description_V1_Ready2_Args;
 }
 
+Wp_Image_Description_V1_Destroy_Args :: struct {
+}
+
+Wp_Image_Description_V1_Get_Information_Args :: struct {
+}
+
+
 // destroy the image description (destructor)
 // Destroy this object. It is safe to destroy an object which is not ready.
 //
@@ -95,7 +103,9 @@ Wp_Image_Description_V1_Event :: union kind: Wp_Image_Description_V1_Event_Kind 
 // even if a wp_color_management_surface_v1.set_image_description has not
 // yet been followed by a wl_surface.commit.
 wp_image_description_v1_destroy :: (self: *Wp_Image_Description_V1) {
-    // TODO(Phase 3): marshal(self, WP_IMAGE_DESCRIPTION_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Image_Description_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // get information about the image description
@@ -107,7 +117,9 @@ wp_image_description_v1_destroy :: (self: *Wp_Image_Description_V1) {
 // created the object. If get_information is not allowed, the protocol
 // error no_information is raised.
 wp_image_description_v1_get_information :: (self: *Wp_Image_Description_V1) -> *Wp_Image_Description_Info_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_IMAGE_DESCRIPTION_V1_GET_INFORMATION, ...);
+    args := Wp_Image_Description_V1_Get_Information_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WP_IMAGE_DESCRIPTION_V1_GET_INFORMATION, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

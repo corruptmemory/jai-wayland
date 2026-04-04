@@ -14,6 +14,7 @@
 Wp_Content_Type_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -29,12 +30,22 @@ Wp_Content_Type_V1_Type :: enum u32 {
     GAME :: 3;
 }
 
+Wp_Content_Type_V1_Destroy_Args :: struct {
+}
+
+Wp_Content_Type_V1_Set_Content_Type_Args :: struct {
+    content_type: u32;
+}
+
+
 // destroy the content type object (destructor)
 // Switch back to not specifying the content type of this surface. This is
 // equivalent to setting the content type to none, including double
 // buffering semantics. See set_content_type for details.
 wp_content_type_v1_destroy :: (self: *Wp_Content_Type_V1) {
-    // TODO(Phase 3): marshal(self, WP_CONTENT_TYPE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Content_Type_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_CONTENT_TYPE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // specify the content type
@@ -47,7 +58,8 @@ wp_content_type_v1_destroy :: (self: *Wp_Content_Type_V1) {
 // The content type is double-buffered state, see wl_surface.commit for
 // details.
 wp_content_type_v1_set_content_type :: (self: *Wp_Content_Type_V1, content_type: u32) {
-    // TODO(Phase 3): marshal(self, WP_CONTENT_TYPE_V1_SET_CONTENT_TYPE, ...);
+    args := Wp_Content_Type_V1_Set_Content_Type_Args.{ content_type = content_type };
+    marshal(self.conn, self.id, WP_CONTENT_TYPE_V1_SET_CONTENT_TYPE, *args);
 }
 
 WP_CONTENT_TYPE_V1_INTERFACE :: Interface_Descriptor.{

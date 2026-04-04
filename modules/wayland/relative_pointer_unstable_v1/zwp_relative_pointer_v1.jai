@@ -11,6 +11,7 @@
 Zwp_Relative_Pointer_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -37,9 +38,15 @@ Zwp_Relative_Pointer_V1_Event :: union kind: Zwp_Relative_Pointer_V1_Event_Kind 
     .RELATIVE_MOTION ,, relative_motion: Zwp_Relative_Pointer_V1_Relative_Motion_Args;
 }
 
+Zwp_Relative_Pointer_V1_Destroy_Args :: struct {
+}
+
+
 // release the relative pointer object (destructor)
 zwp_relative_pointer_v1_destroy :: (self: *Zwp_Relative_Pointer_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_RELATIVE_POINTER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Relative_Pointer_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_RELATIVE_POINTER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_RELATIVE_POINTER_V1_INTERFACE :: Interface_Descriptor.{

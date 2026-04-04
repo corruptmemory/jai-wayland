@@ -9,6 +9,7 @@
 Zwp_Input_Timestamps_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -17,12 +18,30 @@ ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_KEYBOARD_TIMESTAMPS :: 1;
 ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_POINTER_TIMESTAMPS :: 2;
 ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_TOUCH_TIMESTAMPS :: 3;
 
+Zwp_Input_Timestamps_Manager_V1_Destroy_Args :: struct {
+}
+
+Zwp_Input_Timestamps_Manager_V1_Get_Keyboard_Timestamps_Args :: struct {
+    keyboard: u32;
+}
+
+Zwp_Input_Timestamps_Manager_V1_Get_Pointer_Timestamps_Args :: struct {
+    pointer: u32;
+}
+
+Zwp_Input_Timestamps_Manager_V1_Get_Touch_Timestamps_Args :: struct {
+    touch: u32;
+}
+
+
 // destroy the input timestamps manager object (destructor)
 // Informs the server that the client will no longer be using this
 // protocol object. Existing objects created by this object are not
 // affected.
 zwp_input_timestamps_manager_v1_destroy :: (self: *Zwp_Input_Timestamps_Manager_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Input_Timestamps_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // subscribe to high-resolution keyboard timestamp events
@@ -35,7 +54,9 @@ zwp_input_timestamps_manager_v1_destroy :: (self: *Zwp_Input_Timestamps_Manager_
 // timestamps object becomes inert and the client should destroy it
 // by calling zwp_input_timestamps_v1.destroy.
 zwp_input_timestamps_manager_v1_get_keyboard_timestamps :: (self: *Zwp_Input_Timestamps_Manager_V1, keyboard: *Wl_Keyboard) -> *Zwp_Input_Timestamps_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_KEYBOARD_TIMESTAMPS, ...);
+    args := Zwp_Input_Timestamps_Manager_V1_Get_Keyboard_Timestamps_Args.{ keyboard = keyboard.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_KEYBOARD_TIMESTAMPS, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -49,7 +70,9 @@ zwp_input_timestamps_manager_v1_get_keyboard_timestamps :: (self: *Zwp_Input_Tim
 // timestamps object becomes inert and the client should destroy it
 // by calling zwp_input_timestamps_v1.destroy.
 zwp_input_timestamps_manager_v1_get_pointer_timestamps :: (self: *Zwp_Input_Timestamps_Manager_V1, pointer: *Wl_Pointer) -> *Zwp_Input_Timestamps_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_POINTER_TIMESTAMPS, ...);
+    args := Zwp_Input_Timestamps_Manager_V1_Get_Pointer_Timestamps_Args.{ pointer = pointer.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_POINTER_TIMESTAMPS, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -63,7 +86,9 @@ zwp_input_timestamps_manager_v1_get_pointer_timestamps :: (self: *Zwp_Input_Time
 // timestamps object becomes inert and the client should destroy it
 // by calling zwp_input_timestamps_v1.destroy.
 zwp_input_timestamps_manager_v1_get_touch_timestamps :: (self: *Zwp_Input_Timestamps_Manager_V1, touch: *Wl_Touch) -> *Zwp_Input_Timestamps_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_TOUCH_TIMESTAMPS, ...);
+    args := Zwp_Input_Timestamps_Manager_V1_Get_Touch_Timestamps_Args.{ touch = touch.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_TOUCH_TIMESTAMPS, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

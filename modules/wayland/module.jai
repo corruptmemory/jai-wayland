@@ -3,6 +3,7 @@
 #load "types.jai";
 #load "wire.jai";
 #load "connection.jai";
+#load "marshal.jai";
 
 #load "wayland/wayland.jai";
 

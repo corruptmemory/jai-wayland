@@ -25,6 +25,7 @@
 Wp_Security_Context_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -38,11 +39,22 @@ Wp_Security_Context_Manager_V1_Error :: enum u32 {
     NESTED :: 2;
 }
 
+Wp_Security_Context_Manager_V1_Destroy_Args :: struct {
+}
+
+Wp_Security_Context_Manager_V1_Create_Listener_Args :: struct {
+    listen_fd: Fd;
+    close_fd: Fd;
+}
+
+
 // destroy the manager object (destructor)
 // Destroy the manager. This doesn't destroy objects created with the
 // manager.
 wp_security_context_manager_v1_destroy :: (self: *Wp_Security_Context_Manager_V1) {
-    // TODO(Phase 3): marshal(self, WP_SECURITY_CONTEXT_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Security_Context_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_SECURITY_CONTEXT_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a new security context
@@ -61,8 +73,10 @@ wp_security_context_manager_v1_destroy :: (self: *Wp_Security_Context_Manager_V1
 //
 // After sending this request, closing listen_fd and close_fd remains the
 // only valid operation on them.
-wp_security_context_manager_v1_create_listener :: (self: *Wp_Security_Context_Manager_V1, listen_fd: s32, close_fd: s32) -> *Wp_Security_Context_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_SECURITY_CONTEXT_MANAGER_V1_CREATE_LISTENER, ...);
+wp_security_context_manager_v1_create_listener :: (self: *Wp_Security_Context_Manager_V1, listen_fd: Fd, close_fd: Fd) -> *Wp_Security_Context_V1 {
+    args := Wp_Security_Context_Manager_V1_Create_Listener_Args.{ listen_fd = listen_fd, close_fd = close_fd };
+    new_id := marshal_constructor(self.conn, self.id, WP_SECURITY_CONTEXT_MANAGER_V1_CREATE_LISTENER, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

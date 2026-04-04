@@ -9,6 +9,7 @@
 Zxdg_Exporter_V2 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -23,11 +24,21 @@ Zxdg_Exporter_V2_Error :: enum u32 {
     INVALID_SURFACE :: 0;
 }
 
+Zxdg_Exporter_V2_Destroy_Args :: struct {
+}
+
+Zxdg_Exporter_V2_Export_Toplevel_Args :: struct {
+    surface: u32;
+}
+
+
 // destroy the xdg_exporter object (destructor)
 // Notify the compositor that the xdg_exporter object will no longer be
 // used.
 zxdg_exporter_v2_destroy :: (self: *Zxdg_Exporter_V2) {
-    // TODO(Phase 3): marshal(self, ZXDG_EXPORTER_V2_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Exporter_V2_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_EXPORTER_V2_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // export a toplevel surface
@@ -41,7 +52,9 @@ zxdg_exporter_v2_destroy :: (self: *Zxdg_Exporter_V2) {
 // equivalent surfaces may be exported, otherwise an invalid_surface
 // protocol error is sent.
 zxdg_exporter_v2_export_toplevel :: (self: *Zxdg_Exporter_V2, surface: *Wl_Surface) -> *Zxdg_Exported_V2 {
-    // TODO(Phase 3): marshal_constructor(self, ZXDG_EXPORTER_V2_EXPORT_TOPLEVEL, ...);
+    args := Zxdg_Exporter_V2_Export_Toplevel_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, ZXDG_EXPORTER_V2_EXPORT_TOPLEVEL, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

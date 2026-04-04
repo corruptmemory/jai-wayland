@@ -23,6 +23,7 @@
 Ext_Workspace_Handle_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -108,6 +109,23 @@ Ext_Workspace_Handle_V1_Event :: union kind: Ext_Workspace_Handle_V1_Event_Kind 
     .REMOVED ,, removed: Ext_Workspace_Handle_V1_Removed_Args;
 }
 
+Ext_Workspace_Handle_V1_Destroy_Args :: struct {
+}
+
+Ext_Workspace_Handle_V1_Activate_Args :: struct {
+}
+
+Ext_Workspace_Handle_V1_Deactivate_Args :: struct {
+}
+
+Ext_Workspace_Handle_V1_Assign_Args :: struct {
+    workspace_group: u32;
+}
+
+Ext_Workspace_Handle_V1_Remove_Args :: struct {
+}
+
+
 // destroy the ext_workspace_handle_v1 object (destructor)
 // Destroys the ext_workspace_handle_v1 object.
 //
@@ -115,7 +133,9 @@ Ext_Workspace_Handle_V1_Event :: union kind: Ext_Workspace_Handle_V1_Event_Kind 
 // use the workspace object any more or after the remove event to finalize
 // the destruction of the object.
 ext_workspace_handle_v1_destroy :: (self: *Ext_Workspace_Handle_V1) {
-    // TODO(Phase 3): marshal(self, EXT_WORKSPACE_HANDLE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Workspace_Handle_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // activate the workspace
@@ -126,7 +146,8 @@ ext_workspace_handle_v1_destroy :: (self: *Ext_Workspace_Handle_V1) {
 // workspace may or may not deactivate all other workspaces in the same
 // group.
 ext_workspace_handle_v1_activate :: (self: *Ext_Workspace_Handle_V1) {
-    // TODO(Phase 3): marshal(self, EXT_WORKSPACE_HANDLE_V1_ACTIVATE, ...);
+    args := Ext_Workspace_Handle_V1_Activate_Args.{};
+    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_ACTIVATE, *args);
 }
 
 // deactivate the workspace
@@ -134,7 +155,8 @@ ext_workspace_handle_v1_activate :: (self: *Ext_Workspace_Handle_V1) {
 //
 // There is no guarantee the workspace will be actually deactivated.
 ext_workspace_handle_v1_deactivate :: (self: *Ext_Workspace_Handle_V1) {
-    // TODO(Phase 3): marshal(self, EXT_WORKSPACE_HANDLE_V1_DEACTIVATE, ...);
+    args := Ext_Workspace_Handle_V1_Deactivate_Args.{};
+    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_DEACTIVATE, *args);
 }
 
 // assign workspace to group
@@ -142,7 +164,8 @@ ext_workspace_handle_v1_deactivate :: (self: *Ext_Workspace_Handle_V1) {
 //
 // There is no guarantee the workspace will be assigned.
 ext_workspace_handle_v1_assign :: (self: *Ext_Workspace_Handle_V1, workspace_group: *Ext_Workspace_Group_Handle_V1) {
-    // TODO(Phase 3): marshal(self, EXT_WORKSPACE_HANDLE_V1_ASSIGN, ...);
+    args := Ext_Workspace_Handle_V1_Assign_Args.{ workspace_group = workspace_group.id };
+    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_ASSIGN, *args);
 }
 
 // remove the workspace
@@ -150,7 +173,8 @@ ext_workspace_handle_v1_assign :: (self: *Ext_Workspace_Handle_V1, workspace_gro
 //
 // There is no guarantee the workspace will be actually removed.
 ext_workspace_handle_v1_remove :: (self: *Ext_Workspace_Handle_V1) {
-    // TODO(Phase 3): marshal(self, EXT_WORKSPACE_HANDLE_V1_REMOVE, ...);
+    args := Ext_Workspace_Handle_V1_Remove_Args.{};
+    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_REMOVE, *args);
 }
 
 EXT_WORKSPACE_HANDLE_V1_INTERFACE :: Interface_Descriptor.{

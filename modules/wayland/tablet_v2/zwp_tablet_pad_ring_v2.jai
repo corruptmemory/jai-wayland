@@ -12,6 +12,7 @@
 Zwp_Tablet_Pad_Ring_V2 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -67,6 +68,15 @@ Zwp_Tablet_Pad_Ring_V2_Event :: union kind: Zwp_Tablet_Pad_Ring_V2_Event_Kind {
     .FRAME ,, frame: Zwp_Tablet_Pad_Ring_V2_Frame_Args;
 }
 
+Zwp_Tablet_Pad_Ring_V2_Set_Feedback_Args :: struct {
+    description: string;
+    serial: u32;
+}
+
+Zwp_Tablet_Pad_Ring_V2_Destroy_Args :: struct {
+}
+
+
 // set compositor feedback
 // Request that the compositor use the provided feedback string
 // associated with this ring. This request should be issued immediately
@@ -88,13 +98,16 @@ Zwp_Tablet_Pad_Ring_V2_Event :: union kind: Zwp_Tablet_Pad_Ring_V2_Event_Kind {
 // ring. Requests providing other serials than the most recent one will be
 // ignored.
 zwp_tablet_pad_ring_v2_set_feedback :: (self: *Zwp_Tablet_Pad_Ring_V2, description: string, serial: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_TABLET_PAD_RING_V2_SET_FEEDBACK, ...);
+    args := Zwp_Tablet_Pad_Ring_V2_Set_Feedback_Args.{ description = description, serial = serial };
+    marshal(self.conn, self.id, ZWP_TABLET_PAD_RING_V2_SET_FEEDBACK, *args);
 }
 
 // destroy the ring object (destructor)
 // This destroys the client's resource for this ring object.
 zwp_tablet_pad_ring_v2_destroy :: (self: *Zwp_Tablet_Pad_Ring_V2) {
-    // TODO(Phase 3): marshal(self, ZWP_TABLET_PAD_RING_V2_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Tablet_Pad_Ring_V2_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_TABLET_PAD_RING_V2_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_TABLET_PAD_RING_V2_INTERFACE :: Interface_Descriptor.{

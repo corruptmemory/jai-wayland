@@ -12,6 +12,7 @@
 Wl_Data_Device :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -86,6 +87,22 @@ Wl_Data_Device_Event :: union kind: Wl_Data_Device_Event_Kind {
     .SELECTION ,, selection: Wl_Data_Device_Selection_Args;
 }
 
+Wl_Data_Device_Start_Drag_Args :: struct {
+    source: u32;
+    origin: u32;
+    icon: u32;
+    serial: u32;
+}
+
+Wl_Data_Device_Set_Selection_Args :: struct {
+    source: u32;
+    serial: u32;
+}
+
+Wl_Data_Device_Release_Args :: struct {
+}
+
+
 // start drag-and-drop operation
 // This request asks the compositor to start a drag-and-drop
 // operation on behalf of the client.
@@ -117,7 +134,8 @@ Wl_Data_Device_Event :: union kind: Wl_Data_Device_Event_Kind {
 // start_drag requests. Attempting to reuse a previously-used source
 // may send a used_source error.
 wl_data_device_start_drag :: (self: *Wl_Data_Device, source: *Wl_Data_Source, origin: *Wl_Surface, icon: *Wl_Surface, serial: u32) {
-    // TODO(Phase 3): marshal(self, WL_DATA_DEVICE_START_DRAG, ...);
+    args := Wl_Data_Device_Start_Drag_Args.{ source = source.id, origin = origin.id, icon = icon.id, serial = serial };
+    marshal(self.conn, self.id, WL_DATA_DEVICE_START_DRAG, *args);
 }
 
 // copy data to the selection
@@ -130,13 +148,16 @@ wl_data_device_start_drag :: (self: *Wl_Data_Device, source: *Wl_Data_Source, or
 // start_drag requests. Attempting to reuse a previously-used source
 // may send a used_source error.
 wl_data_device_set_selection :: (self: *Wl_Data_Device, source: *Wl_Data_Source, serial: u32) {
-    // TODO(Phase 3): marshal(self, WL_DATA_DEVICE_SET_SELECTION, ...);
+    args := Wl_Data_Device_Set_Selection_Args.{ source = source.id, serial = serial };
+    marshal(self.conn, self.id, WL_DATA_DEVICE_SET_SELECTION, *args);
 }
 
 // destroy data device (destructor)
 // This request destroys the data device.
 wl_data_device_release :: (self: *Wl_Data_Device) {
-    // TODO(Phase 3): marshal(self, WL_DATA_DEVICE_RELEASE, ...); destroy_proxy(self);
+    args := Wl_Data_Device_Release_Args.{};
+    marshal(self.conn, self.id, WL_DATA_DEVICE_RELEASE, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WL_DATA_DEVICE_INTERFACE :: Interface_Descriptor.{

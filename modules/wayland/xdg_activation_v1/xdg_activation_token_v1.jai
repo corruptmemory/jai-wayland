@@ -15,6 +15,7 @@
 Xdg_Activation_Token_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -45,6 +46,26 @@ Xdg_Activation_Token_V1_Event :: union kind: Xdg_Activation_Token_V1_Event_Kind 
     .DONE ,, done: Xdg_Activation_Token_V1_Done_Args;
 }
 
+Xdg_Activation_Token_V1_Set_Serial_Args :: struct {
+    serial: u32;
+    seat: u32;
+}
+
+Xdg_Activation_Token_V1_Set_App_Id_Args :: struct {
+    app_id: string;
+}
+
+Xdg_Activation_Token_V1_Set_Surface_Args :: struct {
+    surface: u32;
+}
+
+Xdg_Activation_Token_V1_Commit_Args :: struct {
+}
+
+Xdg_Activation_Token_V1_Destroy_Args :: struct {
+}
+
+
 // specifies the seat and serial of the activating event
 // Provides information about the seat and serial event that requested the
 // token.
@@ -59,7 +80,8 @@ Xdg_Activation_Token_V1_Event :: union kind: Xdg_Activation_Token_V1_Event_Kind 
 //
 // Must be sent before commit. This information is optional.
 xdg_activation_token_v1_set_serial :: (self: *Xdg_Activation_Token_V1, serial: u32, seat: *Wl_Seat) {
-    // TODO(Phase 3): marshal(self, XDG_ACTIVATION_TOKEN_V1_SET_SERIAL, ...);
+    args := Xdg_Activation_Token_V1_Set_Serial_Args.{ serial = serial, seat = seat.id };
+    marshal(self.conn, self.id, XDG_ACTIVATION_TOKEN_V1_SET_SERIAL, *args);
 }
 
 // specifies the application being activated
@@ -68,7 +90,8 @@ xdg_activation_token_v1_set_serial :: (self: *Xdg_Activation_Token_V1, serial: u
 //
 // Must be sent before commit. This information is optional.
 xdg_activation_token_v1_set_app_id :: (self: *Xdg_Activation_Token_V1, app_id: string) {
-    // TODO(Phase 3): marshal(self, XDG_ACTIVATION_TOKEN_V1_SET_APP_ID, ...);
+    args := Xdg_Activation_Token_V1_Set_App_Id_Args.{ app_id = app_id };
+    marshal(self.conn, self.id, XDG_ACTIVATION_TOKEN_V1_SET_APP_ID, *args);
 }
 
 // specifies the surface requesting activation
@@ -80,21 +103,25 @@ xdg_activation_token_v1_set_app_id :: (self: *Xdg_Activation_Token_V1, app_id: s
 //
 // Must be sent before commit. This information is optional.
 xdg_activation_token_v1_set_surface :: (self: *Xdg_Activation_Token_V1, surface: *Wl_Surface) {
-    // TODO(Phase 3): marshal(self, XDG_ACTIVATION_TOKEN_V1_SET_SURFACE, ...);
+    args := Xdg_Activation_Token_V1_Set_Surface_Args.{ surface = surface.id };
+    marshal(self.conn, self.id, XDG_ACTIVATION_TOKEN_V1_SET_SURFACE, *args);
 }
 
 // issues the token request
 // Requests an activation token based on the different parameters that
 // have been offered through set_serial, set_surface and set_app_id.
 xdg_activation_token_v1_commit :: (self: *Xdg_Activation_Token_V1) {
-    // TODO(Phase 3): marshal(self, XDG_ACTIVATION_TOKEN_V1_COMMIT, ...);
+    args := Xdg_Activation_Token_V1_Commit_Args.{};
+    marshal(self.conn, self.id, XDG_ACTIVATION_TOKEN_V1_COMMIT, *args);
 }
 
 // destroy the xdg_activation_token_v1 object (destructor)
 // Notify the compositor that the xdg_activation_token_v1 object will no
 // longer be used. The received token stays valid.
 xdg_activation_token_v1_destroy :: (self: *Xdg_Activation_Token_V1) {
-    // TODO(Phase 3): marshal(self, XDG_ACTIVATION_TOKEN_V1_DESTROY, ...); destroy_proxy(self);
+    args := Xdg_Activation_Token_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, XDG_ACTIVATION_TOKEN_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 XDG_ACTIVATION_TOKEN_V1_INTERFACE :: Interface_Descriptor.{

@@ -12,6 +12,7 @@
 Zwp_Primary_Selection_Offer_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -34,6 +35,15 @@ Zwp_Primary_Selection_Offer_V1_Event :: union kind: Zwp_Primary_Selection_Offer_
     .OFFER ,, offer: Zwp_Primary_Selection_Offer_V1_Offer_Args;
 }
 
+Zwp_Primary_Selection_Offer_V1_Receive_Args :: struct {
+    mime_type: string;
+    fd: Fd;
+}
+
+Zwp_Primary_Selection_Offer_V1_Destroy_Args :: struct {
+}
+
+
 // request that the data is transferred
 // To transfer the contents of the primary selection clipboard, the client
 // issues this request and indicates the mime type that it wants to
@@ -44,14 +54,17 @@ Zwp_Primary_Selection_Offer_V1_Event :: union kind: Zwp_Primary_Selection_Offer_
 //
 // The receiving client reads from the read end of the pipe until EOF and
 // closes its end, at which point the transfer is complete.
-zwp_primary_selection_offer_v1_receive :: (self: *Zwp_Primary_Selection_Offer_V1, mime_type: string, fd: s32) {
-    // TODO(Phase 3): marshal(self, ZWP_PRIMARY_SELECTION_OFFER_V1_RECEIVE, ...);
+zwp_primary_selection_offer_v1_receive :: (self: *Zwp_Primary_Selection_Offer_V1, mime_type: string, fd: Fd) {
+    args := Zwp_Primary_Selection_Offer_V1_Receive_Args.{ mime_type = mime_type, fd = fd };
+    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_OFFER_V1_RECEIVE, *args);
 }
 
 // destroy the primary selection offer (destructor)
 // Destroy the primary selection offer.
 zwp_primary_selection_offer_v1_destroy :: (self: *Zwp_Primary_Selection_Offer_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_PRIMARY_SELECTION_OFFER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Primary_Selection_Offer_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_OFFER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_PRIMARY_SELECTION_OFFER_V1_INTERFACE :: Interface_Descriptor.{

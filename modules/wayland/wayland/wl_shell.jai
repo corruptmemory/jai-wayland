@@ -16,6 +16,7 @@
 Wl_Shell :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -26,6 +27,11 @@ Wl_Shell_Error :: enum u32 {
     ROLE :: 0;
 }
 
+Wl_Shell_Get_Shell_Surface_Args :: struct {
+    surface: u32;
+}
+
+
 // create a shell surface from a surface
 // Create a shell surface for an existing surface. This gives
 // the wl_surface the role of a shell surface. If the wl_surface
@@ -33,7 +39,9 @@ Wl_Shell_Error :: enum u32 {
 //
 // Only one shell surface can be associated with a given surface.
 wl_shell_get_shell_surface :: (self: *Wl_Shell, surface: *Wl_Surface) -> *Wl_Shell_Surface {
-    // TODO(Phase 3): marshal_constructor(self, WL_SHELL_GET_SHELL_SURFACE, ...);
+    args := Wl_Shell_Get_Shell_Surface_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, WL_SHELL_GET_SHELL_SURFACE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

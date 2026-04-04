@@ -15,6 +15,7 @@
 Wp_Drm_Lease_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -26,7 +27,7 @@ WP_DRM_LEASE_V1_FINISHED :: 1;
 
 // shares the DRM file descriptor
 Wp_Drm_Lease_V1_Lease_Fd_Args :: struct {
-    leased_fd: s32;
+    leased_fd: Fd;
 }
 
 // sent when the lease has been revoked
@@ -43,6 +44,10 @@ Wp_Drm_Lease_V1_Event :: union kind: Wp_Drm_Lease_V1_Event_Kind {
     .FINISHED ,, finished: Wp_Drm_Lease_V1_Finished_Args;
 }
 
+Wp_Drm_Lease_V1_Destroy_Args :: struct {
+}
+
+
 // destroys the lease object (destructor)
 // The client should send this to indicate that it no longer wishes to use
 // this lease. The compositor should use drmModeRevokeLease on the
@@ -52,7 +57,9 @@ Wp_Drm_Lease_V1_Event :: union kind: Wp_Drm_Lease_V1_Event_Kind {
 // leasing again by sending the connector event through the
 // wp_drm_lease_device_v1 interface.
 wp_drm_lease_v1_destroy :: (self: *Wp_Drm_Lease_V1) {
-    // TODO(Phase 3): marshal(self, WP_DRM_LEASE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Drm_Lease_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_DRM_LEASE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WP_DRM_LEASE_V1_INTERFACE :: Interface_Descriptor.{

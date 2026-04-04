@@ -16,6 +16,7 @@
 Xdg_Dialog_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -23,12 +24,24 @@ XDG_DIALOG_V1_DESTROY :: 0;
 XDG_DIALOG_V1_SET_MODAL :: 1;
 XDG_DIALOG_V1_UNSET_MODAL :: 2;
 
+Xdg_Dialog_V1_Destroy_Args :: struct {
+}
+
+Xdg_Dialog_V1_Set_Modal_Args :: struct {
+}
+
+Xdg_Dialog_V1_Unset_Modal_Args :: struct {
+}
+
+
 // destroy the dialog object (destructor)
 // Destroys the xdg_dialog_v1 object. If this object is destroyed
 // before the related xdg_toplevel, the compositor should unapply its
 // effects.
 xdg_dialog_v1_destroy :: (self: *Xdg_Dialog_V1) {
-    // TODO(Phase 3): marshal(self, XDG_DIALOG_V1_DESTROY, ...); destroy_proxy(self);
+    args := Xdg_Dialog_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, XDG_DIALOG_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // mark dialog as modal
@@ -44,14 +57,16 @@ xdg_dialog_v1_destroy :: (self: *Xdg_Dialog_V1) {
 // toplevel, from delivering all events unfiltered to using them for
 // internal consumption.
 xdg_dialog_v1_set_modal :: (self: *Xdg_Dialog_V1) {
-    // TODO(Phase 3): marshal(self, XDG_DIALOG_V1_SET_MODAL, ...);
+    args := Xdg_Dialog_V1_Set_Modal_Args.{};
+    marshal(self.conn, self.id, XDG_DIALOG_V1_SET_MODAL, *args);
 }
 
 // mark dialog as not modal
 // Drops the hint that this dialog has "modal" behavior. See
 // xdg_dialog_v1.set_modal for more details.
 xdg_dialog_v1_unset_modal :: (self: *Xdg_Dialog_V1) {
-    // TODO(Phase 3): marshal(self, XDG_DIALOG_V1_UNSET_MODAL, ...);
+    args := Xdg_Dialog_V1_Unset_Modal_Args.{};
+    marshal(self.conn, self.id, XDG_DIALOG_V1_UNSET_MODAL, *args);
 }
 
 XDG_DIALOG_V1_INTERFACE :: Interface_Descriptor.{

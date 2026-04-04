@@ -11,6 +11,7 @@
 Wl_Region :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -18,22 +19,44 @@ WL_REGION_DESTROY :: 0;
 WL_REGION_ADD :: 1;
 WL_REGION_SUBTRACT :: 2;
 
+Wl_Region_Destroy_Args :: struct {
+}
+
+Wl_Region_Add_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+Wl_Region_Subtract_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+
 // destroy region (destructor)
 // Destroy the region.  This will invalidate the object ID.
 wl_region_destroy :: (self: *Wl_Region) {
-    // TODO(Phase 3): marshal(self, WL_REGION_DESTROY, ...); destroy_proxy(self);
+    args := Wl_Region_Destroy_Args.{};
+    marshal(self.conn, self.id, WL_REGION_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // add rectangle to region
 // Add the specified rectangle to the region.
 wl_region_add :: (self: *Wl_Region, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, WL_REGION_ADD, ...);
+    args := Wl_Region_Add_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, WL_REGION_ADD, *args);
 }
 
 // subtract rectangle from region
 // Subtract the specified rectangle from the region.
 wl_region_subtract :: (self: *Wl_Region, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, WL_REGION_SUBTRACT, ...);
+    args := Wl_Region_Subtract_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, WL_REGION_SUBTRACT, *args);
 }
 
 WL_REGION_INTERFACE :: Interface_Descriptor.{

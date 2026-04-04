@@ -16,6 +16,7 @@
 Wl_Shm :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -299,14 +300,25 @@ Wl_Shm_Event :: union kind: Wl_Shm_Event_Kind {
     .FORMAT ,, format: Wl_Shm_Format_Args;
 }
 
+Wl_Shm_Create_Pool_Args :: struct {
+    fd: Fd;
+    size: s32;
+}
+
+Wl_Shm_Release_Args :: struct {
+}
+
+
 // create a shm pool
 // Create a new wl_shm_pool object.
 //
 // The pool can be used to create shared memory based buffer
 // objects.  The server will mmap size bytes of the passed file
 // descriptor, to use as backing memory for the pool.
-wl_shm_create_pool :: (self: *Wl_Shm, fd: s32, size: s32) -> *Wl_Shm_Pool {
-    // TODO(Phase 3): marshal_constructor(self, WL_SHM_CREATE_POOL, ...);
+wl_shm_create_pool :: (self: *Wl_Shm, fd: Fd, size: s32) -> *Wl_Shm_Pool {
+    args := Wl_Shm_Create_Pool_Args.{ fd = fd, size = size };
+    new_id := marshal_constructor(self.conn, self.id, WL_SHM_CREATE_POOL, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -316,7 +328,9 @@ wl_shm_create_pool :: (self: *Wl_Shm, fd: s32, size: s32) -> *Wl_Shm_Pool {
 //
 // Objects created via this interface remain unaffected.
 wl_shm_release :: (self: *Wl_Shm) {
-    // TODO(Phase 3): marshal(self, WL_SHM_RELEASE, ...); destroy_proxy(self);
+    args := Wl_Shm_Release_Args.{};
+    marshal(self.conn, self.id, WL_SHM_RELEASE, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WL_SHM_INTERFACE :: Interface_Descriptor.{

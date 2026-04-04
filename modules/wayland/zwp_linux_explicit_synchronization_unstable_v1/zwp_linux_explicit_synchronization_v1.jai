@@ -25,6 +25,7 @@
 Zwp_Linux_Explicit_Synchronization_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -36,12 +37,22 @@ Zwp_Linux_Explicit_Synchronization_V1_Error :: enum u32 {
     SYNCHRONIZATION_EXISTS :: 0;
 }
 
+Zwp_Linux_Explicit_Synchronization_V1_Destroy_Args :: struct {
+}
+
+Zwp_Linux_Explicit_Synchronization_V1_Get_Synchronization_Args :: struct {
+    surface: u32;
+}
+
+
 // destroy explicit synchronization factory object (destructor)
 // Destroy this explicit synchronization factory object. Other objects,
 // including zwp_linux_surface_synchronization_v1 objects created by this
 // factory, shall not be affected by this request.
 zwp_linux_explicit_synchronization_v1_destroy :: (self: *Zwp_Linux_Explicit_Synchronization_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Linux_Explicit_Synchronization_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // extend surface interface for explicit synchronization
@@ -57,7 +68,9 @@ zwp_linux_explicit_synchronization_v1_destroy :: (self: *Zwp_Linux_Explicit_Sync
 // wl_surface, it should not directly use this extension on that surface,
 // to avoid raising a synchronization_exists protocol error.
 zwp_linux_explicit_synchronization_v1_get_synchronization :: (self: *Zwp_Linux_Explicit_Synchronization_V1, surface: *Wl_Surface) -> *Zwp_Linux_Surface_Synchronization_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_GET_SYNCHRONIZATION, ...);
+    args := Zwp_Linux_Explicit_Synchronization_V1_Get_Synchronization_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_GET_SYNCHRONIZATION, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

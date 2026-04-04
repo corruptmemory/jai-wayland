@@ -29,6 +29,7 @@
 Ext_Idle_Notification_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -56,10 +57,16 @@ Ext_Idle_Notification_V1_Event :: union kind: Ext_Idle_Notification_V1_Event_Kin
     .RESUMED ,, resumed: Ext_Idle_Notification_V1_Resumed_Args;
 }
 
+Ext_Idle_Notification_V1_Destroy_Args :: struct {
+}
+
+
 // destroy the notification object (destructor)
 // Destroy the notification object.
 ext_idle_notification_v1_destroy :: (self: *Ext_Idle_Notification_V1) {
-    // TODO(Phase 3): marshal(self, EXT_IDLE_NOTIFICATION_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Idle_Notification_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_IDLE_NOTIFICATION_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_IDLE_NOTIFICATION_V1_INTERFACE :: Interface_Descriptor.{

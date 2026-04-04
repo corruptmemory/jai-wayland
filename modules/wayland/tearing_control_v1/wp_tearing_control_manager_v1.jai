@@ -22,6 +22,7 @@
 Wp_Tearing_Control_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -33,12 +34,22 @@ Wp_Tearing_Control_Manager_V1_Error :: enum u32 {
     TEARING_CONTROL_EXISTS :: 0;
 }
 
+Wp_Tearing_Control_Manager_V1_Destroy_Args :: struct {
+}
+
+Wp_Tearing_Control_Manager_V1_Get_Tearing_Control_Args :: struct {
+    surface: u32;
+}
+
+
 // destroy tearing control factory object (destructor)
 // Destroy this tearing control factory object. Other objects, including
 // wp_tearing_control_v1 objects created by this factory, are not affected
 // by this request.
 wp_tearing_control_manager_v1_destroy :: (self: *Wp_Tearing_Control_Manager_V1) {
-    // TODO(Phase 3): marshal(self, WP_TEARING_CONTROL_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Tearing_Control_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_TEARING_CONTROL_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // extend surface interface for tearing control
@@ -48,7 +59,9 @@ wp_tearing_control_manager_v1_destroy :: (self: *Wp_Tearing_Control_Manager_V1) 
 // If the given wl_surface already has a wp_tearing_control_v1 object
 // associated, the tearing_control_exists protocol error is raised.
 wp_tearing_control_manager_v1_get_tearing_control :: (self: *Wp_Tearing_Control_Manager_V1, surface: *Wl_Surface) -> *Wp_Tearing_Control_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_TEARING_CONTROL_MANAGER_V1_GET_TEARING_CONTROL, ...);
+    args := Wp_Tearing_Control_Manager_V1_Get_Tearing_Control_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_TEARING_CONTROL_MANAGER_V1_GET_TEARING_CONTROL, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

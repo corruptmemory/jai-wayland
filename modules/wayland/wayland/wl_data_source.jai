@@ -11,6 +11,7 @@
 Wl_Data_Source :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -41,7 +42,7 @@ Wl_Data_Source_Target_Args :: struct {
 // send the data
 Wl_Data_Source_Send_Args :: struct {
     mime_type: string;
-    fd: s32;
+    fd: Fd;
 }
 
 // selection was cancelled
@@ -79,18 +80,33 @@ Wl_Data_Source_Event :: union kind: Wl_Data_Source_Event_Kind {
     .ACTION ,, action: Wl_Data_Source_Action_Args;
 }
 
+Wl_Data_Source_Offer_Args :: struct {
+    mime_type: string;
+}
+
+Wl_Data_Source_Destroy_Args :: struct {
+}
+
+Wl_Data_Source_Set_Actions_Args :: struct {
+    dnd_actions: u32;
+}
+
+
 // add an offered mime type
 // This request adds a mime type to the set of mime types
 // advertised to targets.  Can be called several times to offer
 // multiple types.
 wl_data_source_offer :: (self: *Wl_Data_Source, mime_type: string) {
-    // TODO(Phase 3): marshal(self, WL_DATA_SOURCE_OFFER, ...);
+    args := Wl_Data_Source_Offer_Args.{ mime_type = mime_type };
+    marshal(self.conn, self.id, WL_DATA_SOURCE_OFFER, *args);
 }
 
 // destroy the data source (destructor)
 // Destroy the data source.
 wl_data_source_destroy :: (self: *Wl_Data_Source) {
-    // TODO(Phase 3): marshal(self, WL_DATA_SOURCE_DESTROY, ...); destroy_proxy(self);
+    args := Wl_Data_Source_Destroy_Args.{};
+    marshal(self.conn, self.id, WL_DATA_SOURCE_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set the available drag-and-drop actions
@@ -108,7 +124,8 @@ wl_data_source_destroy :: (self: *Wl_Data_Source) {
 // wl_data_device.start_drag. Attempting to use the source other than
 // for drag-and-drop will raise a protocol error.
 wl_data_source_set_actions :: (self: *Wl_Data_Source, dnd_actions: u32) {
-    // TODO(Phase 3): marshal(self, WL_DATA_SOURCE_SET_ACTIONS, ...);
+    args := Wl_Data_Source_Set_Actions_Args.{ dnd_actions = dnd_actions };
+    marshal(self.conn, self.id, WL_DATA_SOURCE_SET_ACTIONS, *args);
 }
 
 WL_DATA_SOURCE_INTERFACE :: Interface_Descriptor.{

@@ -42,6 +42,29 @@ test_xdg_types :: () {
     print("  PASS: test_xdg_types\n");
 }
 
+test_fd_type :: () {
+    fd: Fd;
+    fd = cast(Fd) 42;
+    raw := cast(s32) fd;
+    assert(raw == 42);
+    print("  PASS: test_fd_type\n");
+}
+
+test_conn_field :: () {
+    surface: Wl_Surface;
+    assert(surface.conn == null);
+    print("  PASS: test_conn_field\n");
+}
+
+test_request_arg_structs :: () {
+    // Verify request arg structs exist and compile
+    args: Wl_Surface_Attach_Args;
+    assert(args.buffer == 0);
+    assert(args.x == 0);
+    assert(args.y == 0);
+    print("  PASS: test_request_arg_structs\n");
+}
+
 main :: () {
     print("Running compilation tests...\n\n");
     print("generated module:\n");
@@ -51,5 +74,8 @@ main :: () {
     test_events_exist();
     test_descriptors_exist();
     test_xdg_types();
+    test_fd_type();
+    test_conn_field();
+    test_request_arg_structs();
     print("\nAll tests passed.\n");
 }

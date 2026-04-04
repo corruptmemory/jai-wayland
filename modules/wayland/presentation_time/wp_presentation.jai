@@ -13,6 +13,7 @@
 Wp_Presentation :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -45,12 +46,22 @@ Wp_Presentation_Event :: union kind: Wp_Presentation_Event_Kind {
     .CLOCK_ID ,, clock_id: Wp_Presentation_Clock_Id_Args;
 }
 
+Wp_Presentation_Destroy_Args :: struct {
+}
+
+Wp_Presentation_Feedback_Args :: struct {
+    surface: u32;
+}
+
+
 // unbind from the presentation interface (destructor)
 // Informs the server that the client will no longer be using
 // this protocol object. Existing objects created by this object
 // are not affected.
 wp_presentation_destroy :: (self: *Wp_Presentation) {
-    // TODO(Phase 3): marshal(self, WP_PRESENTATION_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Presentation_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_PRESENTATION_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // request presentation feedback information
@@ -63,7 +74,9 @@ wp_presentation_destroy :: (self: *Wp_Presentation) {
 // For details on what information is returned, see the
 // presentation_feedback interface.
 wp_presentation_feedback :: (self: *Wp_Presentation, surface: *Wl_Surface) -> *Wp_Presentation_Feedback {
-    // TODO(Phase 3): marshal_constructor(self, WP_PRESENTATION_FEEDBACK, ...);
+    args := Wp_Presentation_Feedback_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_PRESENTATION_FEEDBACK, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

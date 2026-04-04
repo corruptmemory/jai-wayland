@@ -8,6 +8,7 @@
 Zwp_Keyboard_Shortcuts_Inhibit_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -19,10 +20,21 @@ Zwp_Keyboard_Shortcuts_Inhibit_Manager_V1_Error :: enum u32 {
     ALREADY_INHIBITED :: 0;
 }
 
+Zwp_Keyboard_Shortcuts_Inhibit_Manager_V1_Destroy_Args :: struct {
+}
+
+Zwp_Keyboard_Shortcuts_Inhibit_Manager_V1_Inhibit_Shortcuts_Args :: struct {
+    surface: u32;
+    seat: u32;
+}
+
+
 // destroy the keyboard shortcuts inhibitor object (destructor)
 // Destroy the keyboard shortcuts inhibitor manager.
 zwp_keyboard_shortcuts_inhibit_manager_v1_destroy :: (self: *Zwp_Keyboard_Shortcuts_Inhibit_Manager_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_KEYBOARD_SHORTCUTS_INHIBIT_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Keyboard_Shortcuts_Inhibit_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_KEYBOARD_SHORTCUTS_INHIBIT_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a new keyboard shortcuts inhibitor object
@@ -32,7 +44,9 @@ zwp_keyboard_shortcuts_inhibit_manager_v1_destroy :: (self: *Zwp_Keyboard_Shortc
 // If shortcuts are already inhibited for the specified seat and surface,
 // a protocol error "already_inhibited" is raised by the compositor.
 zwp_keyboard_shortcuts_inhibit_manager_v1_inhibit_shortcuts :: (self: *Zwp_Keyboard_Shortcuts_Inhibit_Manager_V1, surface: *Wl_Surface, seat: *Wl_Seat) -> *Zwp_Keyboard_Shortcuts_Inhibitor_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_KEYBOARD_SHORTCUTS_INHIBIT_MANAGER_V1_INHIBIT_SHORTCUTS, ...);
+    args := Zwp_Keyboard_Shortcuts_Inhibit_Manager_V1_Inhibit_Shortcuts_Args.{ surface = surface.id, seat = seat.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_KEYBOARD_SHORTCUTS_INHIBIT_MANAGER_V1_INHIBIT_SHORTCUTS, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

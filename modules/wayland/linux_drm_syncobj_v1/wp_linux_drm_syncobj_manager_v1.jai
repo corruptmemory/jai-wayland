@@ -11,6 +11,7 @@
 Wp_Linux_Drm_Syncobj_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -25,11 +26,25 @@ Wp_Linux_Drm_Syncobj_Manager_V1_Error :: enum u32 {
     INVALID_TIMELINE :: 1;
 }
 
+Wp_Linux_Drm_Syncobj_Manager_V1_Destroy_Args :: struct {
+}
+
+Wp_Linux_Drm_Syncobj_Manager_V1_Get_Surface_Args :: struct {
+    surface: u32;
+}
+
+Wp_Linux_Drm_Syncobj_Manager_V1_Import_Timeline_Args :: struct {
+    fd: Fd;
+}
+
+
 // destroy explicit synchronization factory object (destructor)
 // Destroy this explicit synchronization factory object. Other objects
 // shall not be affected by this request.
 wp_linux_drm_syncobj_manager_v1_destroy :: (self: *Wp_Linux_Drm_Syncobj_Manager_V1) {
-    // TODO(Phase 3): marshal(self, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Linux_Drm_Syncobj_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // extend surface interface for explicit synchronization
@@ -45,7 +60,9 @@ wp_linux_drm_syncobj_manager_v1_destroy :: (self: *Wp_Linux_Drm_Syncobj_Manager_
 // wl_surface, it should not directly use this extension on that surface,
 // to avoid raising a surface_exists protocol error.
 wp_linux_drm_syncobj_manager_v1_get_surface :: (self: *Wp_Linux_Drm_Syncobj_Manager_V1, surface: *Wl_Surface) -> *Wp_Linux_Drm_Syncobj_Surface_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_GET_SURFACE, ...);
+    args := Wp_Linux_Drm_Syncobj_Manager_V1_Get_Surface_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_GET_SURFACE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -53,8 +70,10 @@ wp_linux_drm_syncobj_manager_v1_get_surface :: (self: *Wp_Linux_Drm_Syncobj_Mana
 // Import a DRM synchronization object timeline.
 //
 // If the FD cannot be imported, the invalid_timeline error is raised.
-wp_linux_drm_syncobj_manager_v1_import_timeline :: (self: *Wp_Linux_Drm_Syncobj_Manager_V1, fd: s32) -> *Wp_Linux_Drm_Syncobj_Timeline_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_IMPORT_TIMELINE, ...);
+wp_linux_drm_syncobj_manager_v1_import_timeline :: (self: *Wp_Linux_Drm_Syncobj_Manager_V1, fd: Fd) -> *Wp_Linux_Drm_Syncobj_Timeline_V1 {
+    args := Wp_Linux_Drm_Syncobj_Manager_V1_Import_Timeline_Args.{ fd = fd };
+    new_id := marshal_constructor(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_IMPORT_TIMELINE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

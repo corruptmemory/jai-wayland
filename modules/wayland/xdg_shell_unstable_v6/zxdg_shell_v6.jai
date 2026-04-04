@@ -11,6 +11,7 @@
 Zxdg_Shell_V6 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -50,6 +51,21 @@ Zxdg_Shell_V6_Event :: union kind: Zxdg_Shell_V6_Event_Kind {
     .PING ,, ping: Zxdg_Shell_V6_Ping_Args;
 }
 
+Zxdg_Shell_V6_Destroy_Args :: struct {
+}
+
+Zxdg_Shell_V6_Create_Positioner_Args :: struct {
+}
+
+Zxdg_Shell_V6_Get_Xdg_Surface_Args :: struct {
+    surface: u32;
+}
+
+Zxdg_Shell_V6_Pong_Args :: struct {
+    serial: u32;
+}
+
+
 // destroy xdg_shell (destructor)
 // Destroy this xdg_shell object.
 //
@@ -57,7 +73,9 @@ Zxdg_Shell_V6_Event :: union kind: Zxdg_Shell_V6_Event_Kind {
 // still alive created by this xdg_shell object instance is illegal
 // and will result in a protocol error.
 zxdg_shell_v6_destroy :: (self: *Zxdg_Shell_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_SHELL_V6_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Shell_V6_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_SHELL_V6_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a positioner object
@@ -65,7 +83,9 @@ zxdg_shell_v6_destroy :: (self: *Zxdg_Shell_V6) {
 // surfaces relative to some parent surface. See the interface description
 // and xdg_surface.get_popup for details.
 zxdg_shell_v6_create_positioner :: (self: *Zxdg_Shell_V6) -> *Zxdg_Positioner_V6 {
-    // TODO(Phase 3): marshal_constructor(self, ZXDG_SHELL_V6_CREATE_POSITIONER, ...);
+    args := Zxdg_Shell_V6_Create_Positioner_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, ZXDG_SHELL_V6_CREATE_POSITIONER, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -82,7 +102,9 @@ zxdg_shell_v6_create_positioner :: (self: *Zxdg_Shell_V6) -> *Zxdg_Positioner_V6
 // See the documentation of xdg_surface for more details about what an
 // xdg_surface is and how it is used.
 zxdg_shell_v6_get_xdg_surface :: (self: *Zxdg_Shell_V6, surface: *Wl_Surface) -> *Zxdg_Surface_V6 {
-    // TODO(Phase 3): marshal_constructor(self, ZXDG_SHELL_V6_GET_XDG_SURFACE, ...);
+    args := Zxdg_Shell_V6_Get_Xdg_Surface_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, ZXDG_SHELL_V6_GET_XDG_SURFACE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -90,7 +112,8 @@ zxdg_shell_v6_get_xdg_surface :: (self: *Zxdg_Shell_V6, surface: *Wl_Surface) ->
 // A client must respond to a ping event with a pong request or
 // the client may be deemed unresponsive. See xdg_shell.ping.
 zxdg_shell_v6_pong :: (self: *Zxdg_Shell_V6, serial: u32) {
-    // TODO(Phase 3): marshal(self, ZXDG_SHELL_V6_PONG, ...);
+    args := Zxdg_Shell_V6_Pong_Args.{ serial = serial };
+    marshal(self.conn, self.id, ZXDG_SHELL_V6_PONG, *args);
 }
 
 ZXDG_SHELL_V6_INTERFACE :: Interface_Descriptor.{

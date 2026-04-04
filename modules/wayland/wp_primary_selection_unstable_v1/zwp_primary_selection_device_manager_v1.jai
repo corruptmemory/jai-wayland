@@ -11,6 +11,7 @@
 Zwp_Primary_Selection_Device_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -18,24 +19,41 @@ ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_CREATE_SOURCE :: 0;
 ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_GET_DEVICE :: 1;
 ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_DESTROY :: 2;
 
+Zwp_Primary_Selection_Device_Manager_V1_Create_Source_Args :: struct {
+}
+
+Zwp_Primary_Selection_Device_Manager_V1_Get_Device_Args :: struct {
+    seat: u32;
+}
+
+Zwp_Primary_Selection_Device_Manager_V1_Destroy_Args :: struct {
+}
+
+
 // create a new primary selection source
 // Create a new primary selection source.
 zwp_primary_selection_device_manager_v1_create_source :: (self: *Zwp_Primary_Selection_Device_Manager_V1) -> *Zwp_Primary_Selection_Source_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_CREATE_SOURCE, ...);
+    args := Zwp_Primary_Selection_Device_Manager_V1_Create_Source_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_CREATE_SOURCE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
 // create a new primary selection device
 // Create a new data device for a given seat.
 zwp_primary_selection_device_manager_v1_get_device :: (self: *Zwp_Primary_Selection_Device_Manager_V1, seat: *Wl_Seat) -> *Zwp_Primary_Selection_Device_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_GET_DEVICE, ...);
+    args := Zwp_Primary_Selection_Device_Manager_V1_Get_Device_Args.{ seat = seat.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_GET_DEVICE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
 // destroy the primary selection device manager (destructor)
 // Destroy the primary selection device manager.
 zwp_primary_selection_device_manager_v1_destroy :: (self: *Zwp_Primary_Selection_Device_Manager_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Primary_Selection_Device_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

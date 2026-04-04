@@ -40,6 +40,7 @@
 Zwp_Keyboard_Shortcuts_Inhibitor_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -67,10 +68,16 @@ Zwp_Keyboard_Shortcuts_Inhibitor_V1_Event :: union kind: Zwp_Keyboard_Shortcuts_
     .INACTIVE ,, inactive: Zwp_Keyboard_Shortcuts_Inhibitor_V1_Inactive_Args;
 }
 
+Zwp_Keyboard_Shortcuts_Inhibitor_V1_Destroy_Args :: struct {
+}
+
+
 // destroy the keyboard shortcuts inhibitor object (destructor)
 // Remove the keyboard shortcuts inhibitor from the associated wl_surface.
 zwp_keyboard_shortcuts_inhibitor_v1_destroy :: (self: *Zwp_Keyboard_Shortcuts_Inhibitor_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_KEYBOARD_SHORTCUTS_INHIBITOR_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Keyboard_Shortcuts_Inhibitor_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_KEYBOARD_SHORTCUTS_INHIBITOR_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_KEYBOARD_SHORTCUTS_INHIBITOR_V1_INTERFACE :: Interface_Descriptor.{

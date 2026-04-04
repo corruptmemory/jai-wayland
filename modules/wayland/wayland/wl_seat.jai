@@ -11,6 +11,7 @@
 Wl_Seat :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -62,6 +63,19 @@ Wl_Seat_Event :: union kind: Wl_Seat_Event_Kind {
     .NAME ,, name: Wl_Seat_Name_Args;
 }
 
+Wl_Seat_Get_Pointer_Args :: struct {
+}
+
+Wl_Seat_Get_Keyboard_Args :: struct {
+}
+
+Wl_Seat_Get_Touch_Args :: struct {
+}
+
+Wl_Seat_Release_Args :: struct {
+}
+
+
 // return pointer object
 // The ID provided will be initialized to the wl_pointer interface
 // for this seat.
@@ -72,7 +86,9 @@ Wl_Seat_Event :: union kind: Wl_Seat_Event_Kind {
 // never had the pointer capability. The missing_capability error will
 // be sent in this case.
 wl_seat_get_pointer :: (self: *Wl_Seat) -> *Wl_Pointer {
-    // TODO(Phase 3): marshal_constructor(self, WL_SEAT_GET_POINTER, ...);
+    args := Wl_Seat_Get_Pointer_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WL_SEAT_GET_POINTER, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -86,7 +102,9 @@ wl_seat_get_pointer :: (self: *Wl_Seat) -> *Wl_Pointer {
 // never had the keyboard capability. The missing_capability error will
 // be sent in this case.
 wl_seat_get_keyboard :: (self: *Wl_Seat) -> *Wl_Keyboard {
-    // TODO(Phase 3): marshal_constructor(self, WL_SEAT_GET_KEYBOARD, ...);
+    args := Wl_Seat_Get_Keyboard_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WL_SEAT_GET_KEYBOARD, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -100,7 +118,9 @@ wl_seat_get_keyboard :: (self: *Wl_Seat) -> *Wl_Keyboard {
 // never had the touch capability. The missing_capability error will
 // be sent in this case.
 wl_seat_get_touch :: (self: *Wl_Seat) -> *Wl_Touch {
-    // TODO(Phase 3): marshal_constructor(self, WL_SEAT_GET_TOUCH, ...);
+    args := Wl_Seat_Get_Touch_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WL_SEAT_GET_TOUCH, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -108,7 +128,9 @@ wl_seat_get_touch :: (self: *Wl_Seat) -> *Wl_Touch {
 // Using this request a client can tell the server that it is not going to
 // use the seat object anymore.
 wl_seat_release :: (self: *Wl_Seat) {
-    // TODO(Phase 3): marshal(self, WL_SEAT_RELEASE, ...); destroy_proxy(self);
+    args := Wl_Seat_Release_Args.{};
+    marshal(self.conn, self.id, WL_SEAT_RELEASE, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WL_SEAT_INTERFACE :: Interface_Descriptor.{

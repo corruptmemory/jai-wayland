@@ -14,12 +14,29 @@
 Wl_Shm_Pool :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 WL_SHM_POOL_CREATE_BUFFER :: 0;
 WL_SHM_POOL_DESTROY :: 1;
 WL_SHM_POOL_RESIZE :: 2;
+
+Wl_Shm_Pool_Create_Buffer_Args :: struct {
+    offset: s32;
+    width: s32;
+    height: s32;
+    stride: s32;
+    format: u32;
+}
+
+Wl_Shm_Pool_Destroy_Args :: struct {
+}
+
+Wl_Shm_Pool_Resize_Args :: struct {
+    size: s32;
+}
+
 
 // create a buffer from the pool
 // Create a wl_buffer object from the pool.
@@ -34,7 +51,9 @@ WL_SHM_POOL_RESIZE :: 2;
 // so it is valid to destroy the pool immediately after creating
 // a buffer from it.
 wl_shm_pool_create_buffer :: (self: *Wl_Shm_Pool, offset: s32, width: s32, height: s32, stride: s32, format: u32) -> *Wl_Buffer {
-    // TODO(Phase 3): marshal_constructor(self, WL_SHM_POOL_CREATE_BUFFER, ...);
+    args := Wl_Shm_Pool_Create_Buffer_Args.{ offset = offset, width = width, height = height, stride = stride, format = format };
+    new_id := marshal_constructor(self.conn, self.id, WL_SHM_POOL_CREATE_BUFFER, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -45,7 +64,9 @@ wl_shm_pool_create_buffer :: (self: *Wl_Shm_Pool, offset: s32, width: s32, heigh
 // buffers that have been created from this pool
 // are gone.
 wl_shm_pool_destroy :: (self: *Wl_Shm_Pool) {
-    // TODO(Phase 3): marshal(self, WL_SHM_POOL_DESTROY, ...); destroy_proxy(self);
+    args := Wl_Shm_Pool_Destroy_Args.{};
+    marshal(self.conn, self.id, WL_SHM_POOL_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // change the size of the pool mapping
@@ -60,7 +81,8 @@ wl_shm_pool_destroy :: (self: *Wl_Shm_Pool) {
 // responsibility to ensure that the file is at least as big as
 // the new pool size.
 wl_shm_pool_resize :: (self: *Wl_Shm_Pool, size: s32) {
-    // TODO(Phase 3): marshal(self, WL_SHM_POOL_RESIZE, ...);
+    args := Wl_Shm_Pool_Resize_Args.{ size = size };
+    marshal(self.conn, self.id, WL_SHM_POOL_RESIZE, *args);
 }
 
 WL_SHM_POOL_INTERFACE :: Interface_Descriptor.{

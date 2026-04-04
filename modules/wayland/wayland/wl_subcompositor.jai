@@ -26,6 +26,7 @@
 Wl_Subcompositor :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -39,12 +40,23 @@ Wl_Subcompositor_Error :: enum u32 {
     BAD_PARENT :: 1;
 }
 
+Wl_Subcompositor_Destroy_Args :: struct {
+}
+
+Wl_Subcompositor_Get_Subsurface_Args :: struct {
+    surface: u32;
+    parent: u32;
+}
+
+
 // unbind from the subcompositor interface (destructor)
 // Informs the server that the client will not be using this
 // protocol object anymore. This does not affect any other
 // objects, wl_subsurface objects included.
 wl_subcompositor_destroy :: (self: *Wl_Subcompositor) {
-    // TODO(Phase 3): marshal(self, WL_SUBCOMPOSITOR_DESTROY, ...); destroy_proxy(self);
+    args := Wl_Subcompositor_Destroy_Args.{};
+    marshal(self.conn, self.id, WL_SUBCOMPOSITOR_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // give a surface the role sub-surface
@@ -68,7 +80,9 @@ wl_subcompositor_destroy :: (self: *Wl_Subcompositor) {
 // This request modifies the behaviour of wl_surface.commit request on
 // the sub-surface, see the documentation on wl_subsurface interface.
 wl_subcompositor_get_subsurface :: (self: *Wl_Subcompositor, surface: *Wl_Surface, parent: *Wl_Surface) -> *Wl_Subsurface {
-    // TODO(Phase 3): marshal_constructor(self, WL_SUBCOMPOSITOR_GET_SUBSURFACE, ...);
+    args := Wl_Subcompositor_Get_Subsurface_Args.{ surface = surface.id, parent = parent.id };
+    new_id := marshal_constructor(self.conn, self.id, WL_SUBCOMPOSITOR_GET_SUBSURFACE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

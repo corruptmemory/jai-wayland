@@ -14,6 +14,7 @@
 Wp_Color_Management_Output_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -35,11 +36,20 @@ Wp_Color_Management_Output_V1_Event :: union kind: Wp_Color_Management_Output_V1
     .IMAGE_DESCRIPTION_CHANGED ,, image_description_changed: Wp_Color_Management_Output_V1_Image_Description_Changed_Args;
 }
 
+Wp_Color_Management_Output_V1_Destroy_Args :: struct {
+}
+
+Wp_Color_Management_Output_V1_Get_Image_Description_Args :: struct {
+}
+
+
 // destroy the color management output (destructor)
 // Destroy the color wp_color_management_output_v1 object. This does not
 // affect any remaining protocol objects.
 wp_color_management_output_v1_destroy :: (self: *Wp_Color_Management_Output_V1) {
-    // TODO(Phase 3): marshal(self, WP_COLOR_MANAGEMENT_OUTPUT_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Color_Management_Output_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_COLOR_MANAGEMENT_OUTPUT_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // get the image description of the output
@@ -75,7 +85,9 @@ wp_color_management_output_v1_destroy :: (self: *Wp_Color_Management_Output_V1) 
 //
 // Otherwise the object shall immediately deliver the ready event.
 wp_color_management_output_v1_get_image_description :: (self: *Wp_Color_Management_Output_V1) -> *Wp_Image_Description_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_COLOR_MANAGEMENT_OUTPUT_V1_GET_IMAGE_DESCRIPTION, ...);
+    args := Wp_Color_Management_Output_V1_Get_Image_Description_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WP_COLOR_MANAGEMENT_OUTPUT_V1_GET_IMAGE_DESCRIPTION, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

@@ -36,6 +36,7 @@
 Zwp_Text_Input_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -264,6 +265,56 @@ Zwp_Text_Input_V1_Event :: union kind: Zwp_Text_Input_V1_Event_Kind {
     .TEXT_DIRECTION ,, text_direction: Zwp_Text_Input_V1_Text_Direction_Args;
 }
 
+Zwp_Text_Input_V1_Activate_Args :: struct {
+    seat: u32;
+    surface: u32;
+}
+
+Zwp_Text_Input_V1_Deactivate_Args :: struct {
+    seat: u32;
+}
+
+Zwp_Text_Input_V1_Show_Input_Panel_Args :: struct {
+}
+
+Zwp_Text_Input_V1_Hide_Input_Panel_Args :: struct {
+}
+
+Zwp_Text_Input_V1_Reset_Args :: struct {
+}
+
+Zwp_Text_Input_V1_Set_Surrounding_Text_Args :: struct {
+    text: string;
+    cursor: u32;
+    anchor: u32;
+}
+
+Zwp_Text_Input_V1_Set_Content_Type_Args :: struct {
+    hint: u32;
+    purpose: u32;
+}
+
+Zwp_Text_Input_V1_Set_Cursor_Rectangle_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+Zwp_Text_Input_V1_Set_Preferred_Language_Args :: struct {
+    language: string;
+}
+
+Zwp_Text_Input_V1_Commit_State_Args :: struct {
+    serial: u32;
+}
+
+Zwp_Text_Input_V1_Invoke_Action_Args :: struct {
+    button: u32;
+    index: u32;
+}
+
+
 // request activation
 // Requests the text_input object to be activated (typically when the
 // text entry gets focus).
@@ -273,7 +324,8 @@ Zwp_Text_Input_V1_Event :: union kind: Zwp_Text_Input_V1_Event_Kind {
 // text_input object and tracked for focus lost. The enter event
 // is emitted on successful activation.
 zwp_text_input_v1_activate :: (self: *Zwp_Text_Input_V1, seat: *Wl_Seat, surface: *Wl_Surface) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_ACTIVATE, ...);
+    args := Zwp_Text_Input_V1_Activate_Args.{ seat = seat.id, surface = surface.id };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_ACTIVATE, *args);
 }
 
 // request deactivation
@@ -281,19 +333,22 @@ zwp_text_input_v1_activate :: (self: *Zwp_Text_Input_V1, seat: *Wl_Seat, surface
 // text entry lost focus). The seat argument is a wl_seat which was used
 // for activation.
 zwp_text_input_v1_deactivate :: (self: *Zwp_Text_Input_V1, seat: *Wl_Seat) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_DEACTIVATE, ...);
+    args := Zwp_Text_Input_V1_Deactivate_Args.{ seat = seat.id };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_DEACTIVATE, *args);
 }
 
 // show input panels
 // Requests input panels (virtual keyboard) to show.
 zwp_text_input_v1_show_input_panel :: (self: *Zwp_Text_Input_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_SHOW_INPUT_PANEL, ...);
+    args := Zwp_Text_Input_V1_Show_Input_Panel_Args.{};
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_SHOW_INPUT_PANEL, *args);
 }
 
 // hide input panels
 // Requests input panels (virtual keyboard) to hide.
 zwp_text_input_v1_hide_input_panel :: (self: *Zwp_Text_Input_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_HIDE_INPUT_PANEL, ...);
+    args := Zwp_Text_Input_V1_Hide_Input_Panel_Args.{};
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_HIDE_INPUT_PANEL, *args);
 }
 
 // reset
@@ -301,7 +356,8 @@ zwp_text_input_v1_hide_input_panel :: (self: *Zwp_Text_Input_V1) {
 // reset, for example after the text was changed outside of the normal
 // input method flow.
 zwp_text_input_v1_reset :: (self: *Zwp_Text_Input_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_RESET, ...);
+    args := Zwp_Text_Input_V1_Reset_Args.{};
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_RESET, *args);
 }
 
 // sets the surrounding text
@@ -311,7 +367,8 @@ zwp_text_input_v1_reset :: (self: *Zwp_Text_Input_V1) {
 // selection anchor within the surrounding text. If there is no selected
 // text anchor, then it is the same as cursor.
 zwp_text_input_v1_set_surrounding_text :: (self: *Zwp_Text_Input_V1, text: string, cursor: u32, anchor: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_SET_SURROUNDING_TEXT, ...);
+    args := Zwp_Text_Input_V1_Set_Surrounding_Text_Args.{ text = text, cursor = cursor, anchor = anchor };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_SET_SURROUNDING_TEXT, *args);
 }
 
 // set content purpose and hint
@@ -323,11 +380,13 @@ zwp_text_input_v1_set_surrounding_text :: (self: *Zwp_Text_Input_V1, text: strin
 // default hints (auto completion, auto correction, auto capitalization)
 // should be assumed.
 zwp_text_input_v1_set_content_type :: (self: *Zwp_Text_Input_V1, hint: u32, purpose: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_SET_CONTENT_TYPE, ...);
+    args := Zwp_Text_Input_V1_Set_Content_Type_Args.{ hint = hint, purpose = purpose };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_SET_CONTENT_TYPE, *args);
 }
 
 zwp_text_input_v1_set_cursor_rectangle :: (self: *Zwp_Text_Input_V1, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_SET_CURSOR_RECTANGLE, ...);
+    args := Zwp_Text_Input_V1_Set_Cursor_Rectangle_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_SET_CURSOR_RECTANGLE, *args);
 }
 
 // sets preferred language
@@ -339,15 +398,18 @@ zwp_text_input_v1_set_cursor_rectangle :: (self: *Zwp_Text_Input_V1, x: s32, y: 
 // language of the currently edited document or in an instant message
 // application which tracks languages of contacts.
 zwp_text_input_v1_set_preferred_language :: (self: *Zwp_Text_Input_V1, language: string) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_SET_PREFERRED_LANGUAGE, ...);
+    args := Zwp_Text_Input_V1_Set_Preferred_Language_Args.{ language = language };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_SET_PREFERRED_LANGUAGE, *args);
 }
 
 zwp_text_input_v1_commit_state :: (self: *Zwp_Text_Input_V1, serial: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_COMMIT_STATE, ...);
+    args := Zwp_Text_Input_V1_Commit_State_Args.{ serial = serial };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_COMMIT_STATE, *args);
 }
 
 zwp_text_input_v1_invoke_action :: (self: *Zwp_Text_Input_V1, button: u32, index: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V1_INVOKE_ACTION, ...);
+    args := Zwp_Text_Input_V1_Invoke_Action_Args.{ button = button, index = index };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V1_INVOKE_ACTION, *args);
 }
 
 ZWP_TEXT_INPUT_V1_INTERFACE :: Interface_Descriptor.{

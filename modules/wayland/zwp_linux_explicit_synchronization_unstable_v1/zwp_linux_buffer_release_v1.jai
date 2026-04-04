@@ -24,6 +24,7 @@
 Zwp_Linux_Buffer_Release_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Event opcodes
@@ -32,7 +33,7 @@ ZWP_LINUX_BUFFER_RELEASE_V1_IMMEDIATE_RELEASE :: 1;
 
 // release buffer with fence
 Zwp_Linux_Buffer_Release_V1_Fenced_Release_Args :: struct {
-    fence: s32;
+    fence: Fd;
 }
 
 // release buffer immediately

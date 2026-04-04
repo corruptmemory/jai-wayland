@@ -8,11 +8,20 @@
 Zxdg_Output_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 ZXDG_OUTPUT_MANAGER_V1_DESTROY :: 0;
 ZXDG_OUTPUT_MANAGER_V1_GET_XDG_OUTPUT :: 1;
+
+Zxdg_Output_Manager_V1_Destroy_Args :: struct {
+}
+
+Zxdg_Output_Manager_V1_Get_Xdg_Output_Args :: struct {
+    output: u32;
+}
+
 
 // destroy the xdg_output_manager object (destructor)
 // Using this request a client can tell the server that it is not
@@ -20,13 +29,17 @@ ZXDG_OUTPUT_MANAGER_V1_GET_XDG_OUTPUT :: 1;
 //
 // Any objects already created through this instance are not affected.
 zxdg_output_manager_v1_destroy :: (self: *Zxdg_Output_Manager_V1) {
-    // TODO(Phase 3): marshal(self, ZXDG_OUTPUT_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Output_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_OUTPUT_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create an xdg output from a wl_output
 // This creates a new xdg_output object for the given wl_output.
 zxdg_output_manager_v1_get_xdg_output :: (self: *Zxdg_Output_Manager_V1, output: *Wl_Output) -> *Zxdg_Output_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZXDG_OUTPUT_MANAGER_V1_GET_XDG_OUTPUT, ...);
+    args := Zxdg_Output_Manager_V1_Get_Xdg_Output_Args.{ output = output.id };
+    new_id := marshal_constructor(self.conn, self.id, ZXDG_OUTPUT_MANAGER_V1_GET_XDG_OUTPUT, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

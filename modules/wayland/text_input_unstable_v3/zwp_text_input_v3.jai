@@ -33,6 +33,7 @@
 Zwp_Text_Input_V3 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -250,11 +251,58 @@ Zwp_Text_Input_V3_Event :: union kind: Zwp_Text_Input_V3_Event_Kind {
     .PREEDIT_HINT ,, preedit_hint: Zwp_Text_Input_V3_Preedit_Hint_Args;
 }
 
+Zwp_Text_Input_V3_Destroy_Args :: struct {
+}
+
+Zwp_Text_Input_V3_Enable_Args :: struct {
+}
+
+Zwp_Text_Input_V3_Disable_Args :: struct {
+}
+
+Zwp_Text_Input_V3_Set_Surrounding_Text_Args :: struct {
+    text: string;
+    cursor: s32;
+    anchor: s32;
+}
+
+Zwp_Text_Input_V3_Set_Text_Change_Cause_Args :: struct {
+    cause: u32;
+}
+
+Zwp_Text_Input_V3_Set_Content_Type_Args :: struct {
+    hint: u32;
+    purpose: u32;
+}
+
+Zwp_Text_Input_V3_Set_Cursor_Rectangle_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+Zwp_Text_Input_V3_Commit_Args :: struct {
+}
+
+Zwp_Text_Input_V3_Set_Available_Actions_Args :: struct {
+    available_actions: [] u8;
+}
+
+Zwp_Text_Input_V3_Show_Input_Panel_Args :: struct {
+}
+
+Zwp_Text_Input_V3_Hide_Input_Panel_Args :: struct {
+}
+
+
 // Destroy the wp_text_input (destructor)
 // Destroy the wp_text_input object. Also disables all surfaces enabled
 // through this wp_text_input object.
 zwp_text_input_v3_destroy :: (self: *Zwp_Text_Input_V3) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Text_Input_V3_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // Request text input to be enabled
@@ -287,7 +335,8 @@ zwp_text_input_v3_destroy :: (self: *Zwp_Text_Input_V3) {
 // The changes must be applied by the compositor after issuing a
 // zwp_text_input_v3.commit request.
 zwp_text_input_v3_enable :: (self: *Zwp_Text_Input_V3) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_ENABLE, ...);
+    args := Zwp_Text_Input_V3_Enable_Args.{};
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_ENABLE, *args);
 }
 
 // Disable text input on a surface
@@ -297,7 +346,8 @@ zwp_text_input_v3_enable :: (self: *Zwp_Text_Input_V3) {
 // State set with this request is double-buffered. It will get applied on
 // the next zwp_text_input_v3.commit request.
 zwp_text_input_v3_disable :: (self: *Zwp_Text_Input_V3) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_DISABLE, ...);
+    args := Zwp_Text_Input_V3_Disable_Args.{};
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_DISABLE, *args);
 }
 
 // sets the surrounding text
@@ -333,7 +383,8 @@ zwp_text_input_v3_disable :: (self: *Zwp_Text_Input_V3) {
 // input does not support sending surrounding text. If the empty values
 // get applied, subsequent attempts to change them may have no effect.
 zwp_text_input_v3_set_surrounding_text :: (self: *Zwp_Text_Input_V3, text: string, cursor: s32, anchor: s32) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_SET_SURROUNDING_TEXT, ...);
+    args := Zwp_Text_Input_V3_Set_Surrounding_Text_Args.{ text = text, cursor = cursor, anchor = anchor };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_SET_SURROUNDING_TEXT, *args);
 }
 
 // indicates the cause of surrounding text change
@@ -352,7 +403,8 @@ zwp_text_input_v3_set_surrounding_text :: (self: *Zwp_Text_Input_V3, text: strin
 //
 // The initial value of cause is input_method.
 zwp_text_input_v3_set_text_change_cause :: (self: *Zwp_Text_Input_V3, cause: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_SET_TEXT_CHANGE_CAUSE, ...);
+    args := Zwp_Text_Input_V3_Set_Text_Change_Cause_Args.{ cause = cause };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_SET_TEXT_CHANGE_CAUSE, *args);
 }
 
 // set content purpose and hint
@@ -368,7 +420,8 @@ zwp_text_input_v3_set_text_change_cause :: (self: *Zwp_Text_Input_V3, cause: u32
 // The initial value for hint is none, and the initial value for purpose
 // is normal.
 zwp_text_input_v3_set_content_type :: (self: *Zwp_Text_Input_V3, hint: u32, purpose: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_SET_CONTENT_TYPE, ...);
+    args := Zwp_Text_Input_V3_Set_Content_Type_Args.{ hint = hint, purpose = purpose };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_SET_CONTENT_TYPE, *args);
 }
 
 // set cursor position
@@ -403,7 +456,8 @@ zwp_text_input_v3_set_content_type :: (self: *Zwp_Text_Input_V3, hint: u32, purp
 // the input method popup in the same frame as the contents
 // of the text on the surface are updated.
 zwp_text_input_v3_set_cursor_rectangle :: (self: *Zwp_Text_Input_V3, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_SET_CURSOR_RECTANGLE, ...);
+    args := Zwp_Text_Input_V3_Set_Cursor_Rectangle_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_SET_CURSOR_RECTANGLE, *args);
 }
 
 // commit state
@@ -431,7 +485,8 @@ zwp_text_input_v3_set_cursor_rectangle :: (self: *Zwp_Text_Input_V3, x: s32, y: 
 // each zwp_text_input_v3 object and use the count as the serial in done
 // events.
 zwp_text_input_v3_commit :: (self: *Zwp_Text_Input_V3) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_COMMIT, ...);
+    args := Zwp_Text_Input_V3_Commit_Args.{};
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_COMMIT, *args);
 }
 
 // set the available actions
@@ -446,7 +501,8 @@ zwp_text_input_v3_commit :: (self: *Zwp_Text_Input_V3) {
 //
 // Initially, no actions are available.
 zwp_text_input_v3_set_available_actions :: (self: *Zwp_Text_Input_V3, available_actions: [] u8) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_SET_AVAILABLE_ACTIONS, ...);
+    args := Zwp_Text_Input_V3_Set_Available_Actions_Args.{ available_actions = available_actions };
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_SET_AVAILABLE_ACTIONS, *args);
 }
 
 // show input panel
@@ -456,7 +512,8 @@ zwp_text_input_v3_set_available_actions :: (self: *Zwp_Text_Input_V3, available_
 // client side, and its effect may be ignored by compositors given
 // other environmental factors. Repeated calls will be ignored.
 zwp_text_input_v3_show_input_panel :: (self: *Zwp_Text_Input_V3) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_SHOW_INPUT_PANEL, ...);
+    args := Zwp_Text_Input_V3_Show_Input_Panel_Args.{};
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_SHOW_INPUT_PANEL, *args);
 }
 
 // hide input panel
@@ -466,7 +523,8 @@ zwp_text_input_v3_show_input_panel :: (self: *Zwp_Text_Input_V3) {
 // client side, and its effect may be ignored by compositors given
 // other environmental factors. Repeated calls will be ignored.
 zwp_text_input_v3_hide_input_panel :: (self: *Zwp_Text_Input_V3) {
-    // TODO(Phase 3): marshal(self, ZWP_TEXT_INPUT_V3_HIDE_INPUT_PANEL, ...);
+    args := Zwp_Text_Input_V3_Hide_Input_Panel_Args.{};
+    marshal(self.conn, self.id, ZWP_TEXT_INPUT_V3_HIDE_INPUT_PANEL, *args);
 }
 
 ZWP_TEXT_INPUT_V3_INTERFACE :: Interface_Descriptor.{

@@ -6,6 +6,7 @@
 Zwp_Primary_Selection_Device_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -36,19 +37,31 @@ Zwp_Primary_Selection_Device_V1_Event :: union kind: Zwp_Primary_Selection_Devic
     .SELECTION ,, selection: Zwp_Primary_Selection_Device_V1_Selection_Args;
 }
 
+Zwp_Primary_Selection_Device_V1_Set_Selection_Args :: struct {
+    source: u32;
+    serial: u32;
+}
+
+Zwp_Primary_Selection_Device_V1_Destroy_Args :: struct {
+}
+
+
 // set the primary selection
 // Replaces the current selection. The previous owner of the primary
 // selection will receive a wp_primary_selection_source.cancelled event.
 //
 // To unset the selection, set the source to NULL.
 zwp_primary_selection_device_v1_set_selection :: (self: *Zwp_Primary_Selection_Device_V1, source: *Zwp_Primary_Selection_Source_V1, serial: u32) {
-    // TODO(Phase 3): marshal(self, ZWP_PRIMARY_SELECTION_DEVICE_V1_SET_SELECTION, ...);
+    args := Zwp_Primary_Selection_Device_V1_Set_Selection_Args.{ source = source.id, serial = serial };
+    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_V1_SET_SELECTION, *args);
 }
 
 // destroy the primary selection device (destructor)
 // Destroy the primary selection device.
 zwp_primary_selection_device_v1_destroy :: (self: *Zwp_Primary_Selection_Device_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_PRIMARY_SELECTION_DEVICE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Primary_Selection_Device_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_PRIMARY_SELECTION_DEVICE_V1_INTERFACE :: Interface_Descriptor.{

@@ -8,13 +8,21 @@
 Zwp_Input_Panel_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 ZWP_INPUT_PANEL_V1_GET_INPUT_PANEL_SURFACE :: 0;
 
+Zwp_Input_Panel_V1_Get_Input_Panel_Surface_Args :: struct {
+    surface: u32;
+}
+
+
 zwp_input_panel_v1_get_input_panel_surface :: (self: *Zwp_Input_Panel_V1, surface: *Wl_Surface) -> *Zwp_Input_Panel_Surface_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_INPUT_PANEL_V1_GET_INPUT_PANEL_SURFACE, ...);
+    args := Zwp_Input_Panel_V1_Get_Input_Panel_Surface_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_PANEL_V1_GET_INPUT_PANEL_SURFACE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

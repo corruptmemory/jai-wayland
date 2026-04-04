@@ -12,6 +12,7 @@
 Wl_Callback :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Event opcodes

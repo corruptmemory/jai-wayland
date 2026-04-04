@@ -55,6 +55,7 @@
 Xdg_Surface :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -95,12 +96,37 @@ Xdg_Surface_Event :: union kind: Xdg_Surface_Event_Kind {
     .CONFIGURE ,, configure: Xdg_Surface_Configure_Args;
 }
 
+Xdg_Surface_Destroy_Args :: struct {
+}
+
+Xdg_Surface_Get_Toplevel_Args :: struct {
+}
+
+Xdg_Surface_Get_Popup_Args :: struct {
+    parent: u32;
+    positioner: u32;
+}
+
+Xdg_Surface_Set_Window_Geometry_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+Xdg_Surface_Ack_Configure_Args :: struct {
+    serial: u32;
+}
+
+
 // destroy the xdg_surface (destructor)
 // Destroy the xdg_surface object. An xdg_surface must only be destroyed
 // after its role object has been destroyed, otherwise
 // a defunct_role_object error is raised.
 xdg_surface_destroy :: (self: *Xdg_Surface) {
-    // TODO(Phase 3): marshal(self, XDG_SURFACE_DESTROY, ...); destroy_proxy(self);
+    args := Xdg_Surface_Destroy_Args.{};
+    marshal(self.conn, self.id, XDG_SURFACE_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // assign the xdg_toplevel surface role
@@ -110,7 +136,9 @@ xdg_surface_destroy :: (self: *Xdg_Surface) {
 // See the documentation of xdg_toplevel for more details about what an
 // xdg_toplevel is and how it is used.
 xdg_surface_get_toplevel :: (self: *Xdg_Surface) -> *Xdg_Toplevel {
-    // TODO(Phase 3): marshal_constructor(self, XDG_SURFACE_GET_TOPLEVEL, ...);
+    args := Xdg_Surface_Get_Toplevel_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, XDG_SURFACE_GET_TOPLEVEL, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -124,7 +152,9 @@ xdg_surface_get_toplevel :: (self: *Xdg_Surface) -> *Xdg_Toplevel {
 // See the documentation of xdg_popup for more details about what an
 // xdg_popup is and how it is used.
 xdg_surface_get_popup :: (self: *Xdg_Surface, parent: *Xdg_Surface, positioner: *Xdg_Positioner) -> *Xdg_Popup {
-    // TODO(Phase 3): marshal_constructor(self, XDG_SURFACE_GET_POPUP, ...);
+    args := Xdg_Surface_Get_Popup_Args.{ parent = parent.id, positioner = positioner.id };
+    new_id := marshal_constructor(self.conn, self.id, XDG_SURFACE_GET_POPUP, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -170,7 +200,8 @@ xdg_surface_get_popup :: (self: *Xdg_Surface, parent: *Xdg_Surface, positioner: 
 // greater than zero. Setting an invalid size will raise an
 // invalid_size error.
 xdg_surface_set_window_geometry :: (self: *Xdg_Surface, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, XDG_SURFACE_SET_WINDOW_GEOMETRY, ...);
+    args := Xdg_Surface_Set_Window_Geometry_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, XDG_SURFACE_SET_WINDOW_GEOMETRY, *args);
 }
 
 // ack a configure event
@@ -207,7 +238,8 @@ xdg_surface_set_window_geometry :: (self: *Xdg_Surface, x: s32, y: s32, width: s
 // event identified by the last ack_configure request for the same
 // xdg_surface. Doing so will raise an invalid_serial error.
 xdg_surface_ack_configure :: (self: *Xdg_Surface, serial: u32) {
-    // TODO(Phase 3): marshal(self, XDG_SURFACE_ACK_CONFIGURE, ...);
+    args := Xdg_Surface_Ack_Configure_Args.{ serial = serial };
+    marshal(self.conn, self.id, XDG_SURFACE_ACK_CONFIGURE, *args);
 }
 
 XDG_SURFACE_INTERFACE :: Interface_Descriptor.{

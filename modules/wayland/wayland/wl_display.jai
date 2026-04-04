@@ -9,6 +9,7 @@
 Wl_Display :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -55,6 +56,13 @@ Wl_Display_Event :: union kind: Wl_Display_Event_Kind {
     .DELETE_ID ,, delete_id: Wl_Display_Delete_Id_Args;
 }
 
+Wl_Display_Sync_Args :: struct {
+}
+
+Wl_Display_Get_Registry_Args :: struct {
+}
+
+
 // asynchronous roundtrip
 // The sync request asks the server to emit the 'done' event
 // on the returned wl_callback object.  Since requests are
@@ -68,7 +76,9 @@ Wl_Display_Event :: union kind: Wl_Display_Event_Kind {
 //
 // The callback_data passed in the callback is undefined and should be ignored.
 wl_display_sync :: (self: *Wl_Display) -> *Wl_Callback {
-    // TODO(Phase 3): marshal_constructor(self, WL_DISPLAY_SYNC, ...);
+    args := Wl_Display_Sync_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WL_DISPLAY_SYNC, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -83,7 +93,9 @@ wl_display_sync :: (self: *Wl_Display) -> *Wl_Callback {
 // Therefore, clients should invoke get_registry as infrequently as
 // possible to avoid wasting memory.
 wl_display_get_registry :: (self: *Wl_Display) -> *Wl_Registry {
-    // TODO(Phase 3): marshal_constructor(self, WL_DISPLAY_GET_REGISTRY, ...);
+    args := Wl_Display_Get_Registry_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WL_DISPLAY_GET_REGISTRY, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

@@ -15,6 +15,7 @@
 Xdg_Toplevel_Icon_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -31,12 +32,27 @@ Xdg_Toplevel_Icon_V1_Error :: enum u32 {
     NO_BUFFER :: 3;
 }
 
+Xdg_Toplevel_Icon_V1_Destroy_Args :: struct {
+}
+
+Xdg_Toplevel_Icon_V1_Set_Name_Args :: struct {
+    icon_name: string;
+}
+
+Xdg_Toplevel_Icon_V1_Add_Buffer_Args :: struct {
+    buffer: u32;
+    scale: s32;
+}
+
+
 // destroy the icon object (destructor)
 // Destroys the 'xdg_toplevel_icon_v1' object.
 // The icon must still remain set on every toplevel it was assigned to,
 // until the toplevel icon is reset explicitly.
 xdg_toplevel_icon_v1_destroy :: (self: *Xdg_Toplevel_Icon_V1) {
-    // TODO(Phase 3): marshal(self, XDG_TOPLEVEL_ICON_V1_DESTROY, ...); destroy_proxy(self);
+    args := Xdg_Toplevel_Icon_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, XDG_TOPLEVEL_ICON_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set an icon name
@@ -56,7 +72,8 @@ xdg_toplevel_icon_v1_destroy :: (self: *Xdg_Toplevel_Icon_V1) {
 //
 // [1]: https://specifications.freedesktop.org/icon-theme-spec/icon-theme-spec-latest.html
 xdg_toplevel_icon_v1_set_name :: (self: *Xdg_Toplevel_Icon_V1, icon_name: string) {
-    // TODO(Phase 3): marshal(self, XDG_TOPLEVEL_ICON_V1_SET_NAME, ...);
+    args := Xdg_Toplevel_Icon_V1_Set_Name_Args.{ icon_name = icon_name };
+    marshal(self.conn, self.id, XDG_TOPLEVEL_ICON_V1_SET_NAME, *args);
 }
 
 // add icon data from a pixel buffer
@@ -85,7 +102,8 @@ xdg_toplevel_icon_v1_set_name :: (self: *Xdg_Toplevel_Icon_V1, icon_name: string
 // If this request is made after the icon has been assigned to a toplevel
 // via 'set_icon', an 'immutable' error must be raised.
 xdg_toplevel_icon_v1_add_buffer :: (self: *Xdg_Toplevel_Icon_V1, buffer: *Wl_Buffer, scale: s32) {
-    // TODO(Phase 3): marshal(self, XDG_TOPLEVEL_ICON_V1_ADD_BUFFER, ...);
+    args := Xdg_Toplevel_Icon_V1_Add_Buffer_Args.{ buffer = buffer.id, scale = scale };
+    marshal(self.conn, self.id, XDG_TOPLEVEL_ICON_V1_ADD_BUFFER, *args);
 }
 
 XDG_TOPLEVEL_ICON_V1_INTERFACE :: Interface_Descriptor.{

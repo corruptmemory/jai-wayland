@@ -10,23 +10,35 @@
 Wl_Compositor :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 WL_COMPOSITOR_CREATE_SURFACE :: 0;
 WL_COMPOSITOR_CREATE_REGION :: 1;
 
+Wl_Compositor_Create_Surface_Args :: struct {
+}
+
+Wl_Compositor_Create_Region_Args :: struct {
+}
+
+
 // create new surface
 // Ask the compositor to create a new surface.
 wl_compositor_create_surface :: (self: *Wl_Compositor) -> *Wl_Surface {
-    // TODO(Phase 3): marshal_constructor(self, WL_COMPOSITOR_CREATE_SURFACE, ...);
+    args := Wl_Compositor_Create_Surface_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WL_COMPOSITOR_CREATE_SURFACE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
 // create new region
 // Ask the compositor to create a new region.
 wl_compositor_create_region :: (self: *Wl_Compositor) -> *Wl_Region {
-    // TODO(Phase 3): marshal_constructor(self, WL_COMPOSITOR_CREATE_REGION, ...);
+    args := Wl_Compositor_Create_Region_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WL_COMPOSITOR_CREATE_REGION, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

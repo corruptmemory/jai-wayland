@@ -14,16 +14,23 @@
 Ext_Image_Capture_Source_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 EXT_IMAGE_CAPTURE_SOURCE_V1_DESTROY :: 0;
 
+Ext_Image_Capture_Source_V1_Destroy_Args :: struct {
+}
+
+
 // delete this object (destructor)
 // Destroys the image capture source. This request may be sent at any time
 // by the client.
 ext_image_capture_source_v1_destroy :: (self: *Ext_Image_Capture_Source_V1) {
-    // TODO(Phase 3): marshal(self, EXT_IMAGE_CAPTURE_SOURCE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Image_Capture_Source_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_IMAGE_CAPTURE_SOURCE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_IMAGE_CAPTURE_SOURCE_V1_INTERFACE :: Interface_Descriptor.{

@@ -18,6 +18,7 @@
 Ext_Background_Effect_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -50,12 +51,22 @@ Ext_Background_Effect_Manager_V1_Event :: union kind: Ext_Background_Effect_Mana
     .CAPABILITIES ,, capabilities: Ext_Background_Effect_Manager_V1_Capabilities_Args;
 }
 
+Ext_Background_Effect_Manager_V1_Destroy_Args :: struct {
+}
+
+Ext_Background_Effect_Manager_V1_Get_Background_Effect_Args :: struct {
+    surface: u32;
+}
+
+
 // destroy the background effect manager (destructor)
 // Informs the server that the client will no longer be using this
 // protocol object. Existing objects created by this object are not
 // affected.
 ext_background_effect_manager_v1_destroy :: (self: *Ext_Background_Effect_Manager_V1) {
-    // TODO(Phase 3): marshal(self, EXT_BACKGROUND_EFFECT_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Background_Effect_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_BACKGROUND_EFFECT_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // get a background effects object
@@ -66,7 +77,9 @@ ext_background_effect_manager_v1_destroy :: (self: *Ext_Background_Effect_Manage
 // object associated, the background_effect_exists protocol error will be
 // raised.
 ext_background_effect_manager_v1_get_background_effect :: (self: *Ext_Background_Effect_Manager_V1, surface: *Wl_Surface) -> *Ext_Background_Effect_Surface_V1 {
-    // TODO(Phase 3): marshal_constructor(self, EXT_BACKGROUND_EFFECT_MANAGER_V1_GET_BACKGROUND_EFFECT, ...);
+    args := Ext_Background_Effect_Manager_V1_Get_Background_Effect_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, EXT_BACKGROUND_EFFECT_MANAGER_V1_GET_BACKGROUND_EFFECT, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

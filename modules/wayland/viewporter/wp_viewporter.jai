@@ -13,6 +13,7 @@
 Wp_Viewporter :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -24,12 +25,22 @@ Wp_Viewporter_Error :: enum u32 {
     VIEWPORT_EXISTS :: 0;
 }
 
+Wp_Viewporter_Destroy_Args :: struct {
+}
+
+Wp_Viewporter_Get_Viewport_Args :: struct {
+    surface: u32;
+}
+
+
 // unbind from the cropping and scaling interface (destructor)
 // Informs the server that the client will not be using this
 // protocol object anymore. This does not affect any other objects,
 // wp_viewport objects included.
 wp_viewporter_destroy :: (self: *Wp_Viewporter) {
-    // TODO(Phase 3): marshal(self, WP_VIEWPORTER_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Viewporter_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_VIEWPORTER_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // extend surface interface for crop and scale
@@ -38,7 +49,9 @@ wp_viewporter_destroy :: (self: *Wp_Viewporter) {
 // a wp_viewport object associated, the viewport_exists
 // protocol error is raised.
 wp_viewporter_get_viewport :: (self: *Wp_Viewporter, surface: *Wl_Surface) -> *Wp_Viewport {
-    // TODO(Phase 3): marshal_constructor(self, WP_VIEWPORTER_GET_VIEWPORT, ...);
+    args := Wp_Viewporter_Get_Viewport_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_VIEWPORTER_GET_VIEWPORT, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

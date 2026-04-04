@@ -28,6 +28,7 @@
 Wp_Commit_Timing_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -39,12 +40,22 @@ Wp_Commit_Timing_Manager_V1_Error :: enum u32 {
     COMMIT_TIMER_EXISTS :: 0;
 }
 
+Wp_Commit_Timing_Manager_V1_Destroy_Args :: struct {
+}
+
+Wp_Commit_Timing_Manager_V1_Get_Timer_Args :: struct {
+    surface: u32;
+}
+
+
 // unbind from the commit timing interface (destructor)
 // Informs the server that the client will no longer be using
 // this protocol object. Existing objects created by this object
 // are not affected.
 wp_commit_timing_manager_v1_destroy :: (self: *Wp_Commit_Timing_Manager_V1) {
-    // TODO(Phase 3): marshal(self, WP_COMMIT_TIMING_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Commit_Timing_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_COMMIT_TIMING_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // request commit timer interface for surface
@@ -53,7 +64,9 @@ wp_commit_timing_manager_v1_destroy :: (self: *Wp_Commit_Timing_Manager_V1) {
 // Only one commit timer can be created for a surface, or a
 // commit_timer_exists protocol error will be generated.
 wp_commit_timing_manager_v1_get_timer :: (self: *Wp_Commit_Timing_Manager_V1, surface: *Wl_Surface) -> *Wp_Commit_Timer_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_COMMIT_TIMING_MANAGER_V1_GET_TIMER, ...);
+    args := Wp_Commit_Timing_Manager_V1_Get_Timer_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_COMMIT_TIMING_MANAGER_V1_GET_TIMER, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

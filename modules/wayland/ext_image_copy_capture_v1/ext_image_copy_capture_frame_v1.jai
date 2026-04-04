@@ -17,6 +17,7 @@
 Ext_Image_Copy_Capture_Frame_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -92,11 +93,31 @@ Ext_Image_Copy_Capture_Frame_V1_Event :: union kind: Ext_Image_Copy_Capture_Fram
     .FAILED ,, failed: Ext_Image_Copy_Capture_Frame_V1_Failed_Args;
 }
 
+Ext_Image_Copy_Capture_Frame_V1_Destroy_Args :: struct {
+}
+
+Ext_Image_Copy_Capture_Frame_V1_Attach_Buffer_Args :: struct {
+    buffer: u32;
+}
+
+Ext_Image_Copy_Capture_Frame_V1_Damage_Buffer_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+Ext_Image_Copy_Capture_Frame_V1_Capture_Args :: struct {
+}
+
+
 // destroy this object (destructor)
 // Destroys the frame. This request can be sent at any time by the
 // client.
 ext_image_copy_capture_frame_v1_destroy :: (self: *Ext_Image_Copy_Capture_Frame_V1) {
-    // TODO(Phase 3): marshal(self, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Image_Copy_Capture_Frame_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // attach buffer to session
@@ -109,7 +130,8 @@ ext_image_copy_capture_frame_v1_destroy :: (self: *Ext_Image_Copy_Capture_Frame_
 // This request must not be sent after capture, or else the
 // already_captured protocol error is raised.
 ext_image_copy_capture_frame_v1_attach_buffer :: (self: *Ext_Image_Copy_Capture_Frame_V1, buffer: *Wl_Buffer) {
-    // TODO(Phase 3): marshal(self, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_ATTACH_BUFFER, ...);
+    args := Ext_Image_Copy_Capture_Frame_V1_Attach_Buffer_Args.{ buffer = buffer.id };
+    marshal(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_ATTACH_BUFFER, *args);
 }
 
 // damage buffer
@@ -135,7 +157,8 @@ ext_image_copy_capture_frame_v1_attach_buffer :: (self: *Ext_Image_Copy_Capture_
 // This request must not be sent after capture, or else the
 // already_captured protocol error is raised.
 ext_image_copy_capture_frame_v1_damage_buffer :: (self: *Ext_Image_Copy_Capture_Frame_V1, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_DAMAGE_BUFFER, ...);
+    args := Ext_Image_Copy_Capture_Frame_V1_Damage_Buffer_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_DAMAGE_BUFFER, *args);
 }
 
 // capture a frame
@@ -149,7 +172,8 @@ ext_image_copy_capture_frame_v1_damage_buffer :: (self: *Ext_Image_Copy_Capture_
 // protocol error is raised. A buffer must be attached before this request
 // is sent, or else the no_buffer protocol error is raised.
 ext_image_copy_capture_frame_v1_capture :: (self: *Ext_Image_Copy_Capture_Frame_V1) {
-    // TODO(Phase 3): marshal(self, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_CAPTURE, ...);
+    args := Ext_Image_Copy_Capture_Frame_V1_Capture_Args.{};
+    marshal(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_FRAME_V1_CAPTURE, *args);
 }
 
 EXT_IMAGE_COPY_CAPTURE_FRAME_V1_INTERFACE :: Interface_Descriptor.{

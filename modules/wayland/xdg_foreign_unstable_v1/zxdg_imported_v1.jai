@@ -10,6 +10,7 @@
 Zxdg_Imported_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -31,12 +32,22 @@ Zxdg_Imported_V1_Event :: union kind: Zxdg_Imported_V1_Event_Kind {
     .DESTROYED ,, destroyed: Zxdg_Imported_V1_Destroyed_Args;
 }
 
+Zxdg_Imported_V1_Destroy_Args :: struct {
+}
+
+Zxdg_Imported_V1_Set_Parent_Of_Args :: struct {
+    surface: u32;
+}
+
+
 // destroy the xdg_imported object (destructor)
 // Notify the compositor that it will no longer use the xdg_imported
 // object. Any relationship that may have been set up will at this point
 // be invalidated.
 zxdg_imported_v1_destroy :: (self: *Zxdg_Imported_V1) {
-    // TODO(Phase 3): marshal(self, ZXDG_IMPORTED_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Imported_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_IMPORTED_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set as the parent of some surface
@@ -45,7 +56,8 @@ zxdg_imported_v1_destroy :: (self: *Zxdg_Imported_V1) {
 // sets up a surface to surface relation with the same stacking and positioning
 // semantics as xdg_surface.set_parent.
 zxdg_imported_v1_set_parent_of :: (self: *Zxdg_Imported_V1, surface: *Wl_Surface) {
-    // TODO(Phase 3): marshal(self, ZXDG_IMPORTED_V1_SET_PARENT_OF, ...);
+    args := Zxdg_Imported_V1_Set_Parent_Of_Args.{ surface = surface.id };
+    marshal(self.conn, self.id, ZXDG_IMPORTED_V1_SET_PARENT_OF, *args);
 }
 
 ZXDG_IMPORTED_V1_INTERFACE :: Interface_Descriptor.{

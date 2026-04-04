@@ -59,6 +59,7 @@
 Wl_Subsurface :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -74,13 +75,38 @@ Wl_Subsurface_Error :: enum u32 {
     BAD_SURFACE :: 0;
 }
 
+Wl_Subsurface_Destroy_Args :: struct {
+}
+
+Wl_Subsurface_Set_Position_Args :: struct {
+    x: s32;
+    y: s32;
+}
+
+Wl_Subsurface_Place_Above_Args :: struct {
+    sibling: u32;
+}
+
+Wl_Subsurface_Place_Below_Args :: struct {
+    sibling: u32;
+}
+
+Wl_Subsurface_Set_Sync_Args :: struct {
+}
+
+Wl_Subsurface_Set_Desync_Args :: struct {
+}
+
+
 // remove sub-surface interface (destructor)
 // The sub-surface interface is removed from the wl_surface object
 // that was turned into a sub-surface with a
 // wl_subcompositor.get_subsurface request. The wl_surface's association
 // to the parent is deleted. The wl_surface is unmapped immediately.
 wl_subsurface_destroy :: (self: *Wl_Subsurface) {
-    // TODO(Phase 3): marshal(self, WL_SUBSURFACE_DESTROY, ...); destroy_proxy(self);
+    args := Wl_Subsurface_Destroy_Args.{};
+    marshal(self.conn, self.id, WL_SUBSURFACE_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // reposition the sub-surface
@@ -99,7 +125,8 @@ wl_subsurface_destroy :: (self: *Wl_Subsurface) {
 //
 // The initial position is 0, 0.
 wl_subsurface_set_position :: (self: *Wl_Subsurface, x: s32, y: s32) {
-    // TODO(Phase 3): marshal(self, WL_SUBSURFACE_SET_POSITION, ...);
+    args := Wl_Subsurface_Set_Position_Args.{ x = x, y = y };
+    marshal(self.conn, self.id, WL_SUBSURFACE_SET_POSITION, *args);
 }
 
 // restack the sub-surface
@@ -117,14 +144,16 @@ wl_subsurface_set_position :: (self: *Wl_Subsurface, x: s32, y: s32) {
 // A new sub-surface is initially added as the top-most in the stack
 // of its siblings and parent.
 wl_subsurface_place_above :: (self: *Wl_Subsurface, sibling: *Wl_Surface) {
-    // TODO(Phase 3): marshal(self, WL_SUBSURFACE_PLACE_ABOVE, ...);
+    args := Wl_Subsurface_Place_Above_Args.{ sibling = sibling.id };
+    marshal(self.conn, self.id, WL_SUBSURFACE_PLACE_ABOVE, *args);
 }
 
 // restack the sub-surface
 // The sub-surface is placed just below the reference surface.
 // See wl_subsurface.place_above.
 wl_subsurface_place_below :: (self: *Wl_Subsurface, sibling: *Wl_Surface) {
-    // TODO(Phase 3): marshal(self, WL_SUBSURFACE_PLACE_BELOW, ...);
+    args := Wl_Subsurface_Place_Below_Args.{ sibling = sibling.id };
+    marshal(self.conn, self.id, WL_SUBSURFACE_PLACE_BELOW, *args);
 }
 
 // set sub-surface to synchronized mode
@@ -142,7 +171,8 @@ wl_subsurface_place_below :: (self: *Wl_Subsurface, sibling: *Wl_Surface) {
 //
 // See wl_subsurface for the recursive effect of this mode.
 wl_subsurface_set_sync :: (self: *Wl_Subsurface) {
-    // TODO(Phase 3): marshal(self, WL_SUBSURFACE_SET_SYNC, ...);
+    args := Wl_Subsurface_Set_Sync_Args.{};
+    marshal(self.conn, self.id, WL_SUBSURFACE_SET_SYNC, *args);
 }
 
 // set sub-surface to desynchronized mode
@@ -166,7 +196,8 @@ wl_subsurface_set_sync :: (self: *Wl_Subsurface) {
 // If a surface's parent surface behaves as desynchronized, then
 // the cached state is applied on set_desync.
 wl_subsurface_set_desync :: (self: *Wl_Subsurface) {
-    // TODO(Phase 3): marshal(self, WL_SUBSURFACE_SET_DESYNC, ...);
+    args := Wl_Subsurface_Set_Desync_Args.{};
+    marshal(self.conn, self.id, WL_SUBSURFACE_SET_DESYNC, *args);
 }
 
 WL_SUBSURFACE_INTERFACE :: Interface_Descriptor.{

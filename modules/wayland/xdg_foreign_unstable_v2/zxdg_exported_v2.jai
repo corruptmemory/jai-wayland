@@ -11,6 +11,7 @@
 Zxdg_Exported_V2 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -32,12 +33,18 @@ Zxdg_Exported_V2_Event :: union kind: Zxdg_Exported_V2_Event_Kind {
     .HANDLE ,, handle: Zxdg_Exported_V2_Handle_Args;
 }
 
+Zxdg_Exported_V2_Destroy_Args :: struct {
+}
+
+
 // unexport the exported surface (destructor)
 // Revoke the previously exported surface. This invalidates any
 // relationship the importer may have set up using the xdg_imported created
 // given the handle sent via xdg_exported.handle.
 zxdg_exported_v2_destroy :: (self: *Zxdg_Exported_V2) {
-    // TODO(Phase 3): marshal(self, ZXDG_EXPORTED_V2_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Exported_V2_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_EXPORTED_V2_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZXDG_EXPORTED_V2_INTERFACE :: Interface_Descriptor.{

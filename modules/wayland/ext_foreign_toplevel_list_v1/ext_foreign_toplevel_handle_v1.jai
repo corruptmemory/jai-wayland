@@ -9,6 +9,7 @@
 Ext_Foreign_Toplevel_Handle_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -60,6 +61,10 @@ Ext_Foreign_Toplevel_Handle_V1_Event :: union kind: Ext_Foreign_Toplevel_Handle_
     .IDENTIFIER ,, identifier: Ext_Foreign_Toplevel_Handle_V1_Identifier_Args;
 }
 
+Ext_Foreign_Toplevel_Handle_V1_Destroy_Args :: struct {
+}
+
+
 // destroy the ext_foreign_toplevel_handle_v1 object (destructor)
 // This request should be used when the client will no longer use the handle
 // or after the closed event has been received to allow destruction of the
@@ -75,7 +80,9 @@ Ext_Foreign_Toplevel_Handle_V1_Event :: union kind: Ext_Foreign_Toplevel_Handle_
 // interface should require destructors for extension interfaces be
 // called before allowing the toplevel handle to be destroyed.
 ext_foreign_toplevel_handle_v1_destroy :: (self: *Ext_Foreign_Toplevel_Handle_V1) {
-    // TODO(Phase 3): marshal(self, EXT_FOREIGN_TOPLEVEL_HANDLE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Foreign_Toplevel_Handle_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_FOREIGN_TOPLEVEL_HANDLE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_FOREIGN_TOPLEVEL_HANDLE_V1_INTERFACE :: Interface_Descriptor.{

@@ -37,6 +37,7 @@
 Zwp_Linux_Surface_Synchronization_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -59,6 +60,17 @@ Zwp_Linux_Surface_Synchronization_V1_Error :: enum u32 {
     NO_BUFFER :: 5;
 }
 
+Zwp_Linux_Surface_Synchronization_V1_Destroy_Args :: struct {
+}
+
+Zwp_Linux_Surface_Synchronization_V1_Set_Acquire_Fence_Args :: struct {
+    fd: Fd;
+}
+
+Zwp_Linux_Surface_Synchronization_V1_Get_Release_Args :: struct {
+}
+
+
 // destroy synchronization object (destructor)
 // Destroy this explicit synchronization object.
 //
@@ -69,7 +81,9 @@ Zwp_Linux_Surface_Synchronization_V1_Error :: enum u32 {
 // zwp_linux_buffer_release_v1 objects created by this object are not
 // affected by this request.
 zwp_linux_surface_synchronization_v1_destroy :: (self: *Zwp_Linux_Surface_Synchronization_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Linux_Surface_Synchronization_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set the acquire fence
@@ -96,8 +110,9 @@ zwp_linux_surface_synchronization_v1_destroy :: (self: *Zwp_Linux_Surface_Synchr
 //
 // If at surface commit time there is no buffer attached, a NO_BUFFER
 // error is raised.
-zwp_linux_surface_synchronization_v1_set_acquire_fence :: (self: *Zwp_Linux_Surface_Synchronization_V1, fd: s32) {
-    // TODO(Phase 3): marshal(self, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_SET_ACQUIRE_FENCE, ...);
+zwp_linux_surface_synchronization_v1_set_acquire_fence :: (self: *Zwp_Linux_Surface_Synchronization_V1, fd: Fd) {
+    args := Zwp_Linux_Surface_Synchronization_V1_Set_Acquire_Fence_Args.{ fd = fd };
+    marshal(self.conn, self.id, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_SET_ACQUIRE_FENCE, *args);
 }
 
 // release fence for last-attached buffer
@@ -119,7 +134,9 @@ zwp_linux_surface_synchronization_v1_set_acquire_fence :: (self: *Zwp_Linux_Surf
 // If at surface commit time there is no buffer attached, a NO_BUFFER
 // error is raised.
 zwp_linux_surface_synchronization_v1_get_release :: (self: *Zwp_Linux_Surface_Synchronization_V1) -> *Zwp_Linux_Buffer_Release_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_GET_RELEASE, ...);
+    args := Zwp_Linux_Surface_Synchronization_V1_Get_Release_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_GET_RELEASE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

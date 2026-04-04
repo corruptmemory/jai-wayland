@@ -8,16 +8,23 @@
 Zwp_Xwayland_Keyboard_Grab_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 ZWP_XWAYLAND_KEYBOARD_GRAB_V1_DESTROY :: 0;
 
+Zwp_Xwayland_Keyboard_Grab_V1_Destroy_Args :: struct {
+}
+
+
 // destroy the grabbed keyboard object (destructor)
 // Destroy the grabbed keyboard object. If applicable, the compositor
 // will ungrab the keyboard.
 zwp_xwayland_keyboard_grab_v1_destroy :: (self: *Zwp_Xwayland_Keyboard_Grab_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_XWAYLAND_KEYBOARD_GRAB_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Xwayland_Keyboard_Grab_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_XWAYLAND_KEYBOARD_GRAB_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_XWAYLAND_KEYBOARD_GRAB_V1_INTERFACE :: Interface_Descriptor.{

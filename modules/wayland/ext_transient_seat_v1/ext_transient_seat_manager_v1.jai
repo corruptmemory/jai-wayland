@@ -8,11 +8,19 @@
 Ext_Transient_Seat_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 EXT_TRANSIENT_SEAT_MANAGER_V1_CREATE :: 0;
 EXT_TRANSIENT_SEAT_MANAGER_V1_DESTROY :: 1;
+
+Ext_Transient_Seat_Manager_V1_Create_Args :: struct {
+}
+
+Ext_Transient_Seat_Manager_V1_Destroy_Args :: struct {
+}
+
 
 // create a transient seat
 // Create a new seat that is removed when the client side transient seat
@@ -21,7 +29,9 @@ EXT_TRANSIENT_SEAT_MANAGER_V1_DESTROY :: 1;
 // The actual seat may be removed sooner, in which case the transient seat
 // object shall become inert.
 ext_transient_seat_manager_v1_create :: (self: *Ext_Transient_Seat_Manager_V1) -> *Ext_Transient_Seat_V1 {
-    // TODO(Phase 3): marshal_constructor(self, EXT_TRANSIENT_SEAT_MANAGER_V1_CREATE, ...);
+    args := Ext_Transient_Seat_Manager_V1_Create_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, EXT_TRANSIENT_SEAT_MANAGER_V1_CREATE, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 
@@ -31,7 +41,9 @@ ext_transient_seat_manager_v1_create :: (self: *Ext_Transient_Seat_Manager_V1) -
 // All objects created by the manager will remain valid until they are
 // destroyed themselves.
 ext_transient_seat_manager_v1_destroy :: (self: *Ext_Transient_Seat_Manager_V1) {
-    // TODO(Phase 3): marshal(self, EXT_TRANSIENT_SEAT_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Transient_Seat_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_TRANSIENT_SEAT_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_TRANSIENT_SEAT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

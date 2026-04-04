@@ -11,6 +11,7 @@
 Ext_Data_Control_Offer_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -33,6 +34,15 @@ Ext_Data_Control_Offer_V1_Event :: union kind: Ext_Data_Control_Offer_V1_Event_K
     .OFFER ,, offer: Ext_Data_Control_Offer_V1_Offer_Args;
 }
 
+Ext_Data_Control_Offer_V1_Receive_Args :: struct {
+    mime_type: string;
+    fd: Fd;
+}
+
+Ext_Data_Control_Offer_V1_Destroy_Args :: struct {
+}
+
+
 // request that the data is transferred
 // To transfer the offered data, the client issues this request and
 // indicates the MIME type it wants to receive. The transfer happens
@@ -44,14 +54,17 @@ Ext_Data_Control_Offer_V1_Event :: union kind: Ext_Data_Control_Offer_V1_Event_K
 // then closes its end, at which point the transfer is complete.
 //
 // This request may happen multiple times for different MIME types.
-ext_data_control_offer_v1_receive :: (self: *Ext_Data_Control_Offer_V1, mime_type: string, fd: s32) {
-    // TODO(Phase 3): marshal(self, EXT_DATA_CONTROL_OFFER_V1_RECEIVE, ...);
+ext_data_control_offer_v1_receive :: (self: *Ext_Data_Control_Offer_V1, mime_type: string, fd: Fd) {
+    args := Ext_Data_Control_Offer_V1_Receive_Args.{ mime_type = mime_type, fd = fd };
+    marshal(self.conn, self.id, EXT_DATA_CONTROL_OFFER_V1_RECEIVE, *args);
 }
 
 // destroy this offer (destructor)
 // Destroys the data offer object.
 ext_data_control_offer_v1_destroy :: (self: *Ext_Data_Control_Offer_V1) {
-    // TODO(Phase 3): marshal(self, EXT_DATA_CONTROL_OFFER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Data_Control_Offer_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_DATA_CONTROL_OFFER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 EXT_DATA_CONTROL_OFFER_V1_INTERFACE :: Interface_Descriptor.{

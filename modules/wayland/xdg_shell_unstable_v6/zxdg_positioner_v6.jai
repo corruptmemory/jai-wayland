@@ -26,6 +26,7 @@
 Zxdg_Positioner_V6 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -90,10 +91,45 @@ Zxdg_Positioner_V6_Constraint_Adjustment :: enum_flags u32 {
     RESIZE_Y :: 32;
 }
 
+Zxdg_Positioner_V6_Destroy_Args :: struct {
+}
+
+Zxdg_Positioner_V6_Set_Size_Args :: struct {
+    width: s32;
+    height: s32;
+}
+
+Zxdg_Positioner_V6_Set_Anchor_Rect_Args :: struct {
+    x: s32;
+    y: s32;
+    width: s32;
+    height: s32;
+}
+
+Zxdg_Positioner_V6_Set_Anchor_Args :: struct {
+    anchor: u32;
+}
+
+Zxdg_Positioner_V6_Set_Gravity_Args :: struct {
+    gravity: u32;
+}
+
+Zxdg_Positioner_V6_Set_Constraint_Adjustment_Args :: struct {
+    constraint_adjustment: u32;
+}
+
+Zxdg_Positioner_V6_Set_Offset_Args :: struct {
+    x: s32;
+    y: s32;
+}
+
+
 // destroy the xdg_positioner object (destructor)
 // Notify the compositor that the xdg_positioner will no longer be used.
 zxdg_positioner_v6_destroy :: (self: *Zxdg_Positioner_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_POSITIONER_V6_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Positioner_V6_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_POSITIONER_V6_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set the size of the to-be positioned rectangle
@@ -103,7 +139,8 @@ zxdg_positioner_v6_destroy :: (self: *Zxdg_Positioner_V6) {
 //
 // If a zero or negative size is set the invalid_input error is raised.
 zxdg_positioner_v6_set_size :: (self: *Zxdg_Positioner_V6, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, ZXDG_POSITIONER_V6_SET_SIZE, ...);
+    args := Zxdg_Positioner_V6_Set_Size_Args.{ width = width, height = height };
+    marshal(self.conn, self.id, ZXDG_POSITIONER_V6_SET_SIZE, *args);
 }
 
 // set the anchor rectangle within the parent surface
@@ -118,7 +155,8 @@ zxdg_positioner_v6_set_size :: (self: *Zxdg_Positioner_V6, width: s32, height: s
 //
 // If a zero or negative size is set the invalid_input error is raised.
 zxdg_positioner_v6_set_anchor_rect :: (self: *Zxdg_Positioner_V6, x: s32, y: s32, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, ZXDG_POSITIONER_V6_SET_ANCHOR_RECT, ...);
+    args := Zxdg_Positioner_V6_Set_Anchor_Rect_Args.{ x = x, y = y, width = width, height = height };
+    marshal(self.conn, self.id, ZXDG_POSITIONER_V6_SET_ANCHOR_RECT, *args);
 }
 
 // set anchor rectangle anchor edges
@@ -133,7 +171,8 @@ zxdg_positioner_v6_set_anchor_rect :: (self: *Zxdg_Positioner_V6, x: s32, y: s32
 // If two parallel anchor edges are specified (e.g. 'left' and 'right'),
 // the invalid_input error is raised.
 zxdg_positioner_v6_set_anchor :: (self: *Zxdg_Positioner_V6, anchor: u32) {
-    // TODO(Phase 3): marshal(self, ZXDG_POSITIONER_V6_SET_ANCHOR, ...);
+    args := Zxdg_Positioner_V6_Set_Anchor_Args.{ anchor = anchor };
+    marshal(self.conn, self.id, ZXDG_POSITIONER_V6_SET_ANCHOR, *args);
 }
 
 // set child surface gravity
@@ -147,7 +186,8 @@ zxdg_positioner_v6_set_anchor :: (self: *Zxdg_Positioner_V6, anchor: u32) {
 // If two parallel gravities are specified (e.g. 'left' and 'right'), the
 // invalid_input error is raised.
 zxdg_positioner_v6_set_gravity :: (self: *Zxdg_Positioner_V6, gravity: u32) {
-    // TODO(Phase 3): marshal(self, ZXDG_POSITIONER_V6_SET_GRAVITY, ...);
+    args := Zxdg_Positioner_V6_Set_Gravity_Args.{ gravity = gravity };
+    marshal(self.conn, self.id, ZXDG_POSITIONER_V6_SET_GRAVITY, *args);
 }
 
 // set the adjustment to be done when constrained
@@ -165,7 +205,8 @@ zxdg_positioner_v6_set_gravity :: (self: *Zxdg_Positioner_V6, gravity: u32) {
 //
 // The default adjustment is none.
 zxdg_positioner_v6_set_constraint_adjustment :: (self: *Zxdg_Positioner_V6, constraint_adjustment: u32) {
-    // TODO(Phase 3): marshal(self, ZXDG_POSITIONER_V6_SET_CONSTRAINT_ADJUSTMENT, ...);
+    args := Zxdg_Positioner_V6_Set_Constraint_Adjustment_Args.{ constraint_adjustment = constraint_adjustment };
+    marshal(self.conn, self.id, ZXDG_POSITIONER_V6_SET_CONSTRAINT_ADJUSTMENT, *args);
 }
 
 // set surface position offset
@@ -181,7 +222,8 @@ zxdg_positioner_v6_set_constraint_adjustment :: (self: *Zxdg_Positioner_V6, cons
 // element, while aligning the user interface element of the parent surface
 // with some user interface element placed somewhere in the popup surface.
 zxdg_positioner_v6_set_offset :: (self: *Zxdg_Positioner_V6, x: s32, y: s32) {
-    // TODO(Phase 3): marshal(self, ZXDG_POSITIONER_V6_SET_OFFSET, ...);
+    args := Zxdg_Positioner_V6_Set_Offset_Args.{ x = x, y = y };
+    marshal(self.conn, self.id, ZXDG_POSITIONER_V6_SET_OFFSET, *args);
 }
 
 ZXDG_POSITIONER_V6_INTERFACE :: Interface_Descriptor.{

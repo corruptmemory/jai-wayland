@@ -8,6 +8,7 @@
 Wp_Commit_Timer_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -22,6 +23,16 @@ Wp_Commit_Timer_V1_Error :: enum u32 {
     // the associated surface no longer exists
     SURFACE_DESTROYED :: 2;
 }
+
+Wp_Commit_Timer_V1_Set_Timestamp_Args :: struct {
+    tv_sec_hi: u32;
+    tv_sec_lo: u32;
+    tv_nsec: u32;
+}
+
+Wp_Commit_Timer_V1_Destroy_Args :: struct {
+}
+
 
 // Specify time the following commit takes effect
 // Provide a timing constraint for a surface content update.
@@ -39,7 +50,8 @@ Wp_Commit_Timer_V1_Error :: enum u32 {
 // Requesting set_timestamp after the commit_timer object's surface is
 // destroyed will generate a "surface_destroyed" error.
 wp_commit_timer_v1_set_timestamp :: (self: *Wp_Commit_Timer_V1, tv_sec_hi: u32, tv_sec_lo: u32, tv_nsec: u32) {
-    // TODO(Phase 3): marshal(self, WP_COMMIT_TIMER_V1_SET_TIMESTAMP, ...);
+    args := Wp_Commit_Timer_V1_Set_Timestamp_Args.{ tv_sec_hi = tv_sec_hi, tv_sec_lo = tv_sec_lo, tv_nsec = tv_nsec };
+    marshal(self.conn, self.id, WP_COMMIT_TIMER_V1_SET_TIMESTAMP, *args);
 }
 
 // Destroy the timer (destructor)
@@ -48,7 +60,9 @@ wp_commit_timer_v1_set_timestamp :: (self: *Wp_Commit_Timer_V1, tv_sec_hi: u32, 
 //
 // Existing timing constraints are not affected by the destruction.
 wp_commit_timer_v1_destroy :: (self: *Wp_Commit_Timer_V1) {
-    // TODO(Phase 3): marshal(self, WP_COMMIT_TIMER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Commit_Timer_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_COMMIT_TIMER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WP_COMMIT_TIMER_V1_INTERFACE :: Interface_Descriptor.{

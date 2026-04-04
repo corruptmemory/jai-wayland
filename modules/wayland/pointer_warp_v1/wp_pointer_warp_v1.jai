@@ -19,16 +19,31 @@
 Wp_Pointer_Warp_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 WP_POINTER_WARP_V1_DESTROY :: 0;
 WP_POINTER_WARP_V1_WARP_POINTER :: 1;
 
+Wp_Pointer_Warp_V1_Destroy_Args :: struct {
+}
+
+Wp_Pointer_Warp_V1_Warp_Pointer_Args :: struct {
+    surface: u32;
+    pointer: u32;
+    x: Fixed;
+    y: Fixed;
+    serial: u32;
+}
+
+
 // destroy the warp manager (destructor)
 // Destroy the pointer warp manager.
 wp_pointer_warp_v1_destroy :: (self: *Wp_Pointer_Warp_V1) {
-    // TODO(Phase 3): marshal(self, WP_POINTER_WARP_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Pointer_Warp_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_POINTER_WARP_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // reposition the pointer
@@ -43,7 +58,8 @@ wp_pointer_warp_v1_destroy :: (self: *Wp_Pointer_Warp_V1) {
 // Note that the enter serial is valid for any surface of the client,
 // and does not have to be from the surface the pointer is warped to.
 wp_pointer_warp_v1_warp_pointer :: (self: *Wp_Pointer_Warp_V1, surface: *Wl_Surface, pointer: *Wl_Pointer, x: Fixed, y: Fixed, serial: u32) {
-    // TODO(Phase 3): marshal(self, WP_POINTER_WARP_V1_WARP_POINTER, ...);
+    args := Wp_Pointer_Warp_V1_Warp_Pointer_Args.{ surface = surface.id, pointer = pointer.id, x = x, y = y, serial = serial };
+    marshal(self.conn, self.id, WP_POINTER_WARP_V1_WARP_POINTER, *args);
 }
 
 WP_POINTER_WARP_V1_INTERFACE :: Interface_Descriptor.{

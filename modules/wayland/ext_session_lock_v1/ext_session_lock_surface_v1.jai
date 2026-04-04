@@ -22,6 +22,7 @@
 Ext_Session_Lock_Surface_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -57,6 +58,14 @@ Ext_Session_Lock_Surface_V1_Event :: union kind: Ext_Session_Lock_Surface_V1_Eve
     .CONFIGURE ,, configure: Ext_Session_Lock_Surface_V1_Configure_Args;
 }
 
+Ext_Session_Lock_Surface_V1_Destroy_Args :: struct {
+}
+
+Ext_Session_Lock_Surface_V1_Ack_Configure_Args :: struct {
+    serial: u32;
+}
+
+
 // destroy the lock surface object (destructor)
 // This informs the compositor that the lock surface object will no
 // longer be used.
@@ -68,7 +77,9 @@ Ext_Session_Lock_Surface_V1_Event :: union kind: Ext_Session_Lock_Surface_V1_Eve
 // ext_session_lock_v1.unlock_and_destroy event is sent, the compositor
 // must fall back to rendering a solid color.
 ext_session_lock_surface_v1_destroy :: (self: *Ext_Session_Lock_Surface_V1) {
-    // TODO(Phase 3): marshal(self, EXT_SESSION_LOCK_SURFACE_V1_DESTROY, ...); destroy_proxy(self);
+    args := Ext_Session_Lock_Surface_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, EXT_SESSION_LOCK_SURFACE_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // ack a configure event
@@ -97,7 +108,8 @@ ext_session_lock_surface_v1_destroy :: (self: *Ext_Session_Lock_Surface_V1) {
 // request referencing a configure event older than the last configure
 // event acked for a given lock surface.
 ext_session_lock_surface_v1_ack_configure :: (self: *Ext_Session_Lock_Surface_V1, serial: u32) {
-    // TODO(Phase 3): marshal(self, EXT_SESSION_LOCK_SURFACE_V1_ACK_CONFIGURE, ...);
+    args := Ext_Session_Lock_Surface_V1_Ack_Configure_Args.{ serial = serial };
+    marshal(self.conn, self.id, EXT_SESSION_LOCK_SURFACE_V1_ACK_CONFIGURE, *args);
 }
 
 EXT_SESSION_LOCK_SURFACE_V1_INTERFACE :: Interface_Descriptor.{

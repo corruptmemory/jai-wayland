@@ -12,6 +12,7 @@
 Zxdg_Toplevel_V6 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -88,12 +89,74 @@ Zxdg_Toplevel_V6_Event :: union kind: Zxdg_Toplevel_V6_Event_Kind {
     .CLOSE ,, close: Zxdg_Toplevel_V6_Close_Args;
 }
 
+Zxdg_Toplevel_V6_Destroy_Args :: struct {
+}
+
+Zxdg_Toplevel_V6_Set_Parent_Args :: struct {
+    parent: u32;
+}
+
+Zxdg_Toplevel_V6_Set_Title_Args :: struct {
+    title: string;
+}
+
+Zxdg_Toplevel_V6_Set_App_Id_Args :: struct {
+    app_id: string;
+}
+
+Zxdg_Toplevel_V6_Show_Window_Menu_Args :: struct {
+    seat: u32;
+    serial: u32;
+    x: s32;
+    y: s32;
+}
+
+Zxdg_Toplevel_V6_Move_Args :: struct {
+    seat: u32;
+    serial: u32;
+}
+
+Zxdg_Toplevel_V6_Resize_Args :: struct {
+    seat: u32;
+    serial: u32;
+    edges: u32;
+}
+
+Zxdg_Toplevel_V6_Set_Max_Size_Args :: struct {
+    width: s32;
+    height: s32;
+}
+
+Zxdg_Toplevel_V6_Set_Min_Size_Args :: struct {
+    width: s32;
+    height: s32;
+}
+
+Zxdg_Toplevel_V6_Set_Maximized_Args :: struct {
+}
+
+Zxdg_Toplevel_V6_Unset_Maximized_Args :: struct {
+}
+
+Zxdg_Toplevel_V6_Set_Fullscreen_Args :: struct {
+    output: u32;
+}
+
+Zxdg_Toplevel_V6_Unset_Fullscreen_Args :: struct {
+}
+
+Zxdg_Toplevel_V6_Set_Minimized_Args :: struct {
+}
+
+
 // destroy the xdg_toplevel (destructor)
 // Unmap and destroy the window. The window will be effectively
 // hidden from the user's point of view, and all state like
 // maximization, fullscreen, and so on, will be lost.
 zxdg_toplevel_v6_destroy :: (self: *Zxdg_Toplevel_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Toplevel_V6_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set the parent of this surface
@@ -105,7 +168,8 @@ zxdg_toplevel_v6_destroy :: (self: *Zxdg_Toplevel_V6) {
 // "auxiliary" surfaces, so that the parent is raised when the dialog
 // is raised.
 zxdg_toplevel_v6_set_parent :: (self: *Zxdg_Toplevel_V6, parent: *Zxdg_Toplevel_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_SET_PARENT, ...);
+    args := Zxdg_Toplevel_V6_Set_Parent_Args.{ parent = parent.id };
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_SET_PARENT, *args);
 }
 
 // set surface title
@@ -117,7 +181,8 @@ zxdg_toplevel_v6_set_parent :: (self: *Zxdg_Toplevel_V6, parent: *Zxdg_Toplevel_
 //
 // The string must be encoded in UTF-8.
 zxdg_toplevel_v6_set_title :: (self: *Zxdg_Toplevel_V6, title: string) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_SET_TITLE, ...);
+    args := Zxdg_Toplevel_V6_Set_Title_Args.{ title = title };
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_SET_TITLE, *args);
 }
 
 // set application ID
@@ -142,7 +207,8 @@ zxdg_toplevel_v6_set_title :: (self: *Zxdg_Toplevel_V6, title: string) {
 //
 // [0] http://standards.freedesktop.org/desktop-entry-spec/
 zxdg_toplevel_v6_set_app_id :: (self: *Zxdg_Toplevel_V6, app_id: string) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_SET_APP_ID, ...);
+    args := Zxdg_Toplevel_V6_Set_App_Id_Args.{ app_id = app_id };
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_SET_APP_ID, *args);
 }
 
 // show the window menu
@@ -158,7 +224,8 @@ zxdg_toplevel_v6_set_app_id :: (self: *Zxdg_Toplevel_V6, app_id: string) {
 // This request must be used in response to some sort of user action
 // like a button press, key press, or touch down event.
 zxdg_toplevel_v6_show_window_menu :: (self: *Zxdg_Toplevel_V6, seat: *Wl_Seat, serial: u32, x: s32, y: s32) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_SHOW_WINDOW_MENU, ...);
+    args := Zxdg_Toplevel_V6_Show_Window_Menu_Args.{ seat = seat.id, serial = serial, x = x, y = y };
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_SHOW_WINDOW_MENU, *args);
 }
 
 // start an interactive move
@@ -179,7 +246,8 @@ zxdg_toplevel_v6_show_window_menu :: (self: *Zxdg_Toplevel_V6, seat: *Wl_Seat, s
 // updating a pointer cursor, during the move. There is no guarantee
 // that the device focus will return when the move is completed.
 zxdg_toplevel_v6_move :: (self: *Zxdg_Toplevel_V6, seat: *Wl_Seat, serial: u32) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_MOVE, ...);
+    args := Zxdg_Toplevel_V6_Move_Args.{ seat = seat.id, serial = serial };
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_MOVE, *args);
 }
 
 // start an interactive resize
@@ -214,7 +282,8 @@ zxdg_toplevel_v6_move :: (self: *Zxdg_Toplevel_V6, seat: *Wl_Seat, serial: u32) 
 // use this information to adapt its behavior, e.g. choose an
 // appropriate cursor image.
 zxdg_toplevel_v6_resize :: (self: *Zxdg_Toplevel_V6, seat: *Wl_Seat, serial: u32, edges: u32) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_RESIZE, ...);
+    args := Zxdg_Toplevel_V6_Resize_Args.{ seat = seat.id, serial = serial, edges = edges };
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_RESIZE, *args);
 }
 
 // set the maximum size
@@ -252,7 +321,8 @@ zxdg_toplevel_v6_resize :: (self: *Zxdg_Toplevel_V6, seat: *Wl_Seat, serial: u32
 // strictly negative values for width and height will result in the
 // zxdg_shell_v6.invalid_surface_state error being raised.
 zxdg_toplevel_v6_set_max_size :: (self: *Zxdg_Toplevel_V6, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_SET_MAX_SIZE, ...);
+    args := Zxdg_Toplevel_V6_Set_Max_Size_Args.{ width = width, height = height };
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_SET_MAX_SIZE, *args);
 }
 
 // set the minimum size
@@ -290,7 +360,8 @@ zxdg_toplevel_v6_set_max_size :: (self: *Zxdg_Toplevel_V6, width: s32, height: s
 // strictly negative values for width and height will result in the
 // zxdg_shell_v6.invalid_surface_state error being raised.
 zxdg_toplevel_v6_set_min_size :: (self: *Zxdg_Toplevel_V6, width: s32, height: s32) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_SET_MIN_SIZE, ...);
+    args := Zxdg_Toplevel_V6_Set_Min_Size_Args.{ width = width, height = height };
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_SET_MIN_SIZE, *args);
 }
 
 // maximize the window
@@ -316,7 +387,8 @@ zxdg_toplevel_v6_set_min_size :: (self: *Zxdg_Toplevel_V6, width: s32, height: s
 // match this request to a specific future configure event is
 // futile.
 zxdg_toplevel_v6_set_maximized :: (self: *Zxdg_Toplevel_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_SET_MAXIMIZED, ...);
+    args := Zxdg_Toplevel_V6_Set_Maximized_Args.{};
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_SET_MAXIMIZED, *args);
 }
 
 // unmaximize the window
@@ -343,7 +415,8 @@ zxdg_toplevel_v6_set_maximized :: (self: *Zxdg_Toplevel_V6) {
 // this request and emitting corresponding configure event, so trying
 // to match the request with the event is futile.
 zxdg_toplevel_v6_unset_maximized :: (self: *Zxdg_Toplevel_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_UNSET_MAXIMIZED, ...);
+    args := Zxdg_Toplevel_V6_Unset_Maximized_Args.{};
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_UNSET_MAXIMIZED, *args);
 }
 
 // set the window as fullscreen on a monitor
@@ -357,11 +430,13 @@ zxdg_toplevel_v6_unset_maximized :: (self: *Zxdg_Toplevel_V6) {
 // position the surface in the center of the output and compensate with
 // black borders filling the rest of the output.
 zxdg_toplevel_v6_set_fullscreen :: (self: *Zxdg_Toplevel_V6, output: *Wl_Output) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_SET_FULLSCREEN, ...);
+    args := Zxdg_Toplevel_V6_Set_Fullscreen_Args.{ output = output.id };
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_SET_FULLSCREEN, *args);
 }
 
 zxdg_toplevel_v6_unset_fullscreen :: (self: *Zxdg_Toplevel_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_UNSET_FULLSCREEN, ...);
+    args := Zxdg_Toplevel_V6_Unset_Fullscreen_Args.{};
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_UNSET_FULLSCREEN, *args);
 }
 
 // set the window as minimized
@@ -374,7 +449,8 @@ zxdg_toplevel_v6_unset_fullscreen :: (self: *Zxdg_Toplevel_V6) {
 // also work with live previews on windows in Alt-Tab, Expose or
 // similar compositor features.
 zxdg_toplevel_v6_set_minimized :: (self: *Zxdg_Toplevel_V6) {
-    // TODO(Phase 3): marshal(self, ZXDG_TOPLEVEL_V6_SET_MINIMIZED, ...);
+    args := Zxdg_Toplevel_V6_Set_Minimized_Args.{};
+    marshal(self.conn, self.id, ZXDG_TOPLEVEL_V6_SET_MINIMIZED, *args);
 }
 
 ZXDG_TOPLEVEL_V6_INTERFACE :: Interface_Descriptor.{

@@ -10,6 +10,7 @@
 Zwp_Input_Timestamps_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -33,12 +34,18 @@ Zwp_Input_Timestamps_V1_Event :: union kind: Zwp_Input_Timestamps_V1_Event_Kind 
     .TIMESTAMP ,, timestamp: Zwp_Input_Timestamps_V1_Timestamp_Args;
 }
 
+Zwp_Input_Timestamps_V1_Destroy_Args :: struct {
+}
+
+
 // destroy the input timestamps object (destructor)
 // Informs the server that the client will no longer be using this
 // protocol object. After the server processes the request, no more
 // timestamp events will be emitted.
 zwp_input_timestamps_v1_destroy :: (self: *Zwp_Input_Timestamps_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_INPUT_TIMESTAMPS_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Input_Timestamps_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_INPUT_TIMESTAMPS_V1_INTERFACE :: Interface_Descriptor.{

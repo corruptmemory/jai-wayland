@@ -8,15 +8,22 @@
 Zwp_Text_Input_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 ZWP_TEXT_INPUT_MANAGER_V1_CREATE_TEXT_INPUT :: 0;
 
+Zwp_Text_Input_Manager_V1_Create_Text_Input_Args :: struct {
+}
+
+
 // create text input
 // Creates a new text_input object.
 zwp_text_input_manager_v1_create_text_input :: (self: *Zwp_Text_Input_Manager_V1) -> *Zwp_Text_Input_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_TEXT_INPUT_MANAGER_V1_CREATE_TEXT_INPUT, ...);
+    args := Zwp_Text_Input_Manager_V1_Create_Text_Input_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, ZWP_TEXT_INPUT_MANAGER_V1_CREATE_TEXT_INPUT, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

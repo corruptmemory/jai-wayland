@@ -18,6 +18,7 @@
 Wp_Fifo_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -32,12 +33,22 @@ Wp_Fifo_Manager_V1_Error :: enum u32 {
     ALREADY_EXISTS :: 0;
 }
 
+Wp_Fifo_Manager_V1_Destroy_Args :: struct {
+}
+
+Wp_Fifo_Manager_V1_Get_Fifo_Args :: struct {
+    surface: u32;
+}
+
+
 // unbind from the manager interface (destructor)
 // Informs the server that the client will no longer be using
 // this protocol object. Existing objects created by this object
 // are not affected.
 wp_fifo_manager_v1_destroy :: (self: *Wp_Fifo_Manager_V1) {
-    // TODO(Phase 3): marshal(self, WP_FIFO_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Fifo_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_FIFO_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // request fifo interface for surface
@@ -50,7 +61,9 @@ wp_fifo_manager_v1_destroy :: (self: *Wp_Fifo_Manager_V1) {
 // components, general best practice is that only the component
 // performing wl_surface.attach operations should use this protocol.
 wp_fifo_manager_v1_get_fifo :: (self: *Wp_Fifo_Manager_V1, surface: *Wl_Surface) -> *Wp_Fifo_V1 {
-    // TODO(Phase 3): marshal_constructor(self, WP_FIFO_MANAGER_V1_GET_FIFO, ...);
+    args := Wp_Fifo_Manager_V1_Get_Fifo_Args.{ surface = surface.id };
+    new_id := marshal_constructor(self.conn, self.id, WP_FIFO_MANAGER_V1_GET_FIFO, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

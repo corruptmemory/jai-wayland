@@ -10,17 +10,28 @@
 Zxdg_Importer_V2 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 ZXDG_IMPORTER_V2_DESTROY :: 0;
 ZXDG_IMPORTER_V2_IMPORT_TOPLEVEL :: 1;
 
+Zxdg_Importer_V2_Destroy_Args :: struct {
+}
+
+Zxdg_Importer_V2_Import_Toplevel_Args :: struct {
+    handle: string;
+}
+
+
 // destroy the xdg_importer object (destructor)
 // Notify the compositor that the xdg_importer object will no longer be
 // used.
 zxdg_importer_v2_destroy :: (self: *Zxdg_Importer_V2) {
-    // TODO(Phase 3): marshal(self, ZXDG_IMPORTER_V2_DESTROY, ...); destroy_proxy(self);
+    args := Zxdg_Importer_V2_Destroy_Args.{};
+    marshal(self.conn, self.id, ZXDG_IMPORTER_V2_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // import a toplevel surface
@@ -30,7 +41,9 @@ zxdg_importer_v2_destroy :: (self: *Zxdg_Importer_V2) {
 // represents the imported surface, and the importing client can
 // manipulate its relationship using it. See xdg_imported for details.
 zxdg_importer_v2_import_toplevel :: (self: *Zxdg_Importer_V2, handle: string) -> *Zxdg_Imported_V2 {
-    // TODO(Phase 3): marshal_constructor(self, ZXDG_IMPORTER_V2_IMPORT_TOPLEVEL, ...);
+    args := Zxdg_Importer_V2_Import_Toplevel_Args.{ handle = handle };
+    new_id := marshal_constructor(self.conn, self.id, ZXDG_IMPORTER_V2_IMPORT_TOPLEVEL, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

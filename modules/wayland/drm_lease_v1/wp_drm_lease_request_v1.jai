@@ -11,6 +11,7 @@
 Wp_Drm_Lease_Request_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -26,6 +27,14 @@ Wp_Drm_Lease_Request_V1_Error :: enum u32 {
     EMPTY_LEASE :: 2;
 }
 
+Wp_Drm_Lease_Request_V1_Request_Connector_Args :: struct {
+    connector: u32;
+}
+
+Wp_Drm_Lease_Request_V1_Submit_Args :: struct {
+}
+
+
 // request a connector for this lease
 // Indicates that the client would like to lease the given connector.
 // This is only used as a suggestion, the compositor may choose to
@@ -38,7 +47,8 @@ Wp_Drm_Lease_Request_V1_Error :: enum u32 {
 // than this lease request raises the wrong_device error. Requesting a
 // connector twice will raise the duplicate_connector error.
 wp_drm_lease_request_v1_request_connector :: (self: *Wp_Drm_Lease_Request_V1, connector: *Wp_Drm_Lease_Connector_V1) {
-    // TODO(Phase 3): marshal(self, WP_DRM_LEASE_REQUEST_V1_REQUEST_CONNECTOR, ...);
+    args := Wp_Drm_Lease_Request_V1_Request_Connector_Args.{ connector = connector.id };
+    marshal(self.conn, self.id, WP_DRM_LEASE_REQUEST_V1_REQUEST_CONNECTOR, *args);
 }
 
 // submit the lease request (destructor)
@@ -50,7 +60,10 @@ wp_drm_lease_request_v1_request_connector :: (self: *Wp_Drm_Lease_Request_V1, co
 // Not requesting any connectors before submitting the lease request
 // will raise the empty_lease error.
 wp_drm_lease_request_v1_submit :: (self: *Wp_Drm_Lease_Request_V1) -> *Wp_Drm_Lease_V1 {
-    // TODO(Phase 3): marshal(self, WP_DRM_LEASE_REQUEST_V1_SUBMIT, ...); destroy_proxy(self);
+    args := Wp_Drm_Lease_Request_V1_Submit_Args.{};
+    new_id := marshal_constructor(self.conn, self.id, WP_DRM_LEASE_REQUEST_V1_SUBMIT, *args);
+    // TODO(Phase 4): allocate proxy properly
+    return null;
 }
 
 WP_DRM_LEASE_REQUEST_V1_INTERFACE :: Interface_Descriptor.{

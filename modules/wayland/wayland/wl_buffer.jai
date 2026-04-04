@@ -22,6 +22,7 @@
 Wl_Buffer :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -42,13 +43,19 @@ Wl_Buffer_Event :: union kind: Wl_Buffer_Event_Kind {
     .RELEASE ,, release: Wl_Buffer_Release_Args;
 }
 
+Wl_Buffer_Destroy_Args :: struct {
+}
+
+
 // destroy a buffer (destructor)
 // Destroy a buffer. If and how you need to release the backing
 // storage is defined by the buffer factory interface.
 //
 // For possible side-effects to a surface, see wl_surface.attach.
 wl_buffer_destroy :: (self: *Wl_Buffer) {
-    // TODO(Phase 3): marshal(self, WL_BUFFER_DESTROY, ...); destroy_proxy(self);
+    args := Wl_Buffer_Destroy_Args.{};
+    marshal(self.conn, self.id, WL_BUFFER_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WL_BUFFER_INTERFACE :: Interface_Descriptor.{

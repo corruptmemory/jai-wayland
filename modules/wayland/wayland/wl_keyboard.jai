@@ -19,6 +19,7 @@
 Wl_Keyboard :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -64,7 +65,7 @@ Wl_Keyboard_Key_State :: enum u32 {
 // keyboard mapping
 Wl_Keyboard_Keymap_Args :: struct {
     format: u32;
-    fd: s32;
+    fd: Fd;
     size: u32;
 }
 
@@ -122,9 +123,15 @@ Wl_Keyboard_Event :: union kind: Wl_Keyboard_Event_Kind {
     .REPEAT_INFO ,, repeat_info: Wl_Keyboard_Repeat_Info_Args;
 }
 
+Wl_Keyboard_Release_Args :: struct {
+}
+
+
 // release the keyboard object (destructor)
 wl_keyboard_release :: (self: *Wl_Keyboard) {
-    // TODO(Phase 3): marshal(self, WL_KEYBOARD_RELEASE, ...); destroy_proxy(self);
+    args := Wl_Keyboard_Release_Args.{};
+    marshal(self.conn, self.id, WL_KEYBOARD_RELEASE, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WL_KEYBOARD_INTERFACE :: Interface_Descriptor.{

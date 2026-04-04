@@ -15,6 +15,7 @@
 Zwp_Tablet_V2 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -90,10 +91,16 @@ Zwp_Tablet_V2_Event :: union kind: Zwp_Tablet_V2_Event_Kind {
     .BUSTYPE ,, bustype: Zwp_Tablet_V2_Bustype_Args;
 }
 
+Zwp_Tablet_V2_Destroy_Args :: struct {
+}
+
+
 // destroy the tablet object (destructor)
 // This destroys the client's resource for this tablet object.
 zwp_tablet_v2_destroy :: (self: *Zwp_Tablet_V2) {
-    // TODO(Phase 3): marshal(self, ZWP_TABLET_V2_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Tablet_V2_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_TABLET_V2_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_TABLET_V2_INTERFACE :: Interface_Descriptor.{

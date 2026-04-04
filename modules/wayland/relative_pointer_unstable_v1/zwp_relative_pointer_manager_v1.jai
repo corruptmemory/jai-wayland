@@ -9,24 +9,37 @@
 Zwp_Relative_Pointer_Manager_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
 ZWP_RELATIVE_POINTER_MANAGER_V1_DESTROY :: 0;
 ZWP_RELATIVE_POINTER_MANAGER_V1_GET_RELATIVE_POINTER :: 1;
 
+Zwp_Relative_Pointer_Manager_V1_Destroy_Args :: struct {
+}
+
+Zwp_Relative_Pointer_Manager_V1_Get_Relative_Pointer_Args :: struct {
+    pointer: u32;
+}
+
+
 // destroy the relative pointer manager object (destructor)
 // Used by the client to notify the server that it will no longer use this
 // relative pointer manager object.
 zwp_relative_pointer_manager_v1_destroy :: (self: *Zwp_Relative_Pointer_Manager_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_RELATIVE_POINTER_MANAGER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Relative_Pointer_Manager_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_RELATIVE_POINTER_MANAGER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // get a relative pointer object
 // Create a relative pointer interface given a wl_pointer object. See the
 // wp_relative_pointer interface for more details.
 zwp_relative_pointer_manager_v1_get_relative_pointer :: (self: *Zwp_Relative_Pointer_Manager_V1, pointer: *Wl_Pointer) -> *Zwp_Relative_Pointer_V1 {
-    // TODO(Phase 3): marshal_constructor(self, ZWP_RELATIVE_POINTER_MANAGER_V1_GET_RELATIVE_POINTER, ...);
+    args := Zwp_Relative_Pointer_Manager_V1_Get_Relative_Pointer_Args.{ pointer = pointer.id };
+    new_id := marshal_constructor(self.conn, self.id, ZWP_RELATIVE_POINTER_MANAGER_V1_GET_RELATIVE_POINTER, *args);
+    // TODO(Phase 4): allocate proxy properly
     return null;
 }
 

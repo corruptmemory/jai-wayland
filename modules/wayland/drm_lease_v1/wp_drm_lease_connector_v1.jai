@@ -14,6 +14,7 @@
 Wp_Drm_Lease_Connector_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -65,6 +66,10 @@ Wp_Drm_Lease_Connector_V1_Event :: union kind: Wp_Drm_Lease_Connector_V1_Event_K
     .WITHDRAWN ,, withdrawn: Wp_Drm_Lease_Connector_V1_Withdrawn_Args;
 }
 
+Wp_Drm_Lease_Connector_V1_Destroy_Args :: struct {
+}
+
+
 // destroy connector (destructor)
 // The client may send this request to indicate that it will not use this
 // connector. Clients are encouraged to send this after receiving the
@@ -72,7 +77,9 @@ Wp_Drm_Lease_Connector_V1_Event :: union kind: Wp_Drm_Lease_Connector_V1_Event_K
 // associated with this connector offer. Neither existing lease requests
 // nor leases will be affected.
 wp_drm_lease_connector_v1_destroy :: (self: *Wp_Drm_Lease_Connector_V1) {
-    // TODO(Phase 3): marshal(self, WP_DRM_LEASE_CONNECTOR_V1_DESTROY, ...); destroy_proxy(self);
+    args := Wp_Drm_Lease_Connector_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, WP_DRM_LEASE_CONNECTOR_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 WP_DRM_LEASE_CONNECTOR_V1_INTERFACE :: Interface_Descriptor.{

@@ -23,6 +23,7 @@
 Zwp_Confined_Pointer_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -51,11 +52,21 @@ Zwp_Confined_Pointer_V1_Event :: union kind: Zwp_Confined_Pointer_V1_Event_Kind 
     .UNCONFINED ,, unconfined: Zwp_Confined_Pointer_V1_Unconfined_Args;
 }
 
+Zwp_Confined_Pointer_V1_Destroy_Args :: struct {
+}
+
+Zwp_Confined_Pointer_V1_Set_Region_Args :: struct {
+    region: u32;
+}
+
+
 // destroy the confined pointer object (destructor)
 // Destroy the confined pointer object. If applicable, the compositor will
 // unconfine the pointer.
 zwp_confined_pointer_v1_destroy :: (self: *Zwp_Confined_Pointer_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_CONFINED_POINTER_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Confined_Pointer_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_CONFINED_POINTER_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 // set a new confine region
@@ -74,7 +85,8 @@ zwp_confined_pointer_v1_destroy :: (self: *Zwp_Confined_Pointer_V1) {
 //
 // For details about the confine region, see wp_confined_pointer.
 zwp_confined_pointer_v1_set_region :: (self: *Zwp_Confined_Pointer_V1, region: *Wl_Region) {
-    // TODO(Phase 3): marshal(self, ZWP_CONFINED_POINTER_V1_SET_REGION, ...);
+    args := Zwp_Confined_Pointer_V1_Set_Region_Args.{ region = region.id };
+    marshal(self.conn, self.id, ZWP_CONFINED_POINTER_V1_SET_REGION, *args);
 }
 
 ZWP_CONFINED_POINTER_V1_INTERFACE :: Interface_Descriptor.{

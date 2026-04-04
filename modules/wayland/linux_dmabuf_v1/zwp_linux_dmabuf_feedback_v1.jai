@@ -32,6 +32,7 @@
 Zwp_Linux_Dmabuf_Feedback_V1 :: struct {
     id: u32;
     version: u32;
+    conn: *Connection;
 }
 
 // Request opcodes
@@ -57,7 +58,7 @@ Zwp_Linux_Dmabuf_Feedback_V1_Done_Args :: struct {
 
 // format and modifier table
 Zwp_Linux_Dmabuf_Feedback_V1_Format_Table_Args :: struct {
-    fd: s32;
+    fd: Fd;
     size: u32;
 }
 
@@ -105,11 +106,17 @@ Zwp_Linux_Dmabuf_Feedback_V1_Event :: union kind: Zwp_Linux_Dmabuf_Feedback_V1_E
     .TRANCHE_FLAGS ,, tranche_flags: Zwp_Linux_Dmabuf_Feedback_V1_Tranche_Flags_Args;
 }
 
+Zwp_Linux_Dmabuf_Feedback_V1_Destroy_Args :: struct {
+}
+
+
 // destroy the feedback object (destructor)
 // Using this request a client can tell the server that it is not going to
 // use the wp_linux_dmabuf_feedback object anymore.
 zwp_linux_dmabuf_feedback_v1_destroy :: (self: *Zwp_Linux_Dmabuf_Feedback_V1) {
-    // TODO(Phase 3): marshal(self, ZWP_LINUX_DMABUF_FEEDBACK_V1_DESTROY, ...); destroy_proxy(self);
+    args := Zwp_Linux_Dmabuf_Feedback_V1_Destroy_Args.{};
+    marshal(self.conn, self.id, ZWP_LINUX_DMABUF_FEEDBACK_V1_DESTROY, *args);
+    // TODO(Phase 4): destroy_proxy(self);
 }
 
 ZWP_LINUX_DMABUF_FEEDBACK_V1_INTERFACE :: Interface_Descriptor.{
