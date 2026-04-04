@@ -215,6 +215,97 @@ generate_events :: (iface: *Interface) -> string {
     return builder_to_string(*sb,, allocator = temp);
 }
 
+// ── Request generation ──
+
+// Generates a typed stub request function for a single interface request.
+// new_id args with interface_name set become the return type (not a parameter).
+// new_id args without interface_name (wl_registry.bind) become a polymorphic $T parameter.
+generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
+    sb: String_Builder;
+    sb.allocator = temp;
+
+    // Doc comment
+    if req.description.summary.count > 0 {
+        summary := req.description.summary;
+        if req.is_destructor {
+            print_to_builder(*sb, "// % (destructor)\n", summary);
+        } else {
+            print_to_builder(*sb, "// %\n", summary);
+        }
+    } else if req.is_destructor {
+        print_to_builder(*sb, "// (destructor)\n");
+    }
+
+    if req.description.body.count > 0 {
+        emit_description_body(*sb, req.description.body);
+    }
+
+    // Determine return type and collect parameters
+    return_type: string;
+    has_untyped_new_id := false;
+
+    for * arg: req.args {
+        if arg.arg_type == .NEW_ID {
+            if arg.interface_name.count > 0 {
+                return_type = tprint("*%", to_jai_type_name(arg.interface_name));
+            } else {
+                has_untyped_new_id = true;
+                return_type = "*T";
+            }
+        }
+    }
+
+    // Function name
+    func_name := tprint("%_%", iface.name, req.name);
+    const_name := opcode_name(iface.name, req.name);
+    type_name := to_jai_type_name(iface.name);
+
+    // Build parameter list
+    print_to_builder(*sb, "% :: (self: *%", func_name, type_name);
+
+    for * arg: req.args {
+        if arg.arg_type == .NEW_ID {
+            if arg.interface_name.count > 0 {
+                // Typed new_id: becomes return type, skip as parameter
+                continue;
+            } else {
+                // Untyped new_id: emit $T: Type parameter (skip the arg itself)
+                print_to_builder(*sb, ", $T: Type");
+                continue;
+            }
+        }
+        print_to_builder(*sb, ", %: %", arg.name, arg_type_to_jai(arg));
+    }
+
+    // If untyped new_id, add version parameter after $T
+    if has_untyped_new_id {
+        print_to_builder(*sb, ", version: u32");
+    }
+
+    print_to_builder(*sb, ")");
+
+    // Return type
+    if return_type.count > 0 {
+        print_to_builder(*sb, " -> %", return_type);
+    }
+
+    // Body
+    print_to_builder(*sb, " {\n");
+
+    if req.is_destructor {
+        print_to_builder(*sb, "    // TODO(Phase 3): marshal(self, %, ...); destroy_proxy(self);\n", const_name);
+    } else if return_type.count > 0 {
+        print_to_builder(*sb, "    // TODO(Phase 3): marshal_constructor(self, %, ...);\n", const_name);
+        print_to_builder(*sb, "    return null;\n");
+    } else {
+        print_to_builder(*sb, "    // TODO(Phase 3): marshal(self, %, ...);\n", const_name);
+    }
+
+    print_to_builder(*sb, "}\n");
+
+    return builder_to_string(*sb,, allocator = temp);
+}
+
 // ── Shared types file generation ──
 
 // Returns the content of types.jai — shared type definitions used by all

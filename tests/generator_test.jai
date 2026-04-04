@@ -259,6 +259,63 @@ test_generate_events_zero_args :: () {
     print("  PASS: test_generate_events_zero_args\n");
 }
 
+// ── request generation tests ──
+
+test_generate_request_simple :: () {
+    iface: Interface; iface.name = "wl_surface";
+    req: Message; req.name = "damage";
+    arg1: Arg; arg1.name = "x"; arg1.arg_type = .INT;
+    arg2: Arg; arg2.name = "y"; arg2.arg_type = .INT;
+    arg3: Arg; arg3.name = "width"; arg3.arg_type = .INT;
+    arg4: Arg; arg4.name = "height"; arg4.arg_type = .INT;
+    array_add(*req.args, arg1);
+    array_add(*req.args, arg2);
+    array_add(*req.args, arg3);
+    array_add(*req.args, arg4);
+
+    result := generate_request(*iface, *req, 2);
+    assert(contains(result, "wl_surface_damage"), "Missing function name");
+    assert(contains(result, "self: *Wl_Surface"), "Missing self parameter");
+    assert(contains(result, "x: s32"), "Missing x param");
+    assert(contains(result, "width: s32"), "Missing width param");
+    assert(contains(result, "TODO(Phase 3)"), "Missing stub marker");
+    print("  PASS: test_generate_request_simple\n");
+}
+
+test_generate_request_constructor :: () {
+    iface: Interface; iface.name = "wl_surface";
+    req: Message; req.name = "frame";
+    arg1: Arg; arg1.name = "callback"; arg1.arg_type = .NEW_ID; arg1.interface_name = "wl_callback";
+    array_add(*req.args, arg1);
+
+    result := generate_request(*iface, *req, 3);
+    assert(contains(result, "-> *Wl_Callback"), "Constructor should return new type");
+    print("  PASS: test_generate_request_constructor\n");
+}
+
+test_generate_request_destructor :: () {
+    iface: Interface; iface.name = "wl_surface";
+    req: Message; req.name = "destroy"; req.is_destructor = true;
+
+    result := generate_request(*iface, *req, 0);
+    assert(contains(result, "destructor"), "Should note destructor");
+    print("  PASS: test_generate_request_destructor\n");
+}
+
+test_generate_request_untyped_new_id :: () {
+    iface: Interface; iface.name = "wl_registry";
+    req: Message; req.name = "bind";
+    arg1: Arg; arg1.name = "name"; arg1.arg_type = .UINT;
+    arg2: Arg; arg2.name = "id"; arg2.arg_type = .NEW_ID;  // no interface_name!
+    array_add(*req.args, arg1);
+    array_add(*req.args, arg2);
+
+    result := generate_request(*iface, *req, 0);
+    assert(contains(result, "$T"), "Untyped new_id should use polymorphic type");
+    assert(contains(result, "-> *T"), "Should return *T");
+    print("  PASS: test_generate_request_untyped_new_id\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -303,6 +360,12 @@ main :: () {
     test_generate_events_multi_arg();
     test_generate_events_typed_object();
     test_generate_events_zero_args();
+
+    print("\nrequest generation:\n");
+    test_generate_request_simple();
+    test_generate_request_constructor();
+    test_generate_request_destructor();
+    test_generate_request_untyped_new_id();
 
     print("\nAll tests passed.\n");
 }
