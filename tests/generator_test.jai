@@ -2,6 +2,8 @@
 #import "Basic";
 #import "String";
 #load "../src/generator.jai";
+#load "../src/xml.jai";
+#load "../src/protocol.jai";
 
 // ── to_jai_type_name tests ──
 
@@ -104,6 +106,58 @@ test_generate_types_file :: () {
     print("  PASS: test_generate_types_file\n");
 }
 
+// ── enum generation tests ──
+
+test_generate_enum_regular :: () {
+    e: Enum_Def;
+    e.name = "error";
+    e.description.summary = "surface errors";
+    entry1: Entry; entry1.name = "invalid_scale"; entry1.value = 0; entry1.summary = "buffer scale is not positive";
+    entry2: Entry; entry2.name = "invalid_transform"; entry2.value = 1; entry2.summary = "buffer transform is not valid";
+    array_add(*e.entries, entry1);
+    array_add(*e.entries, entry2);
+
+    result := generate_enum(*e, "wl_surface");
+    assert(contains(result, "Wl_Surface_Error :: enum u32"), "Missing enum declaration, got:\n%", result);
+    assert(contains(result, "INVALID_SCALE"), "Missing INVALID_SCALE");
+    assert(contains(result, "INVALID_TRANSFORM"), "Missing INVALID_TRANSFORM");
+    assert(contains(result, ":: 0"), "Missing value 0");
+    assert(contains(result, ":: 1"), "Missing value 1");
+    assert(contains(result, "surface errors"), "Missing summary comment");
+    print("  PASS: test_generate_enum_regular\n");
+}
+
+test_generate_enum_bitfield :: () {
+    e: Enum_Def;
+    e.name = "capability";
+    e.bitfield = true;
+    entry1: Entry; entry1.name = "pointer"; entry1.value = 1;
+    entry2: Entry; entry2.name = "keyboard"; entry2.value = 2;
+    entry3: Entry; entry3.name = "touch"; entry3.value = 4;
+    array_add(*e.entries, entry1);
+    array_add(*e.entries, entry2);
+    array_add(*e.entries, entry3);
+
+    result := generate_enum(*e, "wl_seat");
+    assert(contains(result, "enum_flags u32"), "Bitfield should use enum_flags, got:\n%", result);
+    assert(contains(result, "POINTER"), "Missing POINTER");
+    assert(contains(result, ":: 1"), "Missing value 1");
+    print("  PASS: test_generate_enum_bitfield\n");
+}
+
+test_generate_enum_hex_values :: () {
+    e: Enum_Def;
+    e.name = "format";
+    entry1: Entry; entry1.name = "argb8888"; entry1.value = 0;
+    entry2: Entry; entry2.name = "c8"; entry2.value = 0x20203843;
+    array_add(*e.entries, entry1);
+    array_add(*e.entries, entry2);
+
+    result := generate_enum(*e, "wl_shm");
+    assert(contains(result, "0x20203843"), "Large value should be hex, got:\n%", result);
+    print("  PASS: test_generate_enum_hex_values\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -135,6 +189,11 @@ main :: () {
 
     print("\nshared types:\n");
     test_generate_types_file();
+
+    print("\nenum generation:\n");
+    test_generate_enum_regular();
+    test_generate_enum_bitfield();
+    test_generate_enum_hex_values();
 
     print("\nAll tests passed.\n");
 }

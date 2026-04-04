@@ -66,6 +66,83 @@ resolve_enum_type :: (enum_ref: string, current_interface: string) -> string {
     return to_jai_enum_name(current_interface, enum_ref);
 }
 
+// ── Enum generation ──
+
+// Emits a multi-line description body as //-prefixed comment lines.
+// Trims each line, skips leading/trailing empty lines, but emits "//"
+// for blank lines between paragraphs.
+emit_description_body :: (sb: *String_Builder, body: string) {
+    remaining := body;
+    lines: [..] string;
+    lines.allocator = temp;
+
+    while remaining.count > 0 {
+        found, left, right := split_from_left(remaining, #char "\n");
+        if found {
+            array_add(*lines, trim(left));
+            remaining = right;
+        } else {
+            array_add(*lines, trim(remaining));
+            break;
+        }
+    }
+
+    // Trim leading empty lines
+    start := 0;
+    while start < lines.count && lines[start].count == 0  start += 1;
+
+    // Trim trailing empty lines
+    end := lines.count;
+    while end > start && lines[end - 1].count == 0  end -= 1;
+
+    for i: start..end-1 {
+        if lines[i].count == 0 {
+            print_to_builder(sb, "//\n");
+        } else {
+            print_to_builder(sb, "// %\n", lines[i]);
+        }
+    }
+}
+
+// Generates a Jai enum definition from an Enum_Def.
+// Regular enums use "enum u32", bitfield enums use "enum_flags u32".
+// Values > 0xFFFF are emitted in hex for readability.
+generate_enum :: (e: *Enum_Def, interface_name: string) -> string {
+    sb: String_Builder;
+    sb.allocator = temp;
+
+    // Doc comment from summary
+    if e.description.summary.count > 0 {
+        print_to_builder(*sb, "// %\n", e.description.summary);
+    }
+
+    // Doc comment from body
+    if e.description.body.count > 0 {
+        emit_description_body(*sb, e.description.body);
+    }
+
+    // Enum declaration
+    type_name := to_jai_enum_name(interface_name, e.name);
+    keyword := ifx e.bitfield then "enum_flags" else "enum";
+    print_to_builder(*sb, "% :: % u32 {\n", type_name, keyword);
+
+    // Entries
+    for entry: e.entries {
+        if entry.summary.count > 0 {
+            print_to_builder(*sb, "    // %\n", entry.summary);
+        }
+        name := to_upper_snake(entry.name);
+        if entry.value > 0xFFFF {
+            print_to_builder(*sb, "    % :: 0x%;\n", name, formatInt(entry.value, base = 16));
+        } else {
+            print_to_builder(*sb, "    % :: %;\n", name, entry.value);
+        }
+    }
+
+    print_to_builder(*sb, "}\n");
+    return builder_to_string(*sb,, allocator = temp);
+}
+
 // ── Shared types file generation ──
 
 // Returns the content of types.jai — shared type definitions used by all
