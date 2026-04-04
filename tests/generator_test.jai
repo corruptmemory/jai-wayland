@@ -158,6 +158,20 @@ test_generate_enum_hex_values :: () {
     print("  PASS: test_generate_enum_hex_values\n");
 }
 
+test_emit_description_body :: () {
+    sb: String_Builder;
+    sb.allocator = temp;
+    emit_description_body(*sb, "\n  First paragraph.\n\n  Second paragraph.\n  ");
+    result := builder_to_string(*sb,, allocator = temp);
+    assert(contains(result, "// First paragraph."), "Missing first paragraph");
+    assert(contains(result, "// Second paragraph."), "Missing second paragraph");
+    // Should have blank comment line between paragraphs
+    assert(contains(result, "//\n"), "Missing paragraph separator");
+    // Should NOT start with bare // (leading blank stripped)
+    assert(!begins_with(result, "//\n//"), "Should strip leading blank lines");
+    print("  PASS: test_emit_description_body\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -194,6 +208,7 @@ main :: () {
     test_generate_enum_regular();
     test_generate_enum_bitfield();
     test_generate_enum_hex_values();
+    test_emit_description_body();
 
     print("\nAll tests passed.\n");
 }
