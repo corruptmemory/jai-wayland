@@ -4,13 +4,16 @@
 
 Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire protocol directly, uses runtime dlopen for any shared libraries, and generates bindings from Wayland protocol XML specs.
 
-**Current status:** Phase 1 complete (XML parser + protocol data model). Phase 2 (code generator) is next.
+**Current status:** Phase 1 (XML parser) and Phase 2 (code generator) complete. Phase 3 (wire protocol) is next.
 
 ## Build Commands
 
 ```bash
-./build.sh            # Build main → build/main
-./build.sh - test     # Build and run 22 tests → build_tests/xml_tests
+./build.sh              # Build main → build/main
+./build.sh - test       # Build and run 22 XML/protocol tests
+./build.sh - gen_test   # Build and run 36 generator tests
+./build.sh - compile_test  # Build and run 6 compilation smoke tests (imports generated module)
+./build.sh - generate   # Run code generator → modules/wayland/ (233 files)
 ```
 
 Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to create compiler workspaces. The `-` separates compiler args from metaprogram args.
@@ -32,7 +35,23 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 - Handles hex values (`0x20203843`), destructors, bitfield enums, nullable args, cross-interface enum refs (`wl_shm.format`)
 - Validates against all 59 vendored protocol XML files
 
-**Tests** (`tests/xml_test.jai`): 22 tests covering pull parser, entity decoding, protocol parsing, edge cases.
+**Code generator** (`src/generator.jai` + `src/generate_main.jai`):
+- Standalone tool reading Protocol structs, emitting Jai source files
+- Per-interface files with: doc comments, struct, opcodes, enums (regular + bitfield), event tagged unions, typed request function stubs, interface descriptor
+- Naming transforms: `wl_surface` → `Wl_Surface` (type), `WL_SURFACE_ATTACH` (opcode), `wl_surface_attach` (function)
+- Handles special cases: untyped `new_id` (polymorphic `$T`), destructors, cross-interface enum refs, numeric identifiers, reserved words
+- Deduplicates protocols (core > stable > staging > unstable priority)
+- Output: `modules/wayland/` — 56 protocols, 189 interfaces, 233 `.jai` files
+
+**Generated module** (`modules/wayland/`):
+- `module.jai` → `#load` chain → per-protocol directories → per-interface files
+- `types.jai` — shared types: `Interface_Descriptor`, `Wire_Arg_Type`, `Fixed`
+- Request function bodies are stubs (`// TODO(Phase 3)`) — Phase 3 provides `marshal()`
+
+**Tests:**
+- `tests/xml_test.jai`: 22 tests (pull parser, entities, protocol parsing)
+- `tests/generator_test.jai`: 36 tests (naming, enums, events, requests, assembly, end-to-end)
+- `tests/compile_test.jai`: 6 tests (imports generated module, verifies types compile)
 
 ## Jai Toolchain
 
@@ -55,6 +74,6 @@ Jai compiler expected at `~/jai/jai/`. Standard library at `~/jai/jai/modules/`.
 
 ## Next Steps
 
-1. **Code generator** — Read `Protocol` structs, emit Jai source with interface structs, opcode constants, function pointer tables. Use `#type_info_procedures_are_void_pointers` like Jai's GL bindings.
-2. **Wire protocol** — Unix socket connect, message framing (header + args), fd passing via `sendmsg`/`recvmsg` with `SCM_RIGHTS`.
-3. **Client API** — `wl_display` connect, `wl_registry` globals, surface management, input.
+1. **Wire protocol** — Unix socket connect, message framing (header + args), fd passing via `sendmsg`/`recvmsg` with `SCM_RIGHTS`. Implement `marshal()` and `marshal_constructor()` to fill in the generated request stubs.
+2. **Client API** — `wl_display` connect, `wl_registry` globals, surface management, input.
+3. **Rendering integration** — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU buffers.
