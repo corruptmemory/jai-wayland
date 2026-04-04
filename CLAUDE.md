@@ -4,7 +4,7 @@
 
 Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire protocol directly, uses runtime dlopen for any shared libraries, and generates bindings from Wayland protocol XML specs.
 
-**Current status:** Phase 1 (XML parser) and Phase 2 (code generator) complete. Phase 3 (wire protocol) is next.
+**Current status:** Phase 1 (XML parser), Phase 2 (code generator), and Phase 3 (wire protocol) complete. Phase 4 (client API) is next.
 
 ## Build Commands
 
@@ -12,8 +12,10 @@ Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire
 ./build.sh              # Build main → build/main
 ./build.sh - test       # Build and run 22 XML/protocol tests
 ./build.sh - gen_test   # Build and run 36 generator tests
-./build.sh - compile_test  # Build and run 6 compilation smoke tests (imports generated module)
-./build.sh - generate   # Run code generator → modules/wayland/ (233 files)
+./build.sh - wire_test  # Build and run 16 wire protocol tests
+./build.sh - marshal_test  # Build and run 9 marshal macro tests
+./build.sh - compile_test  # Build and run 9 compilation smoke tests (imports generated module)
+./build.sh - generate   # Regenerate modules/wayland/ from protocol XML
 ```
 
 Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to create compiler workspaces. The `-` separates compiler args from metaprogram args.
@@ -37,21 +39,29 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 
 **Code generator** (`src/generator.jai` + `src/generate_main.jai`):
 - Standalone tool reading Protocol structs, emitting Jai source files
-- Per-interface files with: doc comments, struct, opcodes, enums (regular + bitfield), event tagged unions, typed request function stubs, interface descriptor
+- Per-interface files with: doc comments, struct (with `conn: *Connection`), opcodes, enums (regular + bitfield), event tagged unions, request arg structs, typed request functions with `marshal()`/`marshal_constructor()` calls, interface descriptor
 - Naming transforms: `wl_surface` → `Wl_Surface` (type), `WL_SURFACE_ATTACH` (opcode), `wl_surface_attach` (function)
 - Handles special cases: untyped `new_id` (polymorphic `$T`), destructors, cross-interface enum refs, numeric identifiers, reserved words
 - Deduplicates protocols (core > stable > staging > unstable priority)
-- Output: `modules/wayland/` — 56 protocols, 189 interfaces, 233 `.jai` files
+- Output: `modules/wayland/` — 56 protocols, 175 interfaces
+
+**Wire protocol** (`modules/wayland/wire.jai`, `connection.jai`, `marshal.jai`):
+- `wire.jai` — `inline` primitive writers (`write_u32`, `write_s32`, `read_u32`, `read_s32`), `pack_header`/`unpack_header`, `write_string`/`write_array` with 4-byte padding, `align4`
+- `connection.jai` — `Connection` struct (socket fd, send/recv buffers, fd queues, object ID allocator), `wayland_connect`/`wayland_disconnect`, `connection_queue`/`connection_queue_fd`/`connection_flush` (sendmsg with SCM_RIGHTS), `connection_read` (recvmsg with SCM_RIGHTS), `connection_peek_message`/`connection_consume_message`/`connection_pop_fd`
+- `marshal.jai` — compile-time marshal macro using `#expand` + `#insert #run generate_marshal_code(type_info(T))`. Walks request arg struct members at compile time, emits type-specific serialization code. Two paths: fixed-size (stack buffer) and variable-size (runtime computation for strings/arrays). `Fd` args (distinct s32) route to `connection_queue_fd` (SCM_RIGHTS out-of-band). Also `marshal_constructor` for new_id allocation.
 
 **Generated module** (`modules/wayland/`):
-- `module.jai` → `#load` chain → per-protocol directories → per-interface files
-- `types.jai` — shared types: `Interface_Descriptor`, `Wire_Arg_Type`, `Fixed`
-- Request function bodies are stubs (`// TODO(Phase 3)`) — Phase 3 provides `marshal()`
+- `module.jai` → `#load` chain → `types.jai`, `wire.jai`, `connection.jai`, `marshal.jai` → per-protocol directories → per-interface files
+- `types.jai` — shared types: `Interface_Descriptor`, `Wire_Arg_Type`, `Fixed`, `Fd` (distinct s32), wire constants
+- Request functions have real `marshal()` calls that serialize args into the connection buffer
 
 **Tests:**
 - `tests/xml_test.jai`: 22 tests (pull parser, entities, protocol parsing)
 - `tests/generator_test.jai`: 36 tests (naming, enums, events, requests, assembly, end-to-end)
-- `tests/compile_test.jai`: 6 tests (imports generated module, verifies types compile)
+- `tests/wire_test.jai`: 16 tests (primitive writers, header pack/unpack, string/array encoding, buffer queueing)
+- `tests/marshal_test.jai`: 9 tests (fixed args, fd, string, array, Fixed, empty, constructors)
+- `tests/compile_test.jai`: 9 tests (imports generated module, verifies types/Fd/conn/arg structs compile)
+- **Total: 92 tests across 5 test suites**
 
 ## Jai Toolchain
 
@@ -61,11 +71,26 @@ Jai compiler expected at `~/jai/jai/`. Standard library at `~/jai/jai/modules/`.
 
 ## Key Patterns
 
-- No external dependencies — only Jai standard library (Basic, File, String, File_Utilities, Compiler, Autorun)
+- No external dependencies — only Jai standard library (Basic, File, String, File_Utilities, Compiler, Autorun, Socket, POSIX)
 - Zero-copy throughout: XML parser returns slices into the source buffer, protocol parser stores those slices
 - Test pattern: named procedures with `assert()` + `print("  PASS: ...\n")`, called from `main()` in groups
 - `first.jai` uses `build_and_run_test()` helper with `Autorun.run_build_result_of_workspace()` for test execution
 - Generator returns temp-allocated strings via `String_Builder` with `sb.allocator = temp`; file writer uses `write_entire_file(path, *sb)` which accepts `*String_Builder` directly
+- Compile-time code generation: `marshal` macro uses `#expand` + `#insert #run` to walk struct type_info and emit serialization code. Debug expansions in `.build/.added_strings_wN.jai`
+
+## Wire Protocol Design
+
+**Compile-time marshalling:** The `marshal` macro walks request arg struct fields via `type_info` at compile time and emits type-specific byte-packing code. `#inline` primitive writers ensure zero-overhead — the optimizer sees only raw stores. This is the "Lisp-like macro" pattern from `csv_write_row` in jai-http.
+
+**Type-to-wire mapping (all 4-byte aligned, native-endian):**
+- `u32`/`s32` → 4 bytes direct
+- `Fixed` → 4 bytes (write `.raw` as s32)
+- `string` → u32 length (incl NUL) + data + NUL + pad to 4
+- `[] u8` (array) → u32 length + data + pad to 4
+- `*Interface` (object) → 4 bytes (write `.id`)
+- `Fd` (`#type,distinct s32`) → NOT on wire, passed via SCM_RIGHTS out-of-band
+
+**Message header:** 8 bytes — `[object_id: u32][(size << 16) | opcode: u32]`
 
 ## Generator Special Cases
 
@@ -89,9 +114,9 @@ These edge cases were discovered during the compilation smoke test against all 5
 - `docs/plans/2026-04-03-xml-parser-impl.md` — Phase 1 implementation plan (7 tasks)
 - `docs/plans/2026-04-03-code-generator-design.md` — Phase 2 code generator design (hybrid approach: typed stubs + shared marshal core)
 - `docs/plans/2026-04-03-code-generator-impl.md` — Phase 2 implementation plan (12 tasks)
+- `docs/plans/2026-04-04-wire-protocol-impl.md` — Phase 3 wire protocol implementation plan (11 tasks)
 
 ## Next Steps
 
-1. **Wire protocol** — Unix socket connect, message framing (header + args), fd passing via `sendmsg`/`recvmsg` with `SCM_RIGHTS`. Implement `marshal()` and `marshal_constructor()` to fill in the generated request stubs. Key references: `vendor/reference/zig-wayland/src/common_core.zig` (message framing), `vendor/reference/wayland-rs/wayland-backend/src/rs/socket.rs` (fd passing), `~/jai/jai/modules/POSIX/` (socket syscall bindings).
-2. **Client API** — `wl_display` connect, `wl_registry` globals, surface management, input.
-3. **Rendering integration** — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU buffers. Must work with OpenGL, Vulkan, and plain shared-memory buffers.
+1. **Client API (Phase 4)** — Object map (id → proxy with dispatch table), event dispatch to typed `*_Event` tagged unions, `wl_display` connect handshake, `wl_registry` globals, proxy lifecycle management. Complete the TODO(Phase 4) stubs: proper proxy allocation in `marshal_constructor`, `destroy_proxy` in destructors. Untyped `new_id` wire encoding for `wl_registry.bind`.
+2. **Rendering integration** — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU buffers. Must work with OpenGL, Vulkan, and plain shared-memory buffers.
