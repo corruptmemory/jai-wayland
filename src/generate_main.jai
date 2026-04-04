@@ -1,6 +1,8 @@
 #import "Basic";
 #import "File";
 #import "File_Utilities";
+#import "Hash_Table";
+#import "Sort";
 #import "String";
 
 #load "xml.jai";
@@ -9,6 +11,22 @@
 
 OUTPUT_DIR :: "modules/wayland";
 INPUT_DIR  :: "vendor/wayland-protocols";
+
+// Sort priority: core=0, stable=1, staging=2, unstable=3, other=4.
+// Lower priority number wins when interface names collide.
+protocol_priority :: (path: string) -> int {
+    if contains(path, "/core/")     return 0;
+    if contains(path, "/stable/")   return 1;
+    if contains(path, "/staging/")  return 2;
+    if contains(path, "/unstable/") return 3;
+    return 4;
+}
+
+Parsed_Protocol :: struct {
+    proto: Protocol;
+    priority: int;
+    source_path: string;
+}
 
 main :: () {
     print("Generating Wayland bindings...\n\n");
@@ -29,7 +47,7 @@ main :: () {
     print("Found % protocol XML files.\n", xml_files.count);
 
     // 2. Parse each XML into a Protocol
-    protocols: [..] Protocol;
+    parsed: [..] Parsed_Protocol;
     for path: xml_files {
         contents, ok := read_entire_file(path);
         if !ok {
@@ -41,16 +59,55 @@ main :: () {
             print("WARNING: Skipping '%' (no protocol name)\n", path);
             continue;
         }
-        array_add(*protocols, proto);
+        array_add(*parsed, .{proto = proto, priority = protocol_priority(path), source_path = path});
         print("  Parsed: % (% interfaces)\n", proto.name, proto.interfaces.count);
     }
 
-    print("\nParsed % protocols total.\n\n", protocols.count);
+    print("\nParsed % protocols total.\n", parsed.count);
 
-    // 3. Create output directory
+    // 3. Sort by priority (core first, unstable last) for deterministic dedup
+    quick_sort(parsed, (a: Parsed_Protocol, b: Parsed_Protocol) -> s64 {
+        return cast(s64)(a.priority - b.priority);
+    });
+
+    // 4. Deduplicate: skip protocols whose interface names collide with
+    //    already-claimed names from higher-priority protocols.
+    seen_interfaces: Table(string, string);  // interface_name -> protocol_name
+    protocols: [..] Protocol;
+    skipped_count := 0;
+
+    for * pp: parsed {
+        has_collision := false;
+        for iface: pp.proto.interfaces {
+            existing := table_find_pointer(*seen_interfaces, iface.name);
+            if existing != null {
+                if !has_collision {
+                    print("  Skipping '%' — interface '%' already defined by '%'\n",
+                        pp.proto.name, iface.name, existing.*);
+                    has_collision = true;
+                }
+            }
+        }
+        if has_collision {
+            skipped_count += 1;
+            continue;
+        }
+        // Claim all interface names
+        for iface: pp.proto.interfaces {
+            table_add(*seen_interfaces, iface.name, pp.proto.name);
+        }
+        array_add(*protocols, pp.proto);
+    }
+
+    if skipped_count > 0 {
+        print("  Skipped % protocols with name collisions.\n", skipped_count);
+    }
+    print("\nGenerating % protocols.\n\n", protocols.count);
+
+    // 5. Create output directory
     make_directory_if_it_does_not_exist(OUTPUT_DIR, recursive = true);
 
-    // 4. Write types.jai
+    // 6. Write types.jai
     {
         types_content := generate_types_file();
         types_path := tprint("%/types.jai", OUTPUT_DIR);
@@ -61,7 +118,7 @@ main :: () {
         else   print("ERROR: Failed to write %\n", types_path);
     }
 
-    // 5. For each protocol, create subdirectory, write interface files and loader
+    // 7. For each protocol, create subdirectory, write interface files and loader
     protocol_names: [..] string;
     total_interfaces := 0;
 
@@ -74,7 +131,10 @@ main :: () {
         // Write each interface file
         for * iface: proto.interfaces {
             iface_content := generate_interface_file(iface);
-            iface_path := tprint("%/%.jai", proto_dir, iface.name);
+            // Avoid self-referencing #load: if interface name == protocol name,
+            // append _interface suffix to the filename.
+            file_base := ifx iface.name == proto.name then tprint("%_interface", iface.name) else iface.name;
+            iface_path := tprint("%/%.jai", proto_dir, file_base);
 
             sb: String_Builder;
             print_to_builder(*sb, "%", iface_content);
@@ -94,7 +154,7 @@ main :: () {
         else   print("ERROR: Failed to write %\n", loader_path);
     }
 
-    // 6. Write module.jai
+    // 8. Write module.jai
     {
         module_content := generate_module_root(protocol_names);
         module_path := tprint("%/module.jai", OUTPUT_DIR);
@@ -105,7 +165,7 @@ main :: () {
         else   print("ERROR: Failed to write %\n", module_path);
     }
 
-    // 7. Summary
+    // 9. Summary
     print("\nGeneration complete: % protocols, % interfaces.\n", protocols.count, total_interfaces);
     print("Output directory: %/\n", OUTPUT_DIR);
 }

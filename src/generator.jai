@@ -31,11 +31,17 @@ to_jai_type_name :: (name: string) -> string {
 
 // Converts snake_case to UPPER_SNAKE_CASE.
 // "wl_surface" → "WL_SURFACE"
+// Names starting with a digit get a leading underscore: "90" → "_90"
 to_upper_snake :: (name: string) -> string {
     if name.count == 0 return "";
 
     sb: String_Builder;
     sb.allocator = temp;
+
+    // Prefix underscore if name starts with a digit (not a valid identifier)
+    if name[0] >= #char "0" && name[0] <= #char "9" {
+        append(*sb, #char "_");
+    }
 
     for i: 0..name.count-1 {
         append(*sb, to_upper(name[i]));
@@ -64,6 +70,45 @@ resolve_enum_type :: (enum_ref: string, current_interface: string) -> string {
         return to_jai_enum_name(left, right);
     }
     return to_jai_enum_name(current_interface, enum_ref);
+}
+
+// Collapses a multi-line string into a single line by replacing newlines
+// and collapsing runs of whitespace into a single space.  Used to sanitize
+// XML attribute values (like entry summaries) that may span lines.
+single_line :: (s: string) -> string {
+    sb: String_Builder;
+    sb.allocator = temp;
+    prev_was_space := false;
+    for i: 0..s.count-1 {
+        c := s[i];
+        if c == #char "\n" || c == #char "\r" || c == #char "\t" || c == #char " " {
+            if !prev_was_space {
+                append(*sb, #char " ");
+                prev_was_space = true;
+            }
+        } else {
+            append(*sb, c);
+            prev_was_space = false;
+        }
+    }
+    result := builder_to_string(*sb,, allocator = temp);
+    return trim(result);
+}
+
+// Jai reserved words that cannot be used as identifiers.
+// Only listing ones that could plausibly appear as Wayland arg names.
+JAI_RESERVED_WORDS :: string.["context", "using", "struct", "enum", "union",
+    "if", "else", "for", "while", "return", "break", "continue", "defer",
+    "cast", "null", "true", "false", "void", "string", "type", "it",
+    "it_index", "size_of", "type_of", "type_info", "is_constant",
+    "initializer", "interface", "remove", "push_context", "operator"];
+
+// Returns name_ if the name is a Jai reserved word, otherwise returns name unchanged.
+sanitize_arg_name :: (name: string) -> string {
+    for JAI_RESERVED_WORDS {
+        if name == it return tprint("%_", name);
+    }
+    return name;
 }
 
 // ── Enum generation ──
@@ -113,7 +158,7 @@ generate_enum :: (e: *Enum_Def, interface_name: string) -> string {
 
     // Doc comment from summary
     if e.description.summary.count > 0 {
-        print_to_builder(*sb, "// %\n", e.description.summary);
+        print_to_builder(*sb, "// %\n", single_line(e.description.summary));
     }
 
     // Doc comment from body
@@ -129,7 +174,7 @@ generate_enum :: (e: *Enum_Def, interface_name: string) -> string {
     // Entries
     for entry: e.entries {
         if entry.summary.count > 0 {
-            print_to_builder(*sb, "    // %\n", entry.summary);
+            print_to_builder(*sb, "    // %\n", single_line(entry.summary));
         }
         name := to_upper_snake(entry.name);
         if entry.value > 0xFFFF {
@@ -180,11 +225,11 @@ generate_events :: (iface: *Interface) -> string {
     for event: iface.events {
         struct_name := tprint("%_%_Args", type_prefix, to_jai_type_name(event.name));
         if event.description.summary.count > 0 {
-            print_to_builder(*sb, "// %\n", event.description.summary);
+            print_to_builder(*sb, "// %\n", single_line(event.description.summary));
         }
         print_to_builder(*sb, "% :: struct {\n", struct_name);
         for arg: event.args {
-            print_to_builder(*sb, "    %: %;\n", arg.name, arg_type_to_jai(*arg));
+            print_to_builder(*sb, "    %: %;\n", sanitize_arg_name(arg.name), arg_type_to_jai(*arg));
         }
         print_to_builder(*sb, "}\n\n");
     }
@@ -194,7 +239,7 @@ generate_events :: (iface: *Interface) -> string {
     print_to_builder(*sb, "% :: enum u8 {\n", enum_name);
     for event, idx: iface.events {
         if event.description.summary.count > 0 {
-            print_to_builder(*sb, "    % :: %;  // %\n", to_upper_snake(event.name), idx, event.description.summary);
+            print_to_builder(*sb, "    % :: %;  // %\n", to_upper_snake(event.name), idx, single_line(event.description.summary));
         } else {
             print_to_builder(*sb, "    % :: %;\n", to_upper_snake(event.name), idx);
         }
@@ -226,7 +271,7 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
 
     // Doc comment
     if req.description.summary.count > 0 {
-        summary := req.description.summary;
+        summary := single_line(req.description.summary);
         if req.is_destructor {
             print_to_builder(*sb, "// % (destructor)\n", summary);
         } else {
@@ -274,7 +319,7 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
                 continue;
             }
         }
-        print_to_builder(*sb, ", %: %", arg.name, arg_type_to_jai(arg));
+        print_to_builder(*sb, ", %: %", sanitize_arg_name(arg.name), arg_type_to_jai(arg));
     }
 
     // If untyped new_id, add version parameter after $T
@@ -318,7 +363,7 @@ generate_interface_struct :: (iface: *Interface) -> string {
     // Header comment block
     print_to_builder(*sb, "//\n");
     if iface.description.summary.count > 0 {
-        print_to_builder(*sb, "// % — %\n", iface.name, iface.description.summary);
+        print_to_builder(*sb, "// % — %\n", iface.name, single_line(iface.description.summary));
     } else {
         print_to_builder(*sb, "// %\n", iface.name);
     }
@@ -491,7 +536,10 @@ generate_protocol_loader :: (proto: *Protocol) -> string {
     print_to_builder(*sb, "// Protocol: % (% interfaces)\n", proto.name, proto.interfaces.count);
 
     for iface: proto.interfaces {
-        print_to_builder(*sb, "\n#load \"%.jai\";\n", iface.name);
+        // Avoid self-referencing #load: if interface name == protocol name,
+        // the interface file uses an _interface suffix.
+        file_base := ifx iface.name == proto.name then tprint("%_interface", iface.name) else iface.name;
+        print_to_builder(*sb, "\n#load \"%.jai\";\n", file_base);
     }
 
     return builder_to_string(*sb,, allocator = temp);

@@ -19,8 +19,11 @@ build :: () {
             build_gen_tests(options);
           case "generate";
             build_and_run_generate(options);
+          case "compile_test";
+            build_and_run_test("compile_tests", "compile_tests", "tests/compile_test.jai", "build_tests");
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test'.\n", arg));
         }
     }
 }
