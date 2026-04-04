@@ -163,7 +163,7 @@ arg_type_to_jai :: (arg: *Arg) -> string {
         case .ARRAY;  return "[] u8";
         case .FD;     return "s32";
     }
-    return "s32";  // fallback
+    assert(false, "unknown arg type"); return "s32";
 }
 
 // Generates event kind enum + args structs + tagged union for an interface.
@@ -179,6 +179,9 @@ generate_events :: (iface: *Interface) -> string {
     // Emit args structs (one per event)
     for event: iface.events {
         struct_name := tprint("%_%_Args", type_prefix, to_jai_type_name(event.name));
+        if event.description.summary.count > 0 {
+            print_to_builder(*sb, "// %\n", event.description.summary);
+        }
         print_to_builder(*sb, "% :: struct {\n", struct_name);
         for arg: event.args {
             print_to_builder(*sb, "    %: %;\n", arg.name, arg_type_to_jai(*arg));
@@ -190,7 +193,11 @@ generate_events :: (iface: *Interface) -> string {
     enum_name := tprint("%_Event_Kind", type_prefix);
     print_to_builder(*sb, "% :: enum u8 {\n", enum_name);
     for event, idx: iface.events {
-        print_to_builder(*sb, "    % :: %;\n", to_upper_snake(event.name), idx);
+        if event.description.summary.count > 0 {
+            print_to_builder(*sb, "    % :: %;  // %\n", to_upper_snake(event.name), idx, event.description.summary);
+        } else {
+            print_to_builder(*sb, "    % :: %;\n", to_upper_snake(event.name), idx);
+        }
     }
     print_to_builder(*sb, "}\n\n");
 

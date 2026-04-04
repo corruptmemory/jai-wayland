@@ -230,6 +230,35 @@ test_generate_events_multi_arg :: () {
     print("  PASS: test_generate_events_multi_arg\n");
 }
 
+test_generate_events_typed_object :: () {
+    iface: Interface;
+    iface.name = "wl_surface";
+
+    ev: Message; ev.name = "enter";
+    arg1: Arg; arg1.name = "output"; arg1.arg_type = .OBJECT; arg1.interface_name = "wl_output";
+    array_add(*ev.args, arg1);
+    array_add(*iface.events, ev);
+
+    result := generate_events(*iface);
+    assert(contains(result, "*Wl_Output"), "OBJECT with interface should produce typed pointer");
+    print("  PASS: test_generate_events_typed_object\n");
+}
+
+test_generate_events_zero_args :: () {
+    iface: Interface;
+    iface.name = "wl_data_source";
+
+    ev: Message; ev.name = "cancelled";
+    // No args
+    array_add(*iface.events, ev);
+
+    result := generate_events(*iface);
+    assert(contains(result, "Wl_Data_Source_Event_Kind"), "Missing kind enum");
+    assert(contains(result, "Wl_Data_Source_Event :: union"), "Missing union");
+    assert(contains(result, "CANCELLED"), "Missing CANCELLED variant");
+    print("  PASS: test_generate_events_zero_args\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -272,6 +301,8 @@ main :: () {
     test_generate_events_basic();
     test_generate_events_no_events();
     test_generate_events_multi_arg();
+    test_generate_events_typed_object();
+    test_generate_events_zero_args();
 
     print("\nAll tests passed.\n");
 }
