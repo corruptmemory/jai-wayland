@@ -32,3 +32,16 @@ fixed_from_float :: (v: float64) -> Fixed {
 fixed_to_float :: (f: Fixed) -> float64 {
     return cast(float64) f.raw / 256.0;
 }
+
+// File descriptor passed via SCM_RIGHTS ancillary data, not in message body.
+// #type,distinct ensures the compile-time marshal walker can distinguish Fd from s32.
+Fd :: #type,distinct s32;
+
+// Wire message header size in bytes.
+HEADER_SIZE :: 8;
+
+// Maximum message size (from libwayland compatibility).
+MAX_MESSAGE_SIZE :: 4096;
+
+// Maximum fds per sendmsg call.
+MAX_FDS_OUT :: 28;
