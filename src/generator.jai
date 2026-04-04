@@ -206,9 +206,26 @@ arg_type_to_jai :: (arg: *Arg) -> string {
                 return tprint("*%", to_jai_type_name(arg.interface_name));
             return "*void";
         case .ARRAY;  return "[] u8";
-        case .FD;     return "s32";
+        case .FD;     return "Fd";
     }
     assert(false, "unknown arg type"); return "s32";
+}
+
+// Maps a protocol Arg_Type to a Jai type string for request arg structs.
+// OBJECT args are stored as u32 (just the id) to avoid pointer/null issues
+// in the marshal walker.
+arg_type_to_jai_request_struct :: (arg: *Arg) -> string {
+    if arg.arg_type == {
+        case .INT;    return "s32";
+        case .UINT;   return "u32";
+        case .FIXED;  return "Fixed";
+        case .STRING; return "string";
+        case .OBJECT; return "u32";  // store object ID directly
+        case .NEW_ID; return "u32";  // should not appear (filtered out)
+        case .ARRAY;  return "[] u8";
+        case .FD;     return "Fd";
+    }
+    return "u32";
 }
 
 // Generates event kind enum + args structs + tagged union for an interface.
@@ -262,7 +279,29 @@ generate_events :: (iface: *Interface) -> string {
 
 // ── Request generation ──
 
-// Generates a typed stub request function for a single interface request.
+// Generates request arg structs for all requests of an interface.
+// NEW_ID args are filtered out (typed ones become return values, untyped ones are special).
+// OBJECT args are stored as u32 (just the id) in the struct.
+generate_request_args :: (iface: *Interface) -> string {
+    sb: String_Builder;
+    sb.allocator = temp;
+    type_prefix := to_jai_type_name(iface.name);
+
+    for req: iface.requests {
+        // Always generate the struct (even if empty — marshal needs it)
+        struct_name := tprint("%_%_Args", type_prefix, to_jai_type_name(req.name));
+        print_to_builder(*sb, "% :: struct {\n", struct_name);
+        for arg: req.args {
+            if arg.arg_type == .NEW_ID  continue;
+            print_to_builder(*sb, "    %: %;\n", sanitize_arg_name(arg.name), arg_type_to_jai_request_struct(*arg));
+        }
+        print_to_builder(*sb, "}\n\n");
+    }
+
+    return builder_to_string(*sb,, allocator = temp);
+}
+
+// Generates a typed request function for a single interface request.
 // new_id args with interface_name set become the return type (not a parameter).
 // new_id args without interface_name (wl_registry.bind) become a polymorphic $T parameter.
 generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
@@ -337,13 +376,70 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
     // Body
     print_to_builder(*sb, " {\n");
 
-    if req.is_destructor {
-        print_to_builder(*sb, "    // TODO(Phase 3): marshal(self, %, ...); destroy_proxy(self);\n", const_name);
-    } else if return_type.count > 0 {
-        print_to_builder(*sb, "    // TODO(Phase 3): marshal_constructor(self, %, ...);\n", const_name);
+    // Build the args struct name and field initializers
+    args_struct_name := tprint("%_%_Args", type_name, to_jai_type_name(req.name));
+
+    if has_untyped_new_id {
+        // Special case: untyped new_id (wl_registry.bind) requires special wire encoding
+        print_to_builder(*sb, "    // TODO(Phase 3): untyped new_id requires special wire encoding (interface_name + version + new_id)\n");
         print_to_builder(*sb, "    return null;\n");
+    } else if return_type.count > 0 {
+        // Constructor: use marshal_constructor
+        print_to_builder(*sb, "    args := %.{", args_struct_name);
+        first := true;
+        for * arg: req.args {
+            if arg.arg_type == .NEW_ID  continue;
+            if !first  print_to_builder(*sb, ",");
+            first = false;
+            sname := sanitize_arg_name(arg.name);
+            if arg.arg_type == .OBJECT {
+                print_to_builder(*sb, " % = %.id", sname, sname);
+            } else {
+                print_to_builder(*sb, " % = %", sname, sname);
+            }
+        }
+        if !first  print_to_builder(*sb, " ");
+        print_to_builder(*sb, "};\n");
+        print_to_builder(*sb, "    new_id := marshal_constructor(self.conn, self.id, %, *args);\n", const_name);
+        print_to_builder(*sb, "    // TODO(Phase 4): allocate proxy properly\n");
+        print_to_builder(*sb, "    return null;\n");
+    } else if req.is_destructor {
+        // Destructor: marshal + destroy comment
+        print_to_builder(*sb, "    args := %.{", args_struct_name);
+        first := true;
+        for * arg: req.args {
+            if arg.arg_type == .NEW_ID  continue;
+            if !first  print_to_builder(*sb, ",");
+            first = false;
+            sname := sanitize_arg_name(arg.name);
+            if arg.arg_type == .OBJECT {
+                print_to_builder(*sb, " % = %.id", sname, sname);
+            } else {
+                print_to_builder(*sb, " % = %", sname, sname);
+            }
+        }
+        if !first  print_to_builder(*sb, " ");
+        print_to_builder(*sb, "};\n");
+        print_to_builder(*sb, "    marshal(self.conn, self.id, %, *args);\n", const_name);
+        print_to_builder(*sb, "    // TODO(Phase 4): destroy_proxy(self);\n");
     } else {
-        print_to_builder(*sb, "    // TODO(Phase 3): marshal(self, %, ...);\n", const_name);
+        // Normal request: marshal
+        print_to_builder(*sb, "    args := %.{", args_struct_name);
+        first := true;
+        for * arg: req.args {
+            if arg.arg_type == .NEW_ID  continue;
+            if !first  print_to_builder(*sb, ",");
+            first = false;
+            sname := sanitize_arg_name(arg.name);
+            if arg.arg_type == .OBJECT {
+                print_to_builder(*sb, " % = %.id", sname, sname);
+            } else {
+                print_to_builder(*sb, " % = %", sname, sname);
+            }
+        }
+        if !first  print_to_builder(*sb, " ");
+        print_to_builder(*sb, "};\n");
+        print_to_builder(*sb, "    marshal(self.conn, self.id, %, *args);\n", const_name);
     }
 
     print_to_builder(*sb, "}\n");
@@ -377,6 +473,7 @@ generate_interface_struct :: (iface: *Interface) -> string {
     print_to_builder(*sb, "% :: struct {\n", type_name);
     print_to_builder(*sb, "    id: u32;\n");
     print_to_builder(*sb, "    version: u32;\n");
+    print_to_builder(*sb, "    conn: *Connection;\n");
     print_to_builder(*sb, "}\n");
 
     return builder_to_string(*sb,, allocator = temp);
@@ -463,7 +560,13 @@ generate_interface_file :: (iface: *Interface) -> string {
         print_to_builder(*sb, "\n%", section);
     }
 
-    // 6. Request functions
+    // 6. Request arg structs
+    section = generate_request_args(iface);
+    if section.count > 0 {
+        print_to_builder(*sb, "\n%", section);
+    }
+
+    // 7. Request functions
     for req, idx: iface.requests {
         section = generate_request(iface, *req, idx);
         if section.count > 0 {
@@ -471,7 +574,7 @@ generate_interface_file :: (iface: *Interface) -> string {
         }
     }
 
-    // 7. Interface descriptor
+    // 8. Interface descriptor
     section = generate_interface_descriptor(iface);
     if section.count > 0 {
         print_to_builder(*sb, "\n%", section);

@@ -279,7 +279,8 @@ test_generate_request_simple :: () {
     assert(contains(result, "self: *Wl_Surface"), "Missing self parameter");
     assert(contains(result, "x: s32"), "Missing x param");
     assert(contains(result, "width: s32"), "Missing width param");
-    assert(contains(result, "TODO(Phase 3)"), "Missing stub marker");
+    assert(contains(result, "Wl_Surface_Damage_Args.{"), "Missing args struct literal, got:\n%", result);
+    assert(contains(result, "marshal(self.conn, self.id, WL_SURFACE_DAMAGE"), "Missing marshal call, got:\n%", result);
     print("  PASS: test_generate_request_simple\n");
 }
 
@@ -291,6 +292,9 @@ test_generate_request_constructor :: () {
 
     result := generate_request(*iface, *req, 3);
     assert(contains(result, "-> *Wl_Callback"), "Constructor should return new type");
+    assert(contains(result, "marshal_constructor(self.conn, self.id, WL_SURFACE_FRAME"), "Missing marshal_constructor call, got:\n%", result);
+    assert(contains(result, "TODO(Phase 4): allocate proxy"), "Missing Phase 4 TODO, got:\n%", result);
+    assert(contains(result, "return null"), "Missing return null, got:\n%", result);
     print("  PASS: test_generate_request_constructor\n");
 }
 
@@ -300,6 +304,8 @@ test_generate_request_destructor :: () {
 
     result := generate_request(*iface, *req, 0);
     assert(contains(result, "destructor"), "Should note destructor");
+    assert(contains(result, "marshal(self.conn, self.id, WL_SURFACE_DESTROY"), "Missing marshal call, got:\n%", result);
+    assert(contains(result, "TODO(Phase 4): destroy_proxy"), "Missing Phase 4 destroy TODO, got:\n%", result);
     print("  PASS: test_generate_request_destructor\n");
 }
 
@@ -314,6 +320,8 @@ test_generate_request_untyped_new_id :: () {
     result := generate_request(*iface, *req, 0);
     assert(contains(result, "$T"), "Untyped new_id should use polymorphic type");
     assert(contains(result, "-> *T"), "Should return *T");
+    assert(contains(result, "TODO(Phase 3): untyped new_id"), "Missing untyped new_id TODO, got:\n%", result);
+    assert(contains(result, "return null"), "Missing return null, got:\n%", result);
     print("  PASS: test_generate_request_untyped_new_id\n");
 }
 
@@ -329,6 +337,7 @@ test_generate_interface_struct :: () {
     assert(contains(result, "Wl_Surface :: struct"), "Missing struct");
     assert(contains(result, "id: u32"), "Missing id field");
     assert(contains(result, "version: u32"), "Missing version field");
+    assert(contains(result, "conn: *Connection"), "Missing conn field");
     assert(contains(result, "a compositable surface"), "Missing summary comment");
     print("  PASS: test_generate_interface_struct\n");
 }
