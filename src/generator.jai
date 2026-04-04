@@ -6,6 +6,8 @@
 // "wl_surface" → "Wl_Surface", "xdg_toplevel" → "Xdg_Toplevel",
 // "zwp_linux_dmabuf_v1" → "Zwp_Linux_Dmabuf_V1"
 to_jai_type_name :: (name: string) -> string {
+    if name.count == 0 return "";
+
     sb: String_Builder;
     sb.allocator = temp;
 
@@ -30,6 +32,8 @@ to_jai_type_name :: (name: string) -> string {
 // Converts snake_case to UPPER_SNAKE_CASE.
 // "wl_surface" → "WL_SURFACE"
 to_upper_snake :: (name: string) -> string {
+    if name.count == 0 return "";
+
     sb: String_Builder;
     sb.allocator = temp;
 

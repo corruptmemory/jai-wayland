@@ -26,6 +26,12 @@ test_type_name_single_word :: () {
     print("  PASS: test_type_name_single_word\n");
 }
 
+test_empty_string_handling :: () {
+    assert(to_jai_type_name("") == "");
+    assert(to_upper_snake("") == "");
+    print("  PASS: test_empty_string_handling\n");
+}
+
 // ── to_upper_snake tests ──
 
 test_upper_snake_simple :: () {
@@ -46,10 +52,10 @@ test_opcode_name :: () {
     print("  PASS: test_opcode_name\n");
 }
 
-test_opcode_name_destroy :: () {
+test_opcode_name_compound_message :: () {
     result := opcode_name("wl_display", "get_registry");
     assert(result == "WL_DISPLAY_GET_REGISTRY", "Expected 'WL_DISPLAY_GET_REGISTRY', got '%'", result);
-    print("  PASS: test_opcode_name_destroy\n");
+    print("  PASS: test_opcode_name_compound_message\n");
 }
 
 // ── to_jai_enum_name tests ──
@@ -95,13 +101,16 @@ main :: () {
     test_type_name_long();
     test_type_name_single_word();
 
+    print("\nnaming utilities edge cases:\n");
+    test_empty_string_handling();
+
     print("\nto_upper_snake:\n");
     test_upper_snake_simple();
     test_upper_snake_single();
 
     print("\nopcode_name:\n");
     test_opcode_name();
-    test_opcode_name_destroy();
+    test_opcode_name_compound_message();
 
     print("\nto_jai_enum_name:\n");
     test_enum_name();
