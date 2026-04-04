@@ -378,6 +378,44 @@ test_generate_interface_descriptor :: () {
     print("  PASS: test_generate_interface_descriptor\n");
 }
 
+// ── full interface file tests ──
+
+test_generate_interface_file :: () {
+    iface: Interface;
+    iface.name = "wl_surface";
+    iface.version = 6;
+    iface.description.summary = "a compositable surface";
+
+    // One enum
+    e: Enum_Def; e.name = "error";
+    entry: Entry; entry.name = "invalid_scale"; entry.value = 0; entry.summary = "bad scale";
+    array_add(*e.entries, entry);
+    array_add(*iface.enums, e);
+
+    // One request
+    req: Message; req.name = "destroy"; req.is_destructor = true;
+    array_add(*iface.requests, req);
+
+    // One event
+    ev: Message; ev.name = "enter";
+    arg: Arg; arg.name = "output"; arg.arg_type = .UINT;
+    array_add(*ev.args, arg);
+    array_add(*iface.events, ev);
+
+    result := generate_interface_file(*iface);
+
+    // Check all sections are present
+    assert(contains(result, "Auto-generated"), "Missing header");
+    assert(contains(result, "Wl_Surface :: struct"), "Missing struct");
+    assert(contains(result, "WL_SURFACE_DESTROY :: 0"), "Missing opcodes");
+    assert(contains(result, "Wl_Surface_Error :: enum u32"), "Missing enum");
+    assert(contains(result, "Wl_Surface_Event_Kind"), "Missing event kind");
+    assert(contains(result, "Wl_Surface_Event :: union"), "Missing event union");
+    assert(contains(result, "wl_surface_destroy"), "Missing request function");
+    assert(contains(result, "WL_SURFACE_INTERFACE"), "Missing descriptor");
+    print("  PASS: test_generate_interface_file\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -433,6 +471,9 @@ main :: () {
     test_generate_interface_struct();
     test_generate_opcodes();
     test_generate_interface_descriptor();
+
+    print("\nfull interface file:\n");
+    test_generate_interface_file();
 
     print("\nAll tests passed.\n");
 }
