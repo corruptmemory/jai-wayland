@@ -231,6 +231,37 @@ xml_next_attrs :: (p: *Xml_Parser) -> (event: Xml_Event, ok: bool) {
     return ev, true;
 }
 
+xml_decode_entities :: (raw: string) -> string {
+    // Fast path: no entities present, return original string (no allocation)
+    has_amp := false;
+    for 0..raw.count-1 {
+        if raw[it] == #char "&" { has_amp = true; break; }
+    }
+    if !has_amp  return raw;
+
+    builder: String_Builder;
+    i := 0;
+    while i < raw.count {
+        if raw[i] == #char "&" {
+            remaining: string;
+            remaining.data = raw.data + i;
+            remaining.count = raw.count - i;
+            if begins_with(remaining, "&amp;")  { append(*builder, "&");  i += 5; continue; }
+            if begins_with(remaining, "&lt;")   { append(*builder, "<");  i += 4; continue; }
+            if begins_with(remaining, "&gt;")   { append(*builder, ">");  i += 4; continue; }
+            if begins_with(remaining, "&quot;") { append(*builder, "\""); i += 6; continue; }
+            if begins_with(remaining, "&apos;") { append(*builder, "'");  i += 6; continue; }
+            // Unknown entity, pass through as-is
+            append(*builder, "&");
+            i += 1;
+        } else {
+            append(*builder, raw[i]);
+            i += 1;
+        }
+    }
+    return builder_to_string(*builder);
+}
+
 xml_next_chars :: (p: *Xml_Parser) -> (event: Xml_Event, ok: bool) {
     ev: Xml_Event;
 
