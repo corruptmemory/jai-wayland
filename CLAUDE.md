@@ -65,6 +65,17 @@ Jai compiler expected at `~/jai/jai/`. Standard library at `~/jai/jai/modules/`.
 - Zero-copy throughout: XML parser returns slices into the source buffer, protocol parser stores those slices
 - Test pattern: named procedures with `assert()` + `print("  PASS: ...\n")`, called from `main()` in groups
 - `first.jai` uses `build_and_run_test()` helper with `Autorun.run_build_result_of_workspace()` for test execution
+- Generator returns temp-allocated strings via `String_Builder` with `sb.allocator = temp`; file writer uses `write_entire_file(path, *sb)` which accepts `*String_Builder` directly
+
+## Generator Special Cases
+
+These edge cases were discovered during the compilation smoke test against all 59 protocol XMLs:
+
+- **Numeric identifiers:** `wl_output.transform` has entries `90`, `180`, `270` — prefixed with `_` since bare numbers aren't valid Jai identifiers
+- **Reserved words as field names:** Some protocol args use Jai reserved words (e.g., `context`) — suffixed with `_`
+- **Self-referencing #load:** Some protocols have an interface with the same name as the protocol (e.g., `ext_image_capture_source_v1`) — interface filename gets `_interface` suffix to avoid the loader `#load`-ing itself
+- **Protocol deduplication:** Stable/staging versions supersede unstable versions (e.g., `xdg_shell` vs `xdg_shell_unstable_v5`). Generator sorts by priority (core > stable > staging > unstable) and skips protocols whose interface names collide. 3 unstable protocols are skipped.
+- **Tagged union constraint:** Jai's `.TAG ,, field` syntax supports only one field per variant. Multi-arg events use wrapper structs (e.g., `Wl_Pointer_Motion_Args`). Zero-arg events use empty structs.
 
 ## Vendored Files
 
@@ -72,8 +83,15 @@ Jai compiler expected at `~/jai/jai/`. Standard library at `~/jai/jai/modules/`.
 - `vendor/reference/zig-wayland/` — Zig Wayland bindings (reference for wire protocol and scanner)
 - `vendor/reference/wayland-rs/` — Rust Wayland bindings (reference for code generator and backend)
 
+## Design Documents
+
+- `docs/plans/2026-04-03-xml-parser-design.md` — Phase 1 XML parser design
+- `docs/plans/2026-04-03-xml-parser-impl.md` — Phase 1 implementation plan (7 tasks)
+- `docs/plans/2026-04-03-code-generator-design.md` — Phase 2 code generator design (hybrid approach: typed stubs + shared marshal core)
+- `docs/plans/2026-04-03-code-generator-impl.md` — Phase 2 implementation plan (12 tasks)
+
 ## Next Steps
 
-1. **Wire protocol** — Unix socket connect, message framing (header + args), fd passing via `sendmsg`/`recvmsg` with `SCM_RIGHTS`. Implement `marshal()` and `marshal_constructor()` to fill in the generated request stubs.
+1. **Wire protocol** — Unix socket connect, message framing (header + args), fd passing via `sendmsg`/`recvmsg` with `SCM_RIGHTS`. Implement `marshal()` and `marshal_constructor()` to fill in the generated request stubs. Key references: `vendor/reference/zig-wayland/src/common_core.zig` (message framing), `vendor/reference/wayland-rs/wayland-backend/src/rs/socket.rs` (fd passing), `~/jai/jai/modules/POSIX/` (socket syscall bindings).
 2. **Client API** — `wl_display` connect, `wl_registry` globals, surface management, input.
-3. **Rendering integration** — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU buffers.
+3. **Rendering integration** — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU buffers. Must work with OpenGL, Vulkan, and plain shared-memory buffers.
