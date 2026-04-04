@@ -38,3 +38,42 @@ unpack_header :: (src: *u8) -> u32, u16, u32 {
 align4 :: inline (n: u32) -> u32 {
     return (n + 3) & ~cast(u32)3;
 }
+
+// Write a Wayland string to the wire buffer.
+// Format: u32 length (including NUL) + data + NUL + zero-padding to 4 bytes.
+// Empty string: writes length 0, no data.
+// Returns: total bytes written (always 4-byte aligned).
+write_string :: (dst: *u8, s: string) -> u32 {
+    if s.count == 0 {
+        write_u32(dst, 0);
+        return 4;
+    }
+    length := cast(u32)(s.count + 1);  // include NUL
+    write_u32(dst, length);
+    memcpy(dst + 4, s.data, s.count);
+    // NUL terminator
+    (dst + 4 + s.count).* = 0;
+    // Zero padding bytes
+    padded := align4(length);
+    if padded > length {
+        memset(dst + 4 + length, 0, padded - length);
+    }
+    return 4 + padded;
+}
+
+// Write a Wayland array to the wire buffer.
+// Format: u32 length + data + zero-padding to 4 bytes.
+// Returns: total bytes written (always 4-byte aligned).
+write_array :: (dst: *u8, data: [] u8) -> u32 {
+    length := cast(u32) data.count;
+    write_u32(dst, length);
+    if length > 0 {
+        memcpy(dst + 4, data.data, data.count);
+        padded := align4(length);
+        if padded > length {
+            memset(dst + 4 + length, 0, padded - length);
+        }
+        return 4 + padded;
+    }
+    return 4;
+}

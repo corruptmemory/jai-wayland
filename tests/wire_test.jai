@@ -11,6 +11,12 @@ main :: () {
     test_pack_header();
     test_unpack_header();
     test_message_size_from_header();
+    test_align4();
+    test_write_string();
+    test_write_string_padding();
+    test_write_string_empty();
+    test_write_array();
+    test_write_array_padding();
 
     print("\n=== All wire tests passed ===\n");
 }
@@ -75,4 +81,113 @@ test_message_size_from_header :: () {
     _, _, size := Wayland.unpack_header(buf.data);
     assert(size == 32);
     print("  PASS: message_size_from_header\n");
+}
+
+test_align4 :: () {
+    assert(Wayland.align4(0) == 0, "align4(0) should be 0");
+    assert(Wayland.align4(1) == 4, "align4(1) should be 4");
+    assert(Wayland.align4(2) == 4, "align4(2) should be 4");
+    assert(Wayland.align4(3) == 4, "align4(3) should be 4");
+    assert(Wayland.align4(4) == 4, "align4(4) should be 4");
+    assert(Wayland.align4(5) == 8, "align4(5) should be 8");
+    assert(Wayland.align4(7) == 8, "align4(7) should be 8");
+    assert(Wayland.align4(8) == 8, "align4(8) should be 8");
+    print("  PASS: align4\n");
+}
+
+test_write_string :: () {
+    // "hello" = 5 chars + NUL = 6 bytes, padded to 8, + 4 prefix = 12 total
+    buf: [16] u8;
+    memset(buf.data, 0xFF, buf.count);  // fill with 0xFF to detect zeroing
+    written := Wayland.write_string(buf.data, "hello");
+    assert(written == 12, "write_string(\"hello\") should return 12");
+    // Length prefix: 6 (includes NUL)
+    length := Wayland.read_u32(buf.data);
+    assert(length == 6, "write_string length should be 6");
+    // Data bytes
+    assert(buf[4] == #char "h", "write_string data[0]");
+    assert(buf[5] == #char "e", "write_string data[1]");
+    assert(buf[6] == #char "l", "write_string data[2]");
+    assert(buf[7] == #char "l", "write_string data[3]");
+    assert(buf[8] == #char "o", "write_string data[4]");
+    // NUL terminator
+    assert(buf[9] == 0, "write_string NUL terminator");
+    // Padding bytes (2 bytes to reach 8-byte aligned data)
+    assert(buf[10] == 0, "write_string padding[0]");
+    assert(buf[11] == 0, "write_string padding[1]");
+    print("  PASS: write_string\n");
+}
+
+test_write_string_padding :: () {
+    // "ab" = 2 chars + NUL = 3 bytes, padded to 4, + 4 prefix = 8 total
+    buf: [12] u8;
+    memset(buf.data, 0xFF, buf.count);
+    written := Wayland.write_string(buf.data, "ab");
+    assert(written == 8, "write_string(\"ab\") should return 8");
+    length := Wayland.read_u32(buf.data);
+    assert(length == 3, "write_string length should be 3");
+    assert(buf[4] == #char "a", "write_string data[0]");
+    assert(buf[5] == #char "b", "write_string data[1]");
+    assert(buf[6] == 0, "write_string NUL terminator");
+    // 1 byte padding to reach 4-byte boundary
+    assert(buf[7] == 0, "write_string padding[0]");
+    print("  PASS: write_string_padding\n");
+}
+
+test_write_string_empty :: () {
+    // Empty string: length 0, no data, 4 bytes total
+    buf: [8] u8;
+    memset(buf.data, 0xFF, buf.count);
+    written := Wayland.write_string(buf.data, "");
+    assert(written == 4, "write_string(\"\") should return 4");
+    length := Wayland.read_u32(buf.data);
+    assert(length == 0, "write_string empty length should be 0");
+    // Byte after the length word should be untouched (still 0xFF)
+    assert(buf[4] == 0xFF, "write_string empty should not write past length");
+    print("  PASS: write_string_empty\n");
+}
+
+test_write_array :: () {
+    // 5 bytes data, padded to 8, + 4 prefix = 12 total
+    buf: [16] u8;
+    memset(buf.data, 0xFF, buf.count);
+    data: [5] u8 = u8.[1, 2, 3, 4, 5];
+    arr: [] u8;
+    arr.data = data.data;
+    arr.count = data.count;
+    written := Wayland.write_array(buf.data, arr);
+    assert(written == 12, "write_array(5 bytes) should return 12");
+    length := Wayland.read_u32(buf.data);
+    assert(length == 5, "write_array length should be 5");
+    assert(buf[4] == 1, "write_array data[0]");
+    assert(buf[5] == 2, "write_array data[1]");
+    assert(buf[6] == 3, "write_array data[2]");
+    assert(buf[7] == 4, "write_array data[3]");
+    assert(buf[8] == 5, "write_array data[4]");
+    // 3 padding bytes
+    assert(buf[9] == 0, "write_array padding[0]");
+    assert(buf[10] == 0, "write_array padding[1]");
+    assert(buf[11] == 0, "write_array padding[2]");
+    print("  PASS: write_array\n");
+}
+
+test_write_array_padding :: () {
+    // 4 bytes exactly aligned, + 4 prefix = 8 total, no padding needed
+    buf: [12] u8;
+    memset(buf.data, 0xFF, buf.count);
+    data: [4] u8 = u8.[10, 20, 30, 40];
+    arr: [] u8;
+    arr.data = data.data;
+    arr.count = data.count;
+    written := Wayland.write_array(buf.data, arr);
+    assert(written == 8, "write_array(4 bytes) should return 8");
+    length := Wayland.read_u32(buf.data);
+    assert(length == 4, "write_array length should be 4");
+    assert(buf[4] == 10, "write_array data[0]");
+    assert(buf[5] == 20, "write_array data[1]");
+    assert(buf[6] == 30, "write_array data[2]");
+    assert(buf[7] == 40, "write_array data[3]");
+    // Next byte should be untouched (still 0xFF)
+    assert(buf[8] == 0xFF, "write_array should not write past data when aligned");
+    print("  PASS: write_array_padding\n");
 }
