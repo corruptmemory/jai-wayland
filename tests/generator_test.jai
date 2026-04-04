@@ -1,5 +1,6 @@
 
 #import "Basic";
+#import "File";
 #import "String";
 #load "../src/generator.jai";
 #load "../src/xml.jai";
@@ -445,6 +446,29 @@ test_generate_module_root :: () {
     print("  PASS: test_generate_module_root\n");
 }
 
+// ── end-to-end tests ──
+
+test_generate_from_xml :: () {
+    contents, ok := read_entire_file("vendor/wayland-protocols/core/wayland.xml");
+    assert(ok);
+    proto := parse_protocol(contents);
+
+    assert(proto.interfaces.count >= 22);
+    display := proto.interfaces[0];
+    assert(display.name == "wl_display");
+
+    result := generate_interface_file(*display);
+    assert(contains(result, "Wl_Display :: struct"), "Missing struct");
+    assert(contains(result, "WL_DISPLAY_SYNC :: 0"), "Missing sync opcode");
+    assert(contains(result, "WL_DISPLAY_GET_REGISTRY :: 1"), "Missing get_registry opcode");
+    assert(contains(result, "Wl_Display_Error :: enum u32"), "Missing error enum");
+    assert(contains(result, "Wl_Display_Event"), "Missing event union");
+    assert(contains(result, "wl_display_sync"), "Missing sync request");
+    assert(contains(result, "-> *Wl_Callback"), "sync should return Wl_Callback");
+    assert(contains(result, "WL_DISPLAY_INTERFACE"), "Missing descriptor");
+    print("  PASS: test_generate_from_xml\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -507,6 +531,9 @@ main :: () {
     print("\nprotocol structure:\n");
     test_generate_protocol_loader();
     test_generate_module_root();
+
+    print("\nend-to-end:\n");
+    test_generate_from_xml();
 
     print("\nAll tests passed.\n");
 }

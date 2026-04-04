@@ -17,8 +17,10 @@ build :: () {
             build_tests(options);
           case "gen_test";
             build_gen_tests(options);
+          case "generate";
+            build_and_run_generate(options);
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate'.\n", arg));
         }
     }
 }
@@ -73,6 +75,11 @@ build_tests :: (options: Build_Options) {
 
 build_gen_tests :: (options: Build_Options) {
     build_and_run_test("gen_tests", "gen_tests", "tests/generator_test.jai", "build_tests");
+    set_build_options_dc(.{do_output=false});
+}
+
+build_and_run_generate :: (options: Build_Options) {
+    build_and_run_test("generator", "generator", "src/generate_main.jai", "build");
     set_build_options_dc(.{do_output=false});
 }
 
