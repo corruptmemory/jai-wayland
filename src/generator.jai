@@ -143,6 +143,71 @@ generate_enum :: (e: *Enum_Def, interface_name: string) -> string {
     return builder_to_string(*sb,, allocator = temp);
 }
 
+// ── Event generation ──
+
+// Maps a protocol Arg_Type to a Jai type string.
+arg_type_to_jai :: (arg: *Arg) -> string {
+    if arg.arg_type == {
+        case .INT;    return "s32";
+        case .UINT;   return "u32";
+        case .FIXED;  return "Fixed";
+        case .STRING; return "string";
+        case .OBJECT;
+            if arg.interface_name.count > 0
+                return tprint("*%", to_jai_type_name(arg.interface_name));
+            return "*void";
+        case .NEW_ID;
+            if arg.interface_name.count > 0
+                return tprint("*%", to_jai_type_name(arg.interface_name));
+            return "*void";
+        case .ARRAY;  return "[] u8";
+        case .FD;     return "s32";
+    }
+    return "s32";  // fallback
+}
+
+// Generates event kind enum + args structs + tagged union for an interface.
+// Returns empty string if the interface has no events.
+generate_events :: (iface: *Interface) -> string {
+    if iface.events.count == 0 return "";
+
+    sb: String_Builder;
+    sb.allocator = temp;
+
+    type_prefix := to_jai_type_name(iface.name);
+
+    // Emit args structs (one per event)
+    for event: iface.events {
+        struct_name := tprint("%_%_Args", type_prefix, to_jai_type_name(event.name));
+        print_to_builder(*sb, "% :: struct {\n", struct_name);
+        for arg: event.args {
+            print_to_builder(*sb, "    %: %;\n", arg.name, arg_type_to_jai(*arg));
+        }
+        print_to_builder(*sb, "}\n\n");
+    }
+
+    // Emit event kind enum
+    enum_name := tprint("%_Event_Kind", type_prefix);
+    print_to_builder(*sb, "% :: enum u8 {\n", enum_name);
+    for event, idx: iface.events {
+        print_to_builder(*sb, "    % :: %;\n", to_upper_snake(event.name), idx);
+    }
+    print_to_builder(*sb, "}\n\n");
+
+    // Emit tagged union
+    union_name := tprint("%_Event", type_prefix);
+    print_to_builder(*sb, "% :: union kind: % {\n", union_name, enum_name);
+    for event: iface.events {
+        tag := to_upper_snake(event.name);
+        field := event.name;
+        args_type := tprint("%_%_Args", type_prefix, to_jai_type_name(event.name));
+        print_to_builder(*sb, "    .% ,, %: %;\n", tag, field, args_type);
+    }
+    print_to_builder(*sb, "}\n");
+
+    return builder_to_string(*sb,, allocator = temp);
+}
+
 // ── Shared types file generation ──
 
 // Returns the content of types.jai — shared type definitions used by all

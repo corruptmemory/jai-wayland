@@ -172,6 +172,64 @@ test_emit_description_body :: () {
     print("  PASS: test_emit_description_body\n");
 }
 
+// ── event generation tests ──
+
+test_generate_events_basic :: () {
+    iface: Interface;
+    iface.name = "wl_surface";
+
+    ev1: Message; ev1.name = "enter";
+    arg1: Arg; arg1.name = "output"; arg1.arg_type = .UINT;
+    array_add(*ev1.args, arg1);
+
+    ev2: Message; ev2.name = "leave";
+    arg2: Arg; arg2.name = "output"; arg2.arg_type = .UINT;
+    array_add(*ev2.args, arg2);
+
+    array_add(*iface.events, ev1);
+    array_add(*iface.events, ev2);
+
+    result := generate_events(*iface);
+    assert(contains(result, "Wl_Surface_Event_Kind :: enum u8"), "Missing event kind enum");
+    assert(contains(result, "ENTER :: 0"), "Missing ENTER");
+    assert(contains(result, "LEAVE :: 1"), "Missing LEAVE");
+    assert(contains(result, "Wl_Surface_Event :: union kind: Wl_Surface_Event_Kind"), "Missing tagged union");
+    assert(contains(result, ".ENTER"), "Missing .ENTER binding");
+    assert(contains(result, ".LEAVE"), "Missing .LEAVE binding");
+    print("  PASS: test_generate_events_basic\n");
+}
+
+test_generate_events_no_events :: () {
+    iface: Interface;
+    iface.name = "wl_callback";
+    result := generate_events(*iface);
+    assert(result.count == 0, "No events should produce empty output");
+    print("  PASS: test_generate_events_no_events\n");
+}
+
+test_generate_events_multi_arg :: () {
+    iface: Interface;
+    iface.name = "wl_pointer";
+
+    ev: Message; ev.name = "motion";
+    arg1: Arg; arg1.name = "time"; arg1.arg_type = .UINT;
+    arg2: Arg; arg2.name = "surface_x"; arg2.arg_type = .FIXED;
+    arg3: Arg; arg3.name = "surface_y"; arg3.arg_type = .FIXED;
+    array_add(*ev.args, arg1);
+    array_add(*ev.args, arg2);
+    array_add(*ev.args, arg3);
+    array_add(*iface.events, ev);
+
+    result := generate_events(*iface);
+    // Multi-arg event needs wrapper struct
+    assert(contains(result, "Wl_Pointer_Motion_Args :: struct"), "Missing args struct");
+    assert(contains(result, "time: u32"), "UINT should map to u32");
+    assert(contains(result, "surface_x: Fixed"), "FIXED should map to Fixed");
+    assert(contains(result, "surface_y: Fixed"), "FIXED should map to Fixed");
+    assert(contains(result, "Wl_Pointer_Event :: union kind: Wl_Pointer_Event_Kind"), "Missing tagged union");
+    print("  PASS: test_generate_events_multi_arg\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -209,6 +267,11 @@ main :: () {
     test_generate_enum_bitfield();
     test_generate_enum_hex_values();
     test_emit_description_body();
+
+    print("\nevent generation:\n");
+    test_generate_events_basic();
+    test_generate_events_no_events();
+    test_generate_events_multi_arg();
 
     print("\nAll tests passed.\n");
 }
