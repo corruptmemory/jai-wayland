@@ -416,6 +416,35 @@ test_generate_interface_file :: () {
     print("  PASS: test_generate_interface_file\n");
 }
 
+// ── protocol structure tests ──
+
+test_generate_protocol_loader :: () {
+    proto: Protocol;
+    proto.name = "wayland";
+    iface1: Interface; iface1.name = "wl_display"; iface1.version = 1;
+    iface2: Interface; iface2.name = "wl_registry"; iface2.version = 1;
+    array_add(*proto.interfaces, iface1);
+    array_add(*proto.interfaces, iface2);
+
+    result := generate_protocol_loader(*proto);
+    assert(contains(result, "#load \"wl_display.jai\""), "Missing wl_display load");
+    assert(contains(result, "#load \"wl_registry.jai\""), "Missing wl_registry load");
+    assert(contains(result, "wayland"), "Missing protocol name");
+    print("  PASS: test_generate_protocol_loader\n");
+}
+
+test_generate_module_root :: () {
+    names: [2] string;
+    names[0] = "wayland";
+    names[1] = "xdg_shell";
+
+    result := generate_module_root(names);
+    assert(contains(result, "#load \"types.jai\""), "Missing types load");
+    assert(contains(result, "#load \"wayland/wayland.jai\""), "Missing wayland load");
+    assert(contains(result, "#load \"xdg_shell/xdg_shell.jai\""), "Missing xdg_shell load");
+    print("  PASS: test_generate_module_root\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -474,6 +503,10 @@ main :: () {
 
     print("\nfull interface file:\n");
     test_generate_interface_file();
+
+    print("\nprotocol structure:\n");
+    test_generate_protocol_loader();
+    test_generate_module_root();
 
     print("\nAll tests passed.\n");
 }
