@@ -92,6 +92,18 @@ test_resolve_enum_cross_interface_long :: () {
     print("  PASS: test_resolve_enum_cross_interface_long\n");
 }
 
+// ── generate_types_file tests ──
+
+test_generate_types_file :: () {
+    result := generate_types_file();
+    assert(contains(result, "Interface_Descriptor :: struct"), "Missing Interface_Descriptor");
+    assert(contains(result, "Wire_Arg_Type :: enum u8"), "Missing Wire_Arg_Type");
+    assert(contains(result, "Fixed :: struct"), "Missing Fixed");
+    assert(contains(result, "fixed_from_float"), "Missing fixed_from_float");
+    assert(contains(result, "fixed_to_float"), "Missing fixed_to_float");
+    print("  PASS: test_generate_types_file\n");
+}
+
 main :: () {
     print("Running generator tests...\n\n");
 
@@ -120,6 +132,9 @@ main :: () {
     test_resolve_enum_cross_interface();
     test_resolve_enum_local();
     test_resolve_enum_cross_interface_long();
+
+    print("\nshared types:\n");
+    test_generate_types_file();
 
     print("\nAll tests passed.\n");
 }
