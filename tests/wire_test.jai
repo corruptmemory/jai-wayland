@@ -18,6 +18,10 @@ main :: () {
     test_write_array();
     test_write_array_padding();
 
+    test_connection_queue_message();
+    test_connection_queue_fd();
+    test_connection_queue_multiple();
+
     print("\n=== All wire tests passed ===\n");
 }
 
@@ -169,6 +173,66 @@ test_write_array :: () {
     assert(buf[10] == 0, "write_array padding[1]");
     assert(buf[11] == 0, "write_array padding[2]");
     print("  PASS: write_array\n");
+}
+
+test_connection_queue_message :: () {
+    conn: Wayland.Connection;
+    // Build a 20-byte message: 8-byte header + 12 bytes payload
+    msg: [20] u8;
+    Wayland.pack_header(msg.data, object_id = 1, opcode = 0, size = 20);
+    // Fill payload with recognizable pattern
+    for i: 8..19  msg[i] = cast(u8)(i - 8 + 0xA0);
+
+    Wayland.connection_queue(*conn, msg.data, 20);
+    assert(conn.out_used == 20, "out_used should be 20");
+    // Verify header was copied correctly
+    obj_id, opcode, size := Wayland.unpack_header(conn.out_buf.data);
+    assert(obj_id == 1, "queued object_id should be 1");
+    assert(opcode == 0, "queued opcode should be 0");
+    assert(size == 20, "queued size should be 20");
+    // Verify payload byte
+    assert(conn.out_buf[8] == 0xA0, "queued payload byte");
+    print("  PASS: connection_queue_message\n");
+}
+
+test_connection_queue_fd :: () {
+    conn: Wayland.Connection;
+    Wayland.connection_queue_fd(*conn, 42);
+    assert(conn.out_fds_count == 1, "out_fds_count should be 1");
+    assert(conn.out_fds[0] == 42, "queued fd should be 42");
+    print("  PASS: connection_queue_fd\n");
+}
+
+test_connection_queue_multiple :: () {
+    conn: Wayland.Connection;
+    // Queue first message: 12 bytes
+    msg1: [12] u8;
+    Wayland.pack_header(msg1.data, object_id = 1, opcode = 0, size = 12);
+    Wayland.write_u32(msg1.data + 8, 0xDEADBEEF);
+    Wayland.connection_queue(*conn, msg1.data, 12);
+    assert(conn.out_used == 12, "out_used should be 12 after first queue");
+
+    // Queue second message: 16 bytes
+    msg2: [16] u8;
+    Wayland.pack_header(msg2.data, object_id = 2, opcode = 1, size = 16);
+    Wayland.write_u32(msg2.data + 8, 0xCAFEBABE);
+    Wayland.write_u32(msg2.data + 12, 0x12345678);
+    Wayland.connection_queue(*conn, msg2.data, 16);
+    assert(conn.out_used == 28, "out_used should be 28 after second queue");
+
+    // Verify second message header at offset 12
+    obj_id, opcode, size := Wayland.unpack_header(conn.out_buf.data + 12);
+    assert(obj_id == 2, "second message object_id should be 2");
+    assert(opcode == 1, "second message opcode should be 1");
+    assert(size == 16, "second message size should be 16");
+
+    // Queue two fds
+    Wayland.connection_queue_fd(*conn, 10);
+    Wayland.connection_queue_fd(*conn, 20);
+    assert(conn.out_fds_count == 2, "out_fds_count should be 2");
+    assert(conn.out_fds[0] == 10, "first fd should be 10");
+    assert(conn.out_fds[1] == 20, "second fd should be 20");
+    print("  PASS: connection_queue_multiple\n");
 }
 
 test_write_array_padding :: () {
