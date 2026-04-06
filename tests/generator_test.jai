@@ -291,10 +291,9 @@ test_generate_request_constructor :: () {
     array_add(*req.args, arg1);
 
     result := generate_request(*iface, *req, 3);
-    assert(contains(result, "-> *Wl_Callback"), "Constructor should return new type");
+    assert(contains(result, "new_id: u32"), "Constructor should take new_id param, got:\n%", result);
     assert(contains(result, "marshal_constructor(self.conn, self.id, WL_SURFACE_FRAME"), "Missing marshal_constructor call, got:\n%", result);
-    assert(contains(result, "TODO(Phase 4): allocate proxy"), "Missing Phase 4 TODO, got:\n%", result);
-    assert(contains(result, "return null"), "Missing return null, got:\n%", result);
+    assert(!contains(result, "return null"), "Constructor should not return null, got:\n%", result);
     print("  PASS: test_generate_request_constructor\n");
 }
 
@@ -318,10 +317,11 @@ test_generate_request_untyped_new_id :: () {
     array_add(*req.args, arg2);
 
     result := generate_request(*iface, *req, 0);
-    assert(contains(result, "$T"), "Untyped new_id should use polymorphic type");
-    assert(contains(result, "-> *T"), "Should return *T");
-    assert(contains(result, "TODO(Phase 3): untyped new_id"), "Missing untyped new_id TODO, got:\n%", result);
-    assert(contains(result, "return null"), "Missing return null, got:\n%", result);
+    assert(contains(result, "interface_name: string"), "Untyped new_id should have interface_name param, got:\n%", result);
+    assert(contains(result, "version: u32"), "Untyped new_id should have version param, got:\n%", result);
+    assert(contains(result, "new_id: u32"), "Untyped new_id should have new_id param, got:\n%", result);
+    assert(contains(result, "write_string"), "Should use write_string for interface_name, got:\n%", result);
+    assert(contains(result, "connection_queue"), "Should use connection_queue, got:\n%", result);
     print("  PASS: test_generate_request_untyped_new_id\n");
 }
 
@@ -473,7 +473,7 @@ test_generate_from_xml :: () {
     assert(contains(result, "Wl_Display_Error :: enum u32"), "Missing error enum");
     assert(contains(result, "Wl_Display_Event"), "Missing event union");
     assert(contains(result, "wl_display_sync"), "Missing sync request");
-    assert(contains(result, "-> *Wl_Callback"), "sync should return Wl_Callback");
+    assert(contains(result, "new_id: u32"), "sync constructor should take new_id param");
     assert(contains(result, "WL_DISPLAY_INTERFACE"), "Missing descriptor");
     print("  PASS: test_generate_from_xml\n");
 }

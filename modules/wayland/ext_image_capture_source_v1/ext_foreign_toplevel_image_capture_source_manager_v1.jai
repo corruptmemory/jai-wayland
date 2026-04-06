@@ -27,11 +27,9 @@ Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1_Destroy_Args :: struct {
 // create source object for foreign toplevel
 // Creates a source object for a foreign toplevel handle. Images captured
 // from this source will show the same content as the toplevel.
-ext_foreign_toplevel_image_capture_source_manager_v1_create_source :: (self: *Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1, toplevel_handle: *Ext_Foreign_Toplevel_Handle_V1) -> *Ext_Image_Capture_Source_V1 {
+ext_foreign_toplevel_image_capture_source_manager_v1_create_source :: (self: *Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1, new_id: u32, toplevel_handle: *Ext_Foreign_Toplevel_Handle_V1) {
     args := Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1_Create_Source_Args.{ toplevel_handle = toplevel_handle.id };
-    new_id := marshal_constructor(self.conn, self.id, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, new_id, *args);
 }
 
 // delete this object (destructor)

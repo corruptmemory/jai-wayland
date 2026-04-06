@@ -4,6 +4,8 @@
 #load "wire.jai";
 #load "connection.jai";
 #load "marshal.jai";
+#load "shm.jai";
+#load "registry.jai";
 
 #load "wayland/wayland.jai";
 

@@ -107,11 +107,9 @@ zwp_pointer_constraints_v1_destroy :: (self: *Zwp_Pointer_Constraints_V1) {
 // relative motion events will still be emitted via wp_relative_pointer
 // objects of the same seat. wl_pointer.axis and wl_pointer.button events
 // are unaffected.
-zwp_pointer_constraints_v1_lock_pointer :: (self: *Zwp_Pointer_Constraints_V1, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) -> *Zwp_Locked_Pointer_V1 {
+zwp_pointer_constraints_v1_lock_pointer :: (self: *Zwp_Pointer_Constraints_V1, new_id: u32, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) {
     args := Zwp_Pointer_Constraints_V1_Lock_Pointer_Args.{ surface = surface.id, pointer = pointer.id, region = region.id, lifetime = lifetime };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_LOCK_POINTER, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_LOCK_POINTER, new_id, *args);
 }
 
 // confine pointer to a region
@@ -132,11 +130,9 @@ zwp_pointer_constraints_v1_lock_pointer :: (self: *Zwp_Pointer_Constraints_V1, s
 // to interact with the confinement as well as receive updates about its
 // state. See the the description of wp_confined_pointer for further
 // information.
-zwp_pointer_constraints_v1_confine_pointer :: (self: *Zwp_Pointer_Constraints_V1, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) -> *Zwp_Confined_Pointer_V1 {
+zwp_pointer_constraints_v1_confine_pointer :: (self: *Zwp_Pointer_Constraints_V1, new_id: u32, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) {
     args := Zwp_Pointer_Constraints_V1_Confine_Pointer_Args.{ surface = surface.id, pointer = pointer.id, region = region.id, lifetime = lifetime };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_CONFINE_POINTER, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_CONFINE_POINTER, new_id, *args);
 }
 
 ZWP_POINTER_CONSTRAINTS_V1_INTERFACE :: Interface_Descriptor.{

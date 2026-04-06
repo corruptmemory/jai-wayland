@@ -76,11 +76,9 @@ zxdg_decoration_manager_v1_destroy :: (self: *Zxdg_Decoration_Manager_V1) {
 // this request, or if a surface commit has been performed after a previous
 // xdg_toplevel_decoration object associated with the surface was
 // destroyed, the decoration mode is assumed to be client-side.
-zxdg_decoration_manager_v1_get_toplevel_decoration :: (self: *Zxdg_Decoration_Manager_V1, toplevel: *Xdg_Toplevel) -> *Zxdg_Toplevel_Decoration_V1 {
+zxdg_decoration_manager_v1_get_toplevel_decoration :: (self: *Zxdg_Decoration_Manager_V1, new_id: u32, toplevel: *Xdg_Toplevel) {
     args := Zxdg_Decoration_Manager_V1_Get_Toplevel_Decoration_Args.{ toplevel = toplevel.id };
-    new_id := marshal_constructor(self.conn, self.id, ZXDG_DECORATION_MANAGER_V1_GET_TOPLEVEL_DECORATION, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZXDG_DECORATION_MANAGER_V1_GET_TOPLEVEL_DECORATION, new_id, *args);
 }
 
 ZXDG_DECORATION_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

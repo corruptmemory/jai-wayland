@@ -85,11 +85,9 @@ xdg_wm_base_destroy :: (self: *Xdg_Wm_Base) {
 // Create a positioner object. A positioner object is used to position
 // surfaces relative to some parent surface. See the interface description
 // and xdg_surface.get_popup for details.
-xdg_wm_base_create_positioner :: (self: *Xdg_Wm_Base) -> *Xdg_Positioner {
+xdg_wm_base_create_positioner :: (self: *Xdg_Wm_Base, new_id: u32) {
     args := Xdg_Wm_Base_Create_Positioner_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, XDG_WM_BASE_CREATE_POSITIONER, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, XDG_WM_BASE_CREATE_POSITIONER, new_id, *args);
 }
 
 // create a shell surface from a surface
@@ -106,11 +104,9 @@ xdg_wm_base_create_positioner :: (self: *Xdg_Wm_Base) -> *Xdg_Positioner {
 //
 // See the documentation of xdg_surface for more details about what an
 // xdg_surface is and how it is used.
-xdg_wm_base_get_xdg_surface :: (self: *Xdg_Wm_Base, surface: *Wl_Surface) -> *Xdg_Surface {
+xdg_wm_base_get_xdg_surface :: (self: *Xdg_Wm_Base, new_id: u32, surface: *Wl_Surface) {
     args := Xdg_Wm_Base_Get_Xdg_Surface_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, XDG_WM_BASE_GET_XDG_SURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, XDG_WM_BASE_GET_XDG_SURFACE, new_id, *args);
 }
 
 // respond to a ping event

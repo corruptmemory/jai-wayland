@@ -37,11 +37,9 @@ ext_session_lock_manager_v1_destroy :: (self: *Ext_Session_Lock_Manager_V1) {
 // session. The compositor will send either the ext_session_lock_v1.locked
 // or ext_session_lock_v1.finished event on the created object in
 // response to this request.
-ext_session_lock_manager_v1_lock :: (self: *Ext_Session_Lock_Manager_V1) -> *Ext_Session_Lock_V1 {
+ext_session_lock_manager_v1_lock :: (self: *Ext_Session_Lock_Manager_V1, new_id: u32) {
     args := Ext_Session_Lock_Manager_V1_Lock_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, EXT_SESSION_LOCK_MANAGER_V1_LOCK, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_SESSION_LOCK_MANAGER_V1_LOCK, new_id, *args);
 }
 
 EXT_SESSION_LOCK_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

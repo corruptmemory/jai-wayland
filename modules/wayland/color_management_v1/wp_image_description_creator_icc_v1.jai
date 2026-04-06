@@ -76,11 +76,9 @@ Wp_Image_Description_Creator_Icc_V1_Set_Icc_File_Args :: struct {
 //
 // The resulting image description object does not allow get_information
 // request.
-wp_image_description_creator_icc_v1_create :: (self: *Wp_Image_Description_Creator_Icc_V1) -> *Wp_Image_Description_V1 {
+wp_image_description_creator_icc_v1_create :: (self: *Wp_Image_Description_Creator_Icc_V1, new_id: u32) {
     args := Wp_Image_Description_Creator_Icc_V1_Create_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_CREATE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_CREATE, new_id, *args);
 }
 
 // set the ICC profile file

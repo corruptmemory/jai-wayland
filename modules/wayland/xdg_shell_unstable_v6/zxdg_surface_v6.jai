@@ -110,11 +110,9 @@ zxdg_surface_v6_destroy :: (self: *Zxdg_Surface_V6) {
 //
 // See the documentation of xdg_toplevel for more details about what an
 // xdg_toplevel is and how it is used.
-zxdg_surface_v6_get_toplevel :: (self: *Zxdg_Surface_V6) -> *Zxdg_Toplevel_V6 {
+zxdg_surface_v6_get_toplevel :: (self: *Zxdg_Surface_V6, new_id: u32) {
     args := Zxdg_Surface_V6_Get_Toplevel_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, ZXDG_SURFACE_V6_GET_TOPLEVEL, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZXDG_SURFACE_V6_GET_TOPLEVEL, new_id, *args);
 }
 
 // assign the xdg_popup surface role
@@ -124,11 +122,9 @@ zxdg_surface_v6_get_toplevel :: (self: *Zxdg_Surface_V6) -> *Zxdg_Toplevel_V6 {
 //
 // See the documentation of xdg_popup for more details about what an
 // xdg_popup is and how it is used.
-zxdg_surface_v6_get_popup :: (self: *Zxdg_Surface_V6, parent: *Zxdg_Surface_V6, positioner: *Zxdg_Positioner_V6) -> *Zxdg_Popup_V6 {
+zxdg_surface_v6_get_popup :: (self: *Zxdg_Surface_V6, new_id: u32, parent: *Zxdg_Surface_V6, positioner: *Zxdg_Positioner_V6) {
     args := Zxdg_Surface_V6_Get_Popup_Args.{ parent = parent.id, positioner = positioner.id };
-    new_id := marshal_constructor(self.conn, self.id, ZXDG_SURFACE_V6_GET_POPUP, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZXDG_SURFACE_V6_GET_POPUP, new_id, *args);
 }
 
 // set the new window geometry

@@ -46,11 +46,9 @@ xdg_activation_v1_destroy :: (self: *Xdg_Activation_V1) {
 // Creates an xdg_activation_token_v1 object that will provide
 // the initiating client with a unique token for this activation. This
 // token should be offered to the clients to be activated.
-xdg_activation_v1_get_activation_token :: (self: *Xdg_Activation_V1) -> *Xdg_Activation_Token_V1 {
+xdg_activation_v1_get_activation_token :: (self: *Xdg_Activation_V1, new_id: u32) {
     args := Xdg_Activation_V1_Get_Activation_Token_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, XDG_ACTIVATION_V1_GET_ACTIVATION_TOKEN, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, XDG_ACTIVATION_V1_GET_ACTIVATION_TOKEN, new_id, *args);
 }
 
 // notify new interaction being available

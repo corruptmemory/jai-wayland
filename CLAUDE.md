@@ -4,7 +4,7 @@
 
 Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire protocol directly, uses runtime dlopen for any shared libraries, and generates bindings from Wayland protocol XML specs.
 
-**Current status:** Phase 1 (XML parser), Phase 2 (code generator), and Phase 3 (wire protocol) complete. Phase 4 (client API) is next.
+**Current status:** Phases 1-4 complete. Working Wayland client — connects to compositor, discovers globals, displays windows via wl_shm. No libwayland dependency.
 
 ## Build Commands
 
@@ -16,6 +16,8 @@ Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire
 ./build.sh - marshal_test  # Build and run 9 marshal macro tests
 ./build.sh - compile_test  # Build and run 9 compilation smoke tests (imports generated module)
 ./build.sh - generate   # Regenerate modules/wayland/ from protocol XML
+./build.sh - hello_globals  # Build and run hello_globals example (live compositor)
+./build.sh - hello_window   # Build and run hello_window example (black window)
 ```
 
 Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to create compiler workspaces. The `-` separates compiler args from metaprogram args.
@@ -51,17 +53,28 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 - `marshal.jai` — compile-time marshal macro using `#expand` + `#insert #run generate_marshal_code(type_info(T))`. Walks request arg struct members at compile time, emits type-specific serialization code. Two paths: fixed-size (stack buffer) and variable-size (runtime computation for strings/arrays). `Fd` args (distinct s32) route to `connection_queue_fd` (SCM_RIGHTS out-of-band). Also `marshal_constructor` for new_id allocation.
 
 **Generated module** (`modules/wayland/`):
-- `module.jai` → `#load` chain → `types.jai`, `wire.jai`, `connection.jai`, `marshal.jai` → per-protocol directories → per-interface files
+- `module.jai` → `#load` chain → `types.jai`, `wire.jai`, `connection.jai`, `marshal.jai`, `shm.jai`, `registry.jai` → per-protocol directories → per-interface files
 - `types.jai` — shared types: `Interface_Descriptor`, `Wire_Arg_Type`, `Fixed`, `Fd` (distinct s32), wire constants
 - Request functions have real `marshal()` calls that serialize args into the connection buffer
+- Constructor functions take `new_id: u32` from caller — no internal allocation, no return value
+
+**Client API** (`modules/wayland/registry.jai`, `shm.jai`):
+- `registry.jai` — `discover_globals(conn)` performs get_registry + sync roundtrip, returns `[] Global_Info` + registry ID. `find_global(globals, name)` looks up a global by interface name. `init_display(conn)` creates the wl_display proxy (always ID 1).
+- `shm.jai` — `memfd_create(name, flags)` thin wrapper over Linux syscall for anonymous shared memory.
+- **Design: no inversion of control.** Application owns the event loop, switches on object IDs, decodes events inline with `read_u32`/`read_string`/`read_array`. No callbacks, no dispatch tables, no event queues.
+- Wire read helpers: `read_string(src) -> string, u32` and `read_array(src) -> [] u8, u32` — mirrors of write_string/write_array.
+
+**Examples** (`examples/`):
+- `hello_globals.jai` — 20 lines, connects and prints all compositor globals. First live test.
+- `hello_window.jai` — ~150 lines, full 6-phase protocol: discover globals, bind compositor/shm/xdg_wm_base, create surface + toplevel, create wl_shm buffer, attach + commit, event loop with ping/pong and close handling. Displays a black 640x480 window.
 
 **Tests:**
 - `tests/xml_test.jai`: 22 tests (pull parser, entities, protocol parsing)
 - `tests/generator_test.jai`: 36 tests (naming, enums, events, requests, assembly, end-to-end)
-- `tests/wire_test.jai`: 16 tests (primitive writers, header pack/unpack, string/array encoding, buffer queueing)
+- `tests/wire_test.jai`: 20 tests (primitive writers/readers, header pack/unpack, string/array read/write, buffer queueing)
 - `tests/marshal_test.jai`: 9 tests (fixed args, fd, string, array, Fixed, empty, constructors)
 - `tests/compile_test.jai`: 9 tests (imports generated module, verifies types/Fd/conn/arg structs compile)
-- **Total: 92 tests across 5 test suites**
+- **Total: 96 tests across 5 test suites**
 
 ## Jai Toolchain
 
@@ -118,5 +131,7 @@ These edge cases were discovered during the compilation smoke test against all 5
 
 ## Next Steps
 
-1. **Client API (Phase 4)** — Object map (id → proxy with dispatch table), event dispatch to typed `*_Event` tagged unions, `wl_display` connect handshake, `wl_registry` globals, proxy lifecycle management. Complete the TODO(Phase 4) stubs: proper proxy allocation in `marshal_constructor`, `destroy_proxy` in destructors. Untyped `new_id` wire encoding for `wl_registry.bind`.
-2. **Rendering integration** — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU buffers. Must work with OpenGL, Vulkan, and plain shared-memory buffers.
+1. **Rendering integration (Phase 5)** — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU rendering beyond solid colors. OpenGL, Vulkan, and plain shared-memory paths.
+2. **Input handling** — wl_seat, wl_keyboard, wl_pointer event decoding. Keymap loading via mmap'd xkb data from wl_keyboard.keymap event.
+3. **Compile-time demarshal** — Mirror of marshal: walks event arg struct type_info at compile time, emits deserialization code. Convenience for decoding events without manual `read_u32`/`read_string` chains.
+4. **Server-allocated objects** — Handle `new_id` args in events (e.g., wl_data_device.data_offer, tablet hotplug). IDs from 0xFF000000+ range.

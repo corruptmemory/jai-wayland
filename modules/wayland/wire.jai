@@ -61,6 +61,30 @@ write_string :: (dst: *u8, s: string) -> u32 {
     return 4 + padded;
 }
 
+// Read a Wayland string from the wire buffer.
+// Returns: string slice into the buffer (valid until next connection_read)
+//          and total bytes consumed (always 4-byte aligned).
+// A length of 0 means empty string. Otherwise length includes NUL.
+read_string :: (src: *u8) -> string, u32 {
+    length := read_u32(src);
+    if length == 0  return "", 4;
+    result: string;
+    result.data = src + 4;
+    result.count = cast(s64)(length - 1);  // exclude NUL
+    return result, 4 + align4(length);
+}
+
+// Read a Wayland array from the wire buffer.
+// Returns: byte slice into the buffer (valid until next connection_read)
+//          and total bytes consumed (always 4-byte aligned).
+read_array :: (src: *u8) -> [] u8, u32 {
+    length := read_u32(src);
+    result: [] u8;
+    result.data = src + 4;
+    result.count = cast(s64) length;
+    return result, 4 + align4(length);
+}
+
 // Write a Wayland array to the wire buffer.
 // Format: u32 length + data + zero-padding to 4 bytes.
 // Returns: total bytes written (always 4-byte aligned).

@@ -18,6 +18,11 @@ main :: () {
     test_write_array();
     test_write_array_padding();
 
+    test_read_string();
+    test_read_string_padding();
+    test_read_string_empty();
+    test_read_array();
+
     test_connection_queue_message();
     test_connection_queue_fd();
     test_connection_queue_multiple();
@@ -173,6 +178,52 @@ test_write_array :: () {
     assert(buf[10] == 0, "write_array padding[1]");
     assert(buf[11] == 0, "write_array padding[2]");
     print("  PASS: write_array\n");
+}
+
+test_read_string :: () {
+    // Write a string then read it back
+    buf: [32] u8;
+    written := Wayland.write_string(buf.data, "hello");
+    s, consumed := Wayland.read_string(buf.data);
+    assert(s == "hello", "read_string should return 'hello'");
+    assert(consumed == written, "read_string consumed should match write_string written");
+    print("  PASS: read_string\n");
+}
+
+test_read_string_padding :: () {
+    // "ab" = 3 bytes with NUL, padded to 4, total 8
+    buf: [16] u8;
+    written := Wayland.write_string(buf.data, "ab");
+    s, consumed := Wayland.read_string(buf.data);
+    assert(s.count == 2, "read_string 'ab' count should be 2");
+    assert(s[0] == #char "a");
+    assert(s[1] == #char "b");
+    assert(consumed == 8, "read_string 'ab' consumed should be 8");
+    print("  PASS: read_string_padding\n");
+}
+
+test_read_string_empty :: () {
+    buf: [8] u8;
+    Wayland.write_string(buf.data, "");
+    s, consumed := Wayland.read_string(buf.data);
+    assert(s.count == 0, "read_string empty count should be 0");
+    assert(consumed == 4, "read_string empty consumed should be 4");
+    print("  PASS: read_string_empty\n");
+}
+
+test_read_array :: () {
+    buf: [16] u8;
+    data: [5] u8 = u8.[1, 2, 3, 4, 5];
+    arr: [] u8;
+    arr.data = data.data;
+    arr.count = data.count;
+    written := Wayland.write_array(buf.data, arr);
+    result, consumed := Wayland.read_array(buf.data);
+    assert(result.count == 5, "read_array count should be 5");
+    assert(result[0] == 1);
+    assert(result[4] == 5);
+    assert(consumed == written, "read_array consumed should match write_array written");
+    print("  PASS: read_array\n");
 }
 
 test_connection_queue_message :: () {

@@ -40,11 +40,9 @@ zxdg_importer_v2_destroy :: (self: *Zxdg_Importer_V2) {
 // When called, a new xdg_imported object will be created. This new object
 // represents the imported surface, and the importing client can
 // manipulate its relationship using it. See xdg_imported for details.
-zxdg_importer_v2_import_toplevel :: (self: *Zxdg_Importer_V2, handle: string) -> *Zxdg_Imported_V2 {
+zxdg_importer_v2_import_toplevel :: (self: *Zxdg_Importer_V2, new_id: u32, handle: string) {
     args := Zxdg_Importer_V2_Import_Toplevel_Args.{ handle = handle };
-    new_id := marshal_constructor(self.conn, self.id, ZXDG_IMPORTER_V2_IMPORT_TOPLEVEL, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZXDG_IMPORTER_V2_IMPORT_TOPLEVEL, new_id, *args);
 }
 
 ZXDG_IMPORTER_V2_INTERFACE :: Interface_Descriptor.{

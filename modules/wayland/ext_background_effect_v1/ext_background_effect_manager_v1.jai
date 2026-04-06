@@ -76,11 +76,9 @@ ext_background_effect_manager_v1_destroy :: (self: *Ext_Background_Effect_Manage
 // If the given wl_surface already has a ext_background_effect_surface_v1
 // object associated, the background_effect_exists protocol error will be
 // raised.
-ext_background_effect_manager_v1_get_background_effect :: (self: *Ext_Background_Effect_Manager_V1, surface: *Wl_Surface) -> *Ext_Background_Effect_Surface_V1 {
+ext_background_effect_manager_v1_get_background_effect :: (self: *Ext_Background_Effect_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Ext_Background_Effect_Manager_V1_Get_Background_Effect_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, EXT_BACKGROUND_EFFECT_MANAGER_V1_GET_BACKGROUND_EFFECT, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_BACKGROUND_EFFECT_MANAGER_V1_GET_BACKGROUND_EFFECT, new_id, *args);
 }
 
 EXT_BACKGROUND_EFFECT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

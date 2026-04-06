@@ -138,11 +138,9 @@ ext_session_lock_v1_destroy :: (self: *Ext_Session_Lock_V1) {
 //
 // Attempting to create more than one lock surface for a given output
 // is a duplicate_output protocol error.
-ext_session_lock_v1_get_lock_surface :: (self: *Ext_Session_Lock_V1, surface: *Wl_Surface, output: *Wl_Output) -> *Ext_Session_Lock_Surface_V1 {
+ext_session_lock_v1_get_lock_surface :: (self: *Ext_Session_Lock_V1, new_id: u32, surface: *Wl_Surface, output: *Wl_Output) {
     args := Ext_Session_Lock_V1_Get_Lock_Surface_Args.{ surface = surface.id, output = output.id };
-    new_id := marshal_constructor(self.conn, self.id, EXT_SESSION_LOCK_V1_GET_LOCK_SURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_SESSION_LOCK_V1_GET_LOCK_SURFACE, new_id, *args);
 }
 
 // unlock the session, destroying the object (destructor)

@@ -82,11 +82,9 @@ wp_color_representation_manager_v1_destroy :: (self: *Wp_Color_Representation_Ma
 // the given wl_surface.
 //
 // See the wp_color_representation_surface_v1 interface for more details.
-wp_color_representation_manager_v1_get_surface :: (self: *Wp_Color_Representation_Manager_V1, surface: *Wl_Surface) -> *Wp_Color_Representation_Surface_V1 {
+wp_color_representation_manager_v1_get_surface :: (self: *Wp_Color_Representation_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Color_Representation_Manager_V1_Get_Surface_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_COLOR_REPRESENTATION_MANAGER_V1_GET_SURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_COLOR_REPRESENTATION_MANAGER_V1_GET_SURFACE, new_id, *args);
 }
 
 WP_COLOR_REPRESENTATION_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

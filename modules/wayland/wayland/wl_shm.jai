@@ -315,11 +315,9 @@ Wl_Shm_Release_Args :: struct {
 // The pool can be used to create shared memory based buffer
 // objects.  The server will mmap size bytes of the passed file
 // descriptor, to use as backing memory for the pool.
-wl_shm_create_pool :: (self: *Wl_Shm, fd: Fd, size: s32) -> *Wl_Shm_Pool {
+wl_shm_create_pool :: (self: *Wl_Shm, new_id: u32, fd: Fd, size: s32) {
     args := Wl_Shm_Create_Pool_Args.{ fd = fd, size = size };
-    new_id := marshal_constructor(self.conn, self.id, WL_SHM_CREATE_POOL, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_SHM_CREATE_POOL, new_id, *args);
 }
 
 // release the shm object (destructor)

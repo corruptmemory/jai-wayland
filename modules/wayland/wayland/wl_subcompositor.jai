@@ -79,11 +79,9 @@ wl_subcompositor_destroy :: (self: *Wl_Subcompositor) {
 //
 // This request modifies the behaviour of wl_surface.commit request on
 // the sub-surface, see the documentation on wl_subsurface interface.
-wl_subcompositor_get_subsurface :: (self: *Wl_Subcompositor, surface: *Wl_Surface, parent: *Wl_Surface) -> *Wl_Subsurface {
+wl_subcompositor_get_subsurface :: (self: *Wl_Subcompositor, new_id: u32, surface: *Wl_Surface, parent: *Wl_Surface) {
     args := Wl_Subcompositor_Get_Subsurface_Args.{ surface = surface.id, parent = parent.id };
-    new_id := marshal_constructor(self.conn, self.id, WL_SUBCOMPOSITOR_GET_SUBSURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_SUBCOMPOSITOR_GET_SUBSURFACE, new_id, *args);
 }
 
 WL_SUBCOMPOSITOR_INTERFACE :: Interface_Descriptor.{

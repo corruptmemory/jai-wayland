@@ -116,11 +116,9 @@ wp_image_description_v1_destroy :: (self: *Wp_Image_Description_V1) {
 // request. Whether it is allowed or not is defined by the request that
 // created the object. If get_information is not allowed, the protocol
 // error no_information is raised.
-wp_image_description_v1_get_information :: (self: *Wp_Image_Description_V1) -> *Wp_Image_Description_Info_V1 {
+wp_image_description_v1_get_information :: (self: *Wp_Image_Description_V1, new_id: u32) {
     args := Wp_Image_Description_V1_Get_Information_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WP_IMAGE_DESCRIPTION_V1_GET_INFORMATION, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_IMAGE_DESCRIPTION_V1_GET_INFORMATION, new_id, *args);
 }
 
 WP_IMAGE_DESCRIPTION_V1_INTERFACE :: Interface_Descriptor.{

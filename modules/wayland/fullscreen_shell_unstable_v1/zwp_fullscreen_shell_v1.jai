@@ -216,11 +216,9 @@ zwp_fullscreen_shell_v1_present_surface :: (self: *Zwp_Fullscreen_Shell_V1, surf
 // This request gives the surface the role of a fullscreen shell surface.
 // If the surface already has another role, it raises a role protocol
 // error.
-zwp_fullscreen_shell_v1_present_surface_for_mode :: (self: *Zwp_Fullscreen_Shell_V1, surface: *Wl_Surface, output: *Wl_Output, framerate: s32) -> *Zwp_Fullscreen_Shell_Mode_Feedback_V1 {
+zwp_fullscreen_shell_v1_present_surface_for_mode :: (self: *Zwp_Fullscreen_Shell_V1, new_id: u32, surface: *Wl_Surface, output: *Wl_Output, framerate: s32) {
     args := Zwp_Fullscreen_Shell_V1_Present_Surface_For_Mode_Args.{ surface = surface.id, output = output.id, framerate = framerate };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_FULLSCREEN_SHELL_V1_PRESENT_SURFACE_FOR_MODE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_FULLSCREEN_SHELL_V1_PRESENT_SURFACE_FOR_MODE, new_id, *args);
 }
 
 ZWP_FULLSCREEN_SHELL_V1_INTERFACE :: Interface_Descriptor.{

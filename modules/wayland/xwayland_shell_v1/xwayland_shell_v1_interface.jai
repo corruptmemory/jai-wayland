@@ -62,11 +62,9 @@ xwayland_shell_v1_destroy :: (self: *Xwayland_Shell_V1) {
 //
 // See the documentation of xwayland_surface_v1 for more details
 // about what an xwayland_surface_v1 is and how it is used.
-xwayland_shell_v1_get_xwayland_surface :: (self: *Xwayland_Shell_V1, surface: *Wl_Surface) -> *Xwayland_Surface_V1 {
+xwayland_shell_v1_get_xwayland_surface :: (self: *Xwayland_Shell_V1, new_id: u32, surface: *Wl_Surface) {
     args := Xwayland_Shell_V1_Get_Xwayland_Surface_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, XWAYLAND_SHELL_V1_GET_XWAYLAND_SURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, XWAYLAND_SHELL_V1_GET_XWAYLAND_SURFACE, new_id, *args);
 }
 
 XWAYLAND_SHELL_V1_INTERFACE :: Interface_Descriptor.{

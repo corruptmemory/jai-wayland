@@ -89,11 +89,9 @@ xdg_session_manager_v1_destroy :: (self: *Xdg_Session_Manager_V1) {
 //
 // A client is allowed to have any number of in use sessions at the same
 // time.
-xdg_session_manager_v1_get_session :: (self: *Xdg_Session_Manager_V1, reason: u32, session_id: string) -> *Xdg_Session_V1 {
+xdg_session_manager_v1_get_session :: (self: *Xdg_Session_Manager_V1, new_id: u32, reason: u32, session_id: string) {
     args := Xdg_Session_Manager_V1_Get_Session_Args.{ reason = reason, session_id = session_id };
-    new_id := marshal_constructor(self.conn, self.id, XDG_SESSION_MANAGER_V1_GET_SESSION, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, XDG_SESSION_MANAGER_V1_GET_SESSION, new_id, *args);
 }
 
 XDG_SESSION_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

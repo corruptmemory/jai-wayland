@@ -310,11 +310,9 @@ wl_surface_damage :: (self: *Wl_Surface, x: s32, y: s32, width: s32, height: s32
 //
 // The callback_data passed in the callback is the current time, in
 // milliseconds, with an undefined base.
-wl_surface_frame :: (self: *Wl_Surface) -> *Wl_Callback {
+wl_surface_frame :: (self: *Wl_Surface, new_id: u32) {
     args := Wl_Surface_Frame_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WL_SURFACE_FRAME, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_SURFACE_FRAME, new_id, *args);
 }
 
 // set opaque region

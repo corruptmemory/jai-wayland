@@ -81,11 +81,9 @@ xdg_toplevel_drag_manager_v1_destroy :: (self: *Xdg_Toplevel_Drag_Manager_V1) {
 //
 // Destroying data_source while a toplevel is attached to the
 // xdg_toplevel_drag is undefined.
-xdg_toplevel_drag_manager_v1_get_xdg_toplevel_drag :: (self: *Xdg_Toplevel_Drag_Manager_V1, data_source: *Wl_Data_Source) -> *Xdg_Toplevel_Drag_V1 {
+xdg_toplevel_drag_manager_v1_get_xdg_toplevel_drag :: (self: *Xdg_Toplevel_Drag_Manager_V1, new_id: u32, data_source: *Wl_Data_Source) {
     args := Xdg_Toplevel_Drag_Manager_V1_Get_Xdg_Toplevel_Drag_Args.{ data_source = data_source.id };
-    new_id := marshal_constructor(self.conn, self.id, XDG_TOPLEVEL_DRAG_MANAGER_V1_GET_XDG_TOPLEVEL_DRAG, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, XDG_TOPLEVEL_DRAG_MANAGER_V1_GET_XDG_TOPLEVEL_DRAG, new_id, *args);
 }
 
 XDG_TOPLEVEL_DRAG_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

@@ -50,21 +50,17 @@ Ext_Image_Copy_Capture_Manager_V1_Destroy_Args :: struct {
 //
 // If the options bitfield is invalid, the invalid_option protocol error
 // is sent.
-ext_image_copy_capture_manager_v1_create_session :: (self: *Ext_Image_Copy_Capture_Manager_V1, source: *Ext_Image_Capture_Source_V1, options: u32) -> *Ext_Image_Copy_Capture_Session_V1 {
+ext_image_copy_capture_manager_v1_create_session :: (self: *Ext_Image_Copy_Capture_Manager_V1, new_id: u32, source: *Ext_Image_Capture_Source_V1, options: u32) {
     args := Ext_Image_Copy_Capture_Manager_V1_Create_Session_Args.{ source = source.id, options = options };
-    new_id := marshal_constructor(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_MANAGER_V1_CREATE_SESSION, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_MANAGER_V1_CREATE_SESSION, new_id, *args);
 }
 
 // capture the pointer cursor of an image capture source
 // Create a cursor capturing session for the pointer of an image capture
 // source.
-ext_image_copy_capture_manager_v1_create_pointer_cursor_session :: (self: *Ext_Image_Copy_Capture_Manager_V1, source: *Ext_Image_Capture_Source_V1, pointer: *Wl_Pointer) -> *Ext_Image_Copy_Capture_Cursor_Session_V1 {
+ext_image_copy_capture_manager_v1_create_pointer_cursor_session :: (self: *Ext_Image_Copy_Capture_Manager_V1, new_id: u32, source: *Ext_Image_Capture_Source_V1, pointer: *Wl_Pointer) {
     args := Ext_Image_Copy_Capture_Manager_V1_Create_Pointer_Cursor_Session_Args.{ source = source.id, pointer = pointer.id };
-    new_id := marshal_constructor(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_MANAGER_V1_CREATE_POINTER_CURSOR_SESSION, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_MANAGER_V1_CREATE_POINTER_CURSOR_SESSION, new_id, *args);
 }
 
 // destroy the manager (destructor)

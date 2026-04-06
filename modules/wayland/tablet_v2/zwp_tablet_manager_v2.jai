@@ -28,11 +28,9 @@ Zwp_Tablet_Manager_V2_Destroy_Args :: struct {
 // get the tablet seat
 // Get the zwp_tablet_seat_v2 object for the given seat. This object
 // provides access to all graphics tablets in this seat.
-zwp_tablet_manager_v2_get_tablet_seat :: (self: *Zwp_Tablet_Manager_V2, seat: *Wl_Seat) -> *Zwp_Tablet_Seat_V2 {
+zwp_tablet_manager_v2_get_tablet_seat :: (self: *Zwp_Tablet_Manager_V2, new_id: u32, seat: *Wl_Seat) {
     args := Zwp_Tablet_Manager_V2_Get_Tablet_Seat_Args.{ seat = seat.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_TABLET_MANAGER_V2_GET_TABLET_SEAT, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_TABLET_MANAGER_V2_GET_TABLET_SEAT, new_id, *args);
 }
 
 // release the memory for the tablet manager object (destructor)

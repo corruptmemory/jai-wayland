@@ -33,15 +33,27 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 
 - `inline` primitive writers for native-endian 4-byte-aligned wire encoding
 - `marshal` macro: `#expand` + `#insert #run generate_marshal_code(type_info(T))` — walks arg struct fields at compile time, emits type-specific serialization code (fixed-size stack buffer or variable-size runtime path)
-- `marshal_constructor` variant: allocates new object ID, writes it as first arg
+- `marshal_constructor` variant: caller provides pre-allocated object ID, writes it as first arg
 - `Fd :: #type,distinct s32` — file descriptors tagged for compile-time walker, routed to `SCM_RIGHTS` out-of-band
 - `Connection` struct: Unix socket connect, send/recv buffers, fd queues, `sendmsg`/`recvmsg` with `SCM_RIGHTS` ancillary data
 - Object ID allocator (client IDs from 1, incrementing)
 - Generated request functions now call `marshal()`/`marshal_constructor()` instead of stubs
 
-**Phase 4 (next):** Client API — registry, globals, event dispatch, proxy lifecycle.
+**Phase 4 (complete):** Client API — no inversion of control.
 
-**Phase 5:** Rendering integration — EGL/Vulkan WSI, `wl_shm` for CPU buffers.
+- **Design principle: simple things MUST be simple.** Application owns the event loop. No callbacks, no dispatch tables, no event queues, no proxy lifecycle manager.
+- `discover_globals(conn)` — performs wl_display.get_registry + sync roundtrip, returns list of all compositor globals
+- `find_global(globals, name)` — look up a global by interface name
+- `init_display(conn)` — create wl_display proxy (always ID 1)
+- Wire read helpers: `read_string`, `read_array` — mirrors of write_string/write_array for event deserialization
+- `wl_registry.bind` — full untyped `new_id` wire encoding (interface name + version + id)
+- `memfd_create` — thin syscall wrapper for anonymous shared memory
+- `examples/hello_globals.jai` — 20 lines, prints all compositor globals
+- `examples/hello_window.jai` — ~150 lines, displays a black 640x480 window via wl_shm. Full protocol: discover, bind, create surface, configure, attach buffer, event loop with ping/pong
+- 96 tests across 5 test suites
+- Tested live against Hyprland compositor on Arch Linux
+
+**Phase 5 (next):** Rendering integration — EGL/Vulkan WSI, `wl_shm` for CPU rendering.
 
 ## Building
 
@@ -55,6 +67,8 @@ Requires the Jai compiler (beta 0.2.026+) at `~/jai/jai/`.
 ./build.sh - marshal_test  # Build and run marshal macro tests
 ./build.sh - compile_test  # Build and run compilation smoke tests
 ./build.sh - generate   # Regenerate modules/wayland/ from protocol XML
+./build.sh - hello_globals  # Build and run: print compositor globals
+./build.sh - hello_window   # Build and run: display a black window
 ```
 
 The build uses Jai's compile-time metaprogramming via `first.jai` — no external build tools required.
@@ -71,9 +85,12 @@ src/
 tests/
   xml_test.jai       — 22 tests (parser, entities, protocol)
   generator_test.jai — 36 tests (naming, enums, events, requests, assembly)
-  wire_test.jai      — 16 tests (primitive writers, header, string/array, buffers)
+  wire_test.jai      — 20 tests (primitive read/write, header, string/array, buffers)
   marshal_test.jai   — 9 tests (fixed args, fd, string, array, constructors)
   compile_test.jai   — 9 tests (imports generated module, verifies types)
+examples/
+  hello_globals.jai  — 20 lines: connect, discover globals, print them
+  hello_window.jai   — ~150 lines: full wl_shm black window with event loop
 modules/
   wayland/           — Generated Jai bindings (56 protocols)
     module.jai       — Module root (#load chain)
@@ -81,6 +98,8 @@ modules/
     wire.jai         — Wire primitives (read/write, header, string/array encoding)
     connection.jai   — Socket connect, buffers, fd queues, sendmsg/recvmsg
     marshal.jai      — Compile-time marshal macro (#expand + #insert #run)
+    registry.jai     — discover_globals, find_global, init_display helpers
+    shm.jai          — memfd_create syscall wrapper
     wayland/         — Core protocol (wl_display, wl_surface, etc.)
     xdg_shell/       — XDG shell (xdg_toplevel, xdg_surface, etc.)
     ...              — 54 more protocol directories

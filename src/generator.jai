@@ -324,17 +324,16 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
         emit_description_body(*sb, req.description.body);
     }
 
-    // Determine return type and collect parameters
-    return_type: string;
+    // Determine if this is a constructor or untyped new_id
+    is_constructor := false;
     has_untyped_new_id := false;
 
     for * arg: req.args {
         if arg.arg_type == .NEW_ID {
             if arg.interface_name.count > 0 {
-                return_type = tprint("*%", to_jai_type_name(arg.interface_name));
+                is_constructor = true;
             } else {
                 has_untyped_new_id = true;
-                return_type = "*T";
             }
         }
     }
@@ -347,31 +346,24 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
     // Build parameter list
     print_to_builder(*sb, "% :: (self: *%", func_name, type_name);
 
+    // For typed constructors: add new_id as first param after self
+    if is_constructor {
+        print_to_builder(*sb, ", new_id: u32");
+    }
+
     for * arg: req.args {
-        if arg.arg_type == .NEW_ID {
-            if arg.interface_name.count > 0 {
-                // Typed new_id: becomes return type, skip as parameter
-                continue;
-            } else {
-                // Untyped new_id: emit $T: Type parameter (skip the arg itself)
-                print_to_builder(*sb, ", $T: Type");
-                continue;
-            }
-        }
+        if arg.arg_type == .NEW_ID  continue;  // skip new_id arg in all cases
         print_to_builder(*sb, ", %: %", sanitize_arg_name(arg.name), arg_type_to_jai(arg));
     }
 
-    // If untyped new_id, add version parameter after $T
+    // For untyped new_id (wl_registry.bind): add interface_name, version, new_id
     if has_untyped_new_id {
-        print_to_builder(*sb, ", version: u32");
+        print_to_builder(*sb, ", interface_name: string, version: u32, new_id: u32");
     }
 
     print_to_builder(*sb, ")");
 
-    // Return type
-    if return_type.count > 0 {
-        print_to_builder(*sb, " -> %", return_type);
-    }
+    // No return type for constructors — caller provides new_id
 
     // Body
     print_to_builder(*sb, " {\n");
@@ -381,10 +373,44 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
 
     if has_untyped_new_id {
         // Special case: untyped new_id (wl_registry.bind) requires special wire encoding
-        print_to_builder(*sb, "    // TODO(Phase 3): untyped new_id requires special wire encoding (interface_name + version + new_id)\n");
-        print_to_builder(*sb, "    return null;\n");
-    } else if return_type.count > 0 {
-        // Constructor: use marshal_constructor
+        // Wire format: [name: u32][interface_name: string][version: u32][new_id: u32]
+        print_to_builder(*sb, "    _msg_size: u32 = HEADER_SIZE;\n");
+        // Emit size computation for each regular arg
+        for * arg: req.args {
+            if arg.arg_type == .NEW_ID  continue;
+            if arg.arg_type == .STRING {
+                sname := sanitize_arg_name(arg.name);
+                print_to_builder(*sb, "    if %.count > 0  _msg_size += 4 + align4(cast(u32)(%.count + 1));\n", sname, sname);
+                print_to_builder(*sb, "    else  _msg_size += 4;\n");
+            } else {
+                print_to_builder(*sb, "    _msg_size += 4;\n");
+            }
+        }
+        // Add space for interface_name string + version + new_id
+        print_to_builder(*sb, "    _msg_size += 4 + align4(cast(u32)(interface_name.count + 1));  // interface_name string\n");
+        print_to_builder(*sb, "    _msg_size += 4;  // version\n");
+        print_to_builder(*sb, "    _msg_size += 4;  // new_id\n");
+        print_to_builder(*sb, "    _buf: [MAX_MESSAGE_SIZE] u8;\n");
+        print_to_builder(*sb, "    write_u32(_buf.data, self.id);\n");
+        print_to_builder(*sb, "    _offset: u32 = HEADER_SIZE;\n");
+        // Write regular args
+        for * arg: req.args {
+            if arg.arg_type == .NEW_ID  continue;
+            sname := sanitize_arg_name(arg.name);
+            if arg.arg_type == .STRING {
+                print_to_builder(*sb, "    _offset += write_string(_buf.data + _offset, %);\n", sname);
+            } else {
+                print_to_builder(*sb, "    write_u32(_buf.data + _offset, %); _offset += 4;\n", sname);
+            }
+        }
+        // Write untyped new_id triple: interface_name + version + new_id
+        print_to_builder(*sb, "    _offset += write_string(_buf.data + _offset, interface_name);\n");
+        print_to_builder(*sb, "    write_u32(_buf.data + _offset, version); _offset += 4;\n");
+        print_to_builder(*sb, "    write_u32(_buf.data + _offset, new_id); _offset += 4;\n");
+        print_to_builder(*sb, "    write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) %);\n", const_name);
+        print_to_builder(*sb, "    connection_queue(self.conn, _buf.data, _offset);\n");
+    } else if is_constructor {
+        // Typed constructor: use marshal_constructor with caller-provided new_id
         print_to_builder(*sb, "    args := %.{", args_struct_name);
         first := true;
         for * arg: req.args {
@@ -400,9 +426,7 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
         }
         if !first  print_to_builder(*sb, " ");
         print_to_builder(*sb, "};\n");
-        print_to_builder(*sb, "    new_id := marshal_constructor(self.conn, self.id, %, *args);\n", const_name);
-        print_to_builder(*sb, "    // TODO(Phase 4): allocate proxy properly\n");
-        print_to_builder(*sb, "    return null;\n");
+        print_to_builder(*sb, "    marshal_constructor(self.conn, self.id, %, new_id, *args);\n", const_name);
     } else if req.is_destructor {
         // Destructor: marshal + destroy comment
         print_to_builder(*sb, "    args := %.{", args_struct_name);
@@ -672,6 +696,8 @@ generate_module_root :: (protocol_names: [] string) -> string {
     print_to_builder(*sb, "#load \"wire.jai\";\n");
     print_to_builder(*sb, "#load \"connection.jai\";\n");
     print_to_builder(*sb, "#load \"marshal.jai\";\n");
+    print_to_builder(*sb, "#load \"shm.jai\";\n");
+    print_to_builder(*sb, "#load \"registry.jai\";\n");
 
     for name: protocol_names {
         print_to_builder(*sb, "\n#load \"%/%.jai\";\n", name, name);

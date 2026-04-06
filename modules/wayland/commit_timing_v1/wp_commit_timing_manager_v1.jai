@@ -63,11 +63,9 @@ wp_commit_timing_manager_v1_destroy :: (self: *Wp_Commit_Timing_Manager_V1) {
 //
 // Only one commit timer can be created for a surface, or a
 // commit_timer_exists protocol error will be generated.
-wp_commit_timing_manager_v1_get_timer :: (self: *Wp_Commit_Timing_Manager_V1, surface: *Wl_Surface) -> *Wp_Commit_Timer_V1 {
+wp_commit_timing_manager_v1_get_timer :: (self: *Wp_Commit_Timing_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Commit_Timing_Manager_V1_Get_Timer_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_COMMIT_TIMING_MANAGER_V1_GET_TIMER, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_COMMIT_TIMING_MANAGER_V1_GET_TIMER, new_id, *args);
 }
 
 WP_COMMIT_TIMING_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

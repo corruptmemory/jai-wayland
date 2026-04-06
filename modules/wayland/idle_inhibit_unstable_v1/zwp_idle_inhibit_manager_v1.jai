@@ -44,11 +44,9 @@ zwp_idle_inhibit_manager_v1_destroy :: (self: *Zwp_Idle_Inhibit_Manager_V1) {
 
 // create a new inhibitor object
 // Create a new inhibitor object associated with the given surface.
-zwp_idle_inhibit_manager_v1_create_inhibitor :: (self: *Zwp_Idle_Inhibit_Manager_V1, surface: *Wl_Surface) -> *Zwp_Idle_Inhibitor_V1 {
+zwp_idle_inhibit_manager_v1_create_inhibitor :: (self: *Zwp_Idle_Inhibit_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Zwp_Idle_Inhibit_Manager_V1_Create_Inhibitor_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_IDLE_INHIBIT_MANAGER_V1_CREATE_INHIBITOR, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_IDLE_INHIBIT_MANAGER_V1_CREATE_INHIBITOR, new_id, *args);
 }
 
 ZWP_IDLE_INHIBIT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

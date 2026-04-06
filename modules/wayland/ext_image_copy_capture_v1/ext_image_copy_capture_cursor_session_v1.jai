@@ -88,11 +88,9 @@ ext_image_copy_capture_cursor_session_v1_destroy :: (self: *Ext_Image_Copy_Captu
 //
 // This request must not be sent more than once, or else the
 // duplicate_session protocol error is raised.
-ext_image_copy_capture_cursor_session_v1_get_capture_session :: (self: *Ext_Image_Copy_Capture_Cursor_Session_V1) -> *Ext_Image_Copy_Capture_Session_V1 {
+ext_image_copy_capture_cursor_session_v1_get_capture_session :: (self: *Ext_Image_Copy_Capture_Cursor_Session_V1, new_id: u32) {
     args := Ext_Image_Copy_Capture_Cursor_Session_V1_Get_Capture_Session_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_CURSOR_SESSION_V1_GET_CAPTURE_SESSION, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_CURSOR_SESSION_V1_GET_CAPTURE_SESSION, new_id, *args);
 }
 
 EXT_IMAGE_COPY_CAPTURE_CURSOR_SESSION_V1_INTERFACE :: Interface_Descriptor.{

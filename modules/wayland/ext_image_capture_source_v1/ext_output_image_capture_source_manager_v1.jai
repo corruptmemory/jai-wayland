@@ -28,11 +28,9 @@ Ext_Output_Image_Capture_Source_Manager_V1_Destroy_Args :: struct {
 // will show the same content as the output. Some elements may be omitted,
 // such as cursors and overlays that have been marked as transparent to
 // capturing.
-ext_output_image_capture_source_manager_v1_create_source :: (self: *Ext_Output_Image_Capture_Source_Manager_V1, output: *Wl_Output) -> *Ext_Image_Capture_Source_V1 {
+ext_output_image_capture_source_manager_v1_create_source :: (self: *Ext_Output_Image_Capture_Source_Manager_V1, new_id: u32, output: *Wl_Output) {
     args := Ext_Output_Image_Capture_Source_Manager_V1_Create_Source_Args.{ output = output.id };
-    new_id := marshal_constructor(self.conn, self.id, EXT_OUTPUT_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_OUTPUT_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, new_id, *args);
 }
 
 // delete this object (destructor)

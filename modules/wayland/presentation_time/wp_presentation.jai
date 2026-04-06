@@ -73,11 +73,9 @@ wp_presentation_destroy :: (self: *Wp_Presentation) {
 //
 // For details on what information is returned, see the
 // presentation_feedback interface.
-wp_presentation_feedback :: (self: *Wp_Presentation, surface: *Wl_Surface) -> *Wp_Presentation_Feedback {
+wp_presentation_feedback :: (self: *Wp_Presentation, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Presentation_Feedback_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_PRESENTATION_FEEDBACK, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_PRESENTATION_FEEDBACK, new_id, *args);
 }
 
 WP_PRESENTATION_INTERFACE :: Interface_Descriptor.{

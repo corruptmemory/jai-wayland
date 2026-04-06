@@ -93,11 +93,9 @@ Wp_Drm_Lease_Device_V1_Release_Args :: struct {
 // Creates a lease request object.
 //
 // See the documentation for wp_drm_lease_request_v1 for details.
-wp_drm_lease_device_v1_create_lease_request :: (self: *Wp_Drm_Lease_Device_V1) -> *Wp_Drm_Lease_Request_V1 {
+wp_drm_lease_device_v1_create_lease_request :: (self: *Wp_Drm_Lease_Device_V1, new_id: u32) {
     args := Wp_Drm_Lease_Device_V1_Create_Lease_Request_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WP_DRM_LEASE_DEVICE_V1_CREATE_LEASE_REQUEST, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_DRM_LEASE_DEVICE_V1_CREATE_LEASE_REQUEST, new_id, *args);
 }
 
 // release this object

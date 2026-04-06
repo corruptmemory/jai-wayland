@@ -9,12 +9,11 @@ marshal :: (conn: *Connection, object_id: u32, opcode: u16, args: *$T) #expand {
     #insert #run generate_marshal_code(type_info(T));
 }
 
-// Marshal a constructor request. Allocates a new object ID, writes it as
-// the first arg, then writes the struct args. Returns the new ID.
-marshal_constructor :: (conn: *Connection, object_id: u32, opcode: u16, args: *$T) -> u32 #expand {
-    _new_id := allocate_id(conn);
+// Marshal a constructor request. Writes new_id as the first arg,
+// then writes the struct args. Caller provides the pre-allocated new_id.
+marshal_constructor :: (conn: *Connection, object_id: u32, opcode: u16, new_id: u32, args: *$T) #expand {
+    _new_id := new_id;
     #insert #run generate_marshal_constructor_code(type_info(T));
-    return _new_id;
 }
 
 #scope_file

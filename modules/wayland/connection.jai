@@ -113,7 +113,7 @@ connection_flush :: (conn: *Connection) -> bool {
     msg.msg_iovlen = 1;
 
     // Set up ancillary data for fd passing if we have queued fds.
-    cmsg_buf: [CMSG_SPACE(MAX_FDS_OUT * size_of(s32))] u8;
+    cmsg_buf: [CMSG_BUF_SIZE] u8;
     if conn.out_fds_count > 0 {
         fd_data_size := cast(int)(conn.out_fds_count * size_of(s32));
         msg.msg_control = cmsg_buf.data;
@@ -174,7 +174,7 @@ connection_read :: (conn: *Connection) -> s64 {
     msg.msg_iovlen = 1;
 
     // Set up ancillary data buffer for receiving fds.
-    cmsg_buf: [CMSG_SPACE(MAX_FDS_OUT * size_of(s32))] u8;
+    cmsg_buf: [CMSG_BUF_SIZE] u8;
     msg.msg_control = cmsg_buf.data;
     msg.msg_controllen = cast(u64) cmsg_buf.count;
 
@@ -235,3 +235,6 @@ connection_pop_fd :: (conn: *Connection) -> s32 {
 CMSG_SPACE :: (len: int) -> int {
     return CMSG_ALIGN(size_of(cmsghdr)) + CMSG_ALIGN(len);
 }
+
+// Pre-computed at compile time for use as array sizes.
+CMSG_BUF_SIZE :: #run CMSG_SPACE(MAX_FDS_OUT * size_of(s32));

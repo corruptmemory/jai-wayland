@@ -69,20 +69,16 @@ Wl_Data_Device_Manager_Get_Data_Device_Args :: struct {
 
 // create a new data source
 // Create a new data source.
-wl_data_device_manager_create_data_source :: (self: *Wl_Data_Device_Manager) -> *Wl_Data_Source {
+wl_data_device_manager_create_data_source :: (self: *Wl_Data_Device_Manager, new_id: u32) {
     args := Wl_Data_Device_Manager_Create_Data_Source_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WL_DATA_DEVICE_MANAGER_CREATE_DATA_SOURCE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_DATA_DEVICE_MANAGER_CREATE_DATA_SOURCE, new_id, *args);
 }
 
 // create a new data device
 // Create a new data device for a given seat.
-wl_data_device_manager_get_data_device :: (self: *Wl_Data_Device_Manager, seat: *Wl_Seat) -> *Wl_Data_Device {
+wl_data_device_manager_get_data_device :: (self: *Wl_Data_Device_Manager, new_id: u32, seat: *Wl_Seat) {
     args := Wl_Data_Device_Manager_Get_Data_Device_Args.{ seat = seat.id };
-    new_id := marshal_constructor(self.conn, self.id, WL_DATA_DEVICE_MANAGER_GET_DATA_DEVICE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_DATA_DEVICE_MANAGER_GET_DATA_DEVICE, new_id, *args);
 }
 
 WL_DATA_DEVICE_MANAGER_INTERFACE :: Interface_Descriptor.{

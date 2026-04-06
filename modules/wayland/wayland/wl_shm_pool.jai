@@ -50,11 +50,9 @@ Wl_Shm_Pool_Resize_Args :: struct {
 // A buffer will keep a reference to the pool it was created from
 // so it is valid to destroy the pool immediately after creating
 // a buffer from it.
-wl_shm_pool_create_buffer :: (self: *Wl_Shm_Pool, offset: s32, width: s32, height: s32, stride: s32, format: u32) -> *Wl_Buffer {
+wl_shm_pool_create_buffer :: (self: *Wl_Shm_Pool, new_id: u32, offset: s32, width: s32, height: s32, stride: s32, format: u32) {
     args := Wl_Shm_Pool_Create_Buffer_Args.{ offset = offset, width = width, height = height, stride = stride, format = format };
-    new_id := marshal_constructor(self.conn, self.id, WL_SHM_POOL_CREATE_BUFFER, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_SHM_POOL_CREATE_BUFFER, new_id, *args);
 }
 
 // destroy the pool (destructor)

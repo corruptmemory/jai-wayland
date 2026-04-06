@@ -32,20 +32,16 @@ Zwp_Primary_Selection_Device_Manager_V1_Destroy_Args :: struct {
 
 // create a new primary selection source
 // Create a new primary selection source.
-zwp_primary_selection_device_manager_v1_create_source :: (self: *Zwp_Primary_Selection_Device_Manager_V1) -> *Zwp_Primary_Selection_Source_V1 {
+zwp_primary_selection_device_manager_v1_create_source :: (self: *Zwp_Primary_Selection_Device_Manager_V1, new_id: u32) {
     args := Zwp_Primary_Selection_Device_Manager_V1_Create_Source_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_CREATE_SOURCE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_CREATE_SOURCE, new_id, *args);
 }
 
 // create a new primary selection device
 // Create a new data device for a given seat.
-zwp_primary_selection_device_manager_v1_get_device :: (self: *Zwp_Primary_Selection_Device_Manager_V1, seat: *Wl_Seat) -> *Zwp_Primary_Selection_Device_V1 {
+zwp_primary_selection_device_manager_v1_get_device :: (self: *Zwp_Primary_Selection_Device_Manager_V1, new_id: u32, seat: *Wl_Seat) {
     args := Zwp_Primary_Selection_Device_Manager_V1_Get_Device_Args.{ seat = seat.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_GET_DEVICE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_GET_DEVICE, new_id, *args);
 }
 
 // destroy the primary selection device manager (destructor)

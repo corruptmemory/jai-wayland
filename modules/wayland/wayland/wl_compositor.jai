@@ -26,20 +26,16 @@ Wl_Compositor_Create_Region_Args :: struct {
 
 // create new surface
 // Ask the compositor to create a new surface.
-wl_compositor_create_surface :: (self: *Wl_Compositor) -> *Wl_Surface {
+wl_compositor_create_surface :: (self: *Wl_Compositor, new_id: u32) {
     args := Wl_Compositor_Create_Surface_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WL_COMPOSITOR_CREATE_SURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_COMPOSITOR_CREATE_SURFACE, new_id, *args);
 }
 
 // create new region
 // Ask the compositor to create a new region.
-wl_compositor_create_region :: (self: *Wl_Compositor) -> *Wl_Region {
+wl_compositor_create_region :: (self: *Wl_Compositor, new_id: u32) {
     args := Wl_Compositor_Create_Region_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WL_COMPOSITOR_CREATE_REGION, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_COMPOSITOR_CREATE_REGION, new_id, *args);
 }
 
 WL_COMPOSITOR_INTERFACE :: Interface_Descriptor.{

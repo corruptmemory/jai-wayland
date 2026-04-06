@@ -30,20 +30,16 @@ Ext_Data_Control_Manager_V1_Destroy_Args :: struct {
 
 // create a new data source
 // Create a new data source.
-ext_data_control_manager_v1_create_data_source :: (self: *Ext_Data_Control_Manager_V1) -> *Ext_Data_Control_Source_V1 {
+ext_data_control_manager_v1_create_data_source :: (self: *Ext_Data_Control_Manager_V1, new_id: u32) {
     args := Ext_Data_Control_Manager_V1_Create_Data_Source_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_CREATE_DATA_SOURCE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_CREATE_DATA_SOURCE, new_id, *args);
 }
 
 // get a data device for a seat
 // Create a data device that can be used to manage a seat's selection.
-ext_data_control_manager_v1_get_data_device :: (self: *Ext_Data_Control_Manager_V1, seat: *Wl_Seat) -> *Ext_Data_Control_Device_V1 {
+ext_data_control_manager_v1_get_data_device :: (self: *Ext_Data_Control_Manager_V1, new_id: u32, seat: *Wl_Seat) {
     args := Ext_Data_Control_Manager_V1_Get_Data_Device_Args.{ seat = seat.id };
-    new_id := marshal_constructor(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_GET_DATA_DEVICE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_GET_DATA_DEVICE, new_id, *args);
 }
 
 // destroy the manager (destructor)

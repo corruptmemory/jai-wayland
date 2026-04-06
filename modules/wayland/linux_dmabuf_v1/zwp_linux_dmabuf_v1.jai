@@ -132,11 +132,9 @@ zwp_linux_dmabuf_v1_destroy :: (self: *Zwp_Linux_Dmabuf_V1) {
 // a single batch to create a wl_buffer. It can only be used once and
 // should be destroyed after a 'created' or 'failed' event has been
 // received.
-zwp_linux_dmabuf_v1_create_params :: (self: *Zwp_Linux_Dmabuf_V1) -> *Zwp_Linux_Buffer_Params_V1 {
+zwp_linux_dmabuf_v1_create_params :: (self: *Zwp_Linux_Dmabuf_V1, new_id: u32) {
     args := Zwp_Linux_Dmabuf_V1_Create_Params_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_DMABUF_V1_CREATE_PARAMS, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_LINUX_DMABUF_V1_CREATE_PARAMS, new_id, *args);
 }
 
 // get default feedback
@@ -144,11 +142,9 @@ zwp_linux_dmabuf_v1_create_params :: (self: *Zwp_Linux_Dmabuf_V1) -> *Zwp_Linux_
 // to a particular surface. This object will deliver feedback about dmabuf
 // parameters to use if the client doesn't support per-surface feedback
 // (see get_surface_feedback).
-zwp_linux_dmabuf_v1_get_default_feedback :: (self: *Zwp_Linux_Dmabuf_V1) -> *Zwp_Linux_Dmabuf_Feedback_V1 {
+zwp_linux_dmabuf_v1_get_default_feedback :: (self: *Zwp_Linux_Dmabuf_V1, new_id: u32) {
     args := Zwp_Linux_Dmabuf_V1_Get_Default_Feedback_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK, new_id, *args);
 }
 
 // get feedback for a surface
@@ -158,11 +154,9 @@ zwp_linux_dmabuf_v1_get_default_feedback :: (self: *Zwp_Linux_Dmabuf_V1) -> *Zwp
 //
 // If the surface is destroyed before the wp_linux_dmabuf_feedback object,
 // the feedback object becomes inert.
-zwp_linux_dmabuf_v1_get_surface_feedback :: (self: *Zwp_Linux_Dmabuf_V1, surface: *Wl_Surface) -> *Zwp_Linux_Dmabuf_Feedback_V1 {
+zwp_linux_dmabuf_v1_get_surface_feedback :: (self: *Zwp_Linux_Dmabuf_V1, new_id: u32, surface: *Wl_Surface) {
     args := Zwp_Linux_Dmabuf_V1_Get_Surface_Feedback_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_DMABUF_V1_GET_SURFACE_FEEDBACK, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_LINUX_DMABUF_V1_GET_SURFACE_FEEDBACK, new_id, *args);
 }
 
 ZWP_LINUX_DMABUF_V1_INTERFACE :: Interface_Descriptor.{

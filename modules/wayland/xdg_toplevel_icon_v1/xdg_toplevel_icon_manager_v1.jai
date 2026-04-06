@@ -64,11 +64,9 @@ xdg_toplevel_icon_manager_v1_destroy :: (self: *Xdg_Toplevel_Icon_Manager_V1) {
 // create a new icon instance
 // Creates a new icon object. This icon can then be attached to a
 // xdg_toplevel via the 'set_icon' request.
-xdg_toplevel_icon_manager_v1_create_icon :: (self: *Xdg_Toplevel_Icon_Manager_V1) -> *Xdg_Toplevel_Icon_V1 {
+xdg_toplevel_icon_manager_v1_create_icon :: (self: *Xdg_Toplevel_Icon_Manager_V1, new_id: u32) {
     args := Xdg_Toplevel_Icon_Manager_V1_Create_Icon_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, XDG_TOPLEVEL_ICON_MANAGER_V1_CREATE_ICON, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, XDG_TOPLEVEL_ICON_MANAGER_V1_CREATE_ICON, new_id, *args);
 }
 
 // set an icon on a toplevel window

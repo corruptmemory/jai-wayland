@@ -48,11 +48,9 @@ wp_alpha_modifier_v1_destroy :: (self: *Wp_Alpha_Modifier_V1) {
 // Create a new alpha modifier surface object associated with the
 // given wl_surface. If there is already such an object associated with
 // the wl_surface, the already_constructed error will be raised.
-wp_alpha_modifier_v1_get_surface :: (self: *Wp_Alpha_Modifier_V1, surface: *Wl_Surface) -> *Wp_Alpha_Modifier_Surface_V1 {
+wp_alpha_modifier_v1_get_surface :: (self: *Wp_Alpha_Modifier_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Alpha_Modifier_V1_Get_Surface_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_ALPHA_MODIFIER_V1_GET_SURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_ALPHA_MODIFIER_V1_GET_SURFACE, new_id, *args);
 }
 
 WP_ALPHA_MODIFIER_V1_INTERFACE :: Interface_Descriptor.{

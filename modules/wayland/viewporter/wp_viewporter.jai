@@ -48,11 +48,9 @@ wp_viewporter_destroy :: (self: *Wp_Viewporter) {
 // crop and scale its content. If the given wl_surface already has
 // a wp_viewport object associated, the viewport_exists
 // protocol error is raised.
-wp_viewporter_get_viewport :: (self: *Wp_Viewporter, surface: *Wl_Surface) -> *Wp_Viewport {
+wp_viewporter_get_viewport :: (self: *Wp_Viewporter, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Viewporter_Get_Viewport_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_VIEWPORTER_GET_VIEWPORT, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_VIEWPORTER_GET_VIEWPORT, new_id, *args);
 }
 
 WP_VIEWPORTER_INTERFACE :: Interface_Descriptor.{

@@ -38,11 +38,9 @@ Wl_Shell_Get_Shell_Surface_Args :: struct {
 // already has another role, it raises a protocol error.
 //
 // Only one shell surface can be associated with a given surface.
-wl_shell_get_shell_surface :: (self: *Wl_Shell, surface: *Wl_Surface) -> *Wl_Shell_Surface {
+wl_shell_get_shell_surface :: (self: *Wl_Shell, new_id: u32, surface: *Wl_Surface) {
     args := Wl_Shell_Get_Shell_Surface_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, WL_SHELL_GET_SHELL_SURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_SHELL_GET_SHELL_SURFACE, new_id, *args);
 }
 
 WL_SHELL_INTERFACE :: Interface_Descriptor.{

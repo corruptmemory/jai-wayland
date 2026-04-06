@@ -36,11 +36,9 @@ zxdg_output_manager_v1_destroy :: (self: *Zxdg_Output_Manager_V1) {
 
 // create an xdg output from a wl_output
 // This creates a new xdg_output object for the given wl_output.
-zxdg_output_manager_v1_get_xdg_output :: (self: *Zxdg_Output_Manager_V1, output: *Wl_Output) -> *Zxdg_Output_V1 {
+zxdg_output_manager_v1_get_xdg_output :: (self: *Zxdg_Output_Manager_V1, new_id: u32, output: *Wl_Output) {
     args := Zxdg_Output_Manager_V1_Get_Xdg_Output_Args.{ output = output.id };
-    new_id := marshal_constructor(self.conn, self.id, ZXDG_OUTPUT_MANAGER_V1_GET_XDG_OUTPUT, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZXDG_OUTPUT_MANAGER_V1_GET_XDG_OUTPUT, new_id, *args);
 }
 
 ZXDG_OUTPUT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

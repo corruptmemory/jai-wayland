@@ -171,25 +171,22 @@ test_marshal_string_empty :: () {
 test_marshal_constructor_empty :: () {
     conn: Wayland.Connection;
     args: Test_Constructor_Empty;
-    new_id := Wayland.marshal_constructor(*conn, object_id = 1, opcode = 0, *args);
+    Wayland.marshal_constructor(*conn, object_id = 1, opcode = 0, new_id = 42, *args);
 
-    assert(new_id == 1, "first id should be 1");
-    assert(conn.next_id == 2, "next_id should advance");
     // header(8) + new_id(4) = 12
     assert(conn.out_used == 12);
-    assert(Wayland.read_u32(conn.out_buf.data + 8) == 1);  // new_id in message
+    assert(Wayland.read_u32(conn.out_buf.data + 8) == 42);  // new_id in message
     print("  PASS: marshal_constructor_empty\n");
 }
 
 test_marshal_constructor_with_args :: () {
     conn: Wayland.Connection;
     args := Test_Constructor_With_Args.{x = 10, y = 20};
-    new_id := Wayland.marshal_constructor(*conn, object_id = 5, opcode = 3, *args);
+    Wayland.marshal_constructor(*conn, object_id = 5, opcode = 3, new_id = 7, *args);
 
-    assert(new_id == 1);
     // header(8) + new_id(4) + x(4) + y(4) = 20
     assert(conn.out_used == 20);
-    assert(Wayland.read_u32(conn.out_buf.data + 8) == 1);  // new_id
+    assert(Wayland.read_u32(conn.out_buf.data + 8) == 7);  // new_id
     assert(Wayland.read_s32(conn.out_buf.data + 12) == 10);  // x
     assert(Wayland.read_s32(conn.out_buf.data + 16) == 20);  // y
     print("  PASS: marshal_constructor_with_args\n");

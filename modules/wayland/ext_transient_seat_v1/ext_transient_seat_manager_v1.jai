@@ -28,11 +28,9 @@ Ext_Transient_Seat_Manager_V1_Destroy_Args :: struct {
 //
 // The actual seat may be removed sooner, in which case the transient seat
 // object shall become inert.
-ext_transient_seat_manager_v1_create :: (self: *Ext_Transient_Seat_Manager_V1) -> *Ext_Transient_Seat_V1 {
+ext_transient_seat_manager_v1_create :: (self: *Ext_Transient_Seat_Manager_V1, new_id: u32) {
     args := Ext_Transient_Seat_Manager_V1_Create_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, EXT_TRANSIENT_SEAT_MANAGER_V1_CREATE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, EXT_TRANSIENT_SEAT_MANAGER_V1_CREATE, new_id, *args);
 }
 
 // destroy the manager (destructor)

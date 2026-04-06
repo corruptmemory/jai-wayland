@@ -233,11 +233,9 @@ zwp_linux_buffer_params_v1_create :: (self: *Zwp_Linux_Buffer_Params_V1, width: 
 //
 // This takes the same arguments as a 'create' request, and obeys the
 // same restrictions.
-zwp_linux_buffer_params_v1_create_immed :: (self: *Zwp_Linux_Buffer_Params_V1, width: s32, height: s32, format: u32, flags: u32) -> *Wl_Buffer {
+zwp_linux_buffer_params_v1_create_immed :: (self: *Zwp_Linux_Buffer_Params_V1, new_id: u32, width: s32, height: s32, format: u32, flags: u32) {
     args := Zwp_Linux_Buffer_Params_V1_Create_Immed_Args.{ width = width, height = height, format = format, flags = flags };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE_IMMED, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE_IMMED, new_id, *args);
 }
 
 ZWP_LINUX_BUFFER_PARAMS_V1_INTERFACE :: Interface_Descriptor.{

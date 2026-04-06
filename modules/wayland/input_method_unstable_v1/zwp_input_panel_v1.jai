@@ -19,11 +19,9 @@ Zwp_Input_Panel_V1_Get_Input_Panel_Surface_Args :: struct {
 }
 
 
-zwp_input_panel_v1_get_input_panel_surface :: (self: *Zwp_Input_Panel_V1, surface: *Wl_Surface) -> *Zwp_Input_Panel_Surface_V1 {
+zwp_input_panel_v1_get_input_panel_surface :: (self: *Zwp_Input_Panel_V1, new_id: u32, surface: *Wl_Surface) {
     args := Zwp_Input_Panel_V1_Get_Input_Panel_Surface_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_PANEL_V1_GET_INPUT_PANEL_SURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_INPUT_PANEL_V1_GET_INPUT_PANEL_SURFACE, new_id, *args);
 }
 
 ZWP_INPUT_PANEL_V1_INTERFACE :: Interface_Descriptor.{

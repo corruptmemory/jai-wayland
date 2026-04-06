@@ -73,11 +73,9 @@ wp_security_context_manager_v1_destroy :: (self: *Wp_Security_Context_Manager_V1
 //
 // After sending this request, closing listen_fd and close_fd remains the
 // only valid operation on them.
-wp_security_context_manager_v1_create_listener :: (self: *Wp_Security_Context_Manager_V1, listen_fd: Fd, close_fd: Fd) -> *Wp_Security_Context_V1 {
+wp_security_context_manager_v1_create_listener :: (self: *Wp_Security_Context_Manager_V1, new_id: u32, listen_fd: Fd, close_fd: Fd) {
     args := Wp_Security_Context_Manager_V1_Create_Listener_Args.{ listen_fd = listen_fd, close_fd = close_fd };
-    new_id := marshal_constructor(self.conn, self.id, WP_SECURITY_CONTEXT_MANAGER_V1_CREATE_LISTENER, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_SECURITY_CONTEXT_MANAGER_V1_CREATE_LISTENER, new_id, *args);
 }
 
 WP_SECURITY_CONTEXT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

@@ -59,11 +59,9 @@ wp_drm_lease_request_v1_request_connector :: (self: *Wp_Drm_Lease_Request_V1, co
 // lease object, clients cannot expect an immediate response.
 // Not requesting any connectors before submitting the lease request
 // will raise the empty_lease error.
-wp_drm_lease_request_v1_submit :: (self: *Wp_Drm_Lease_Request_V1) -> *Wp_Drm_Lease_V1 {
+wp_drm_lease_request_v1_submit :: (self: *Wp_Drm_Lease_Request_V1, new_id: u32) {
     args := Wp_Drm_Lease_Request_V1_Submit_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WP_DRM_LEASE_REQUEST_V1_SUBMIT, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_DRM_LEASE_REQUEST_V1_SUBMIT, new_id, *args);
 }
 
 WP_DRM_LEASE_REQUEST_V1_INTERFACE :: Interface_Descriptor.{

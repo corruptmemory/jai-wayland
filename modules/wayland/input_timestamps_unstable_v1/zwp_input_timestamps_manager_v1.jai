@@ -53,11 +53,9 @@ zwp_input_timestamps_manager_v1_destroy :: (self: *Zwp_Input_Timestamps_Manager_
 // client action (e.g. release) or server-side changes, the input
 // timestamps object becomes inert and the client should destroy it
 // by calling zwp_input_timestamps_v1.destroy.
-zwp_input_timestamps_manager_v1_get_keyboard_timestamps :: (self: *Zwp_Input_Timestamps_Manager_V1, keyboard: *Wl_Keyboard) -> *Zwp_Input_Timestamps_V1 {
+zwp_input_timestamps_manager_v1_get_keyboard_timestamps :: (self: *Zwp_Input_Timestamps_Manager_V1, new_id: u32, keyboard: *Wl_Keyboard) {
     args := Zwp_Input_Timestamps_Manager_V1_Get_Keyboard_Timestamps_Args.{ keyboard = keyboard.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_KEYBOARD_TIMESTAMPS, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_KEYBOARD_TIMESTAMPS, new_id, *args);
 }
 
 // subscribe to high-resolution pointer timestamp events
@@ -69,11 +67,9 @@ zwp_input_timestamps_manager_v1_get_keyboard_timestamps :: (self: *Zwp_Input_Tim
 // client action (e.g. release) or server-side changes, the input
 // timestamps object becomes inert and the client should destroy it
 // by calling zwp_input_timestamps_v1.destroy.
-zwp_input_timestamps_manager_v1_get_pointer_timestamps :: (self: *Zwp_Input_Timestamps_Manager_V1, pointer: *Wl_Pointer) -> *Zwp_Input_Timestamps_V1 {
+zwp_input_timestamps_manager_v1_get_pointer_timestamps :: (self: *Zwp_Input_Timestamps_Manager_V1, new_id: u32, pointer: *Wl_Pointer) {
     args := Zwp_Input_Timestamps_Manager_V1_Get_Pointer_Timestamps_Args.{ pointer = pointer.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_POINTER_TIMESTAMPS, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_POINTER_TIMESTAMPS, new_id, *args);
 }
 
 // subscribe to high-resolution touch timestamp events
@@ -85,11 +81,9 @@ zwp_input_timestamps_manager_v1_get_pointer_timestamps :: (self: *Zwp_Input_Time
 // client action (e.g. release) or server-side changes, the input
 // timestamps object becomes inert and the client should destroy it
 // by calling zwp_input_timestamps_v1.destroy.
-zwp_input_timestamps_manager_v1_get_touch_timestamps :: (self: *Zwp_Input_Timestamps_Manager_V1, touch: *Wl_Touch) -> *Zwp_Input_Timestamps_V1 {
+zwp_input_timestamps_manager_v1_get_touch_timestamps :: (self: *Zwp_Input_Timestamps_Manager_V1, new_id: u32, touch: *Wl_Touch) {
     args := Zwp_Input_Timestamps_Manager_V1_Get_Touch_Timestamps_Args.{ touch = touch.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_TOUCH_TIMESTAMPS, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_INPUT_TIMESTAMPS_MANAGER_V1_GET_TOUCH_TIMESTAMPS, new_id, *args);
 }
 
 ZWP_INPUT_TIMESTAMPS_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

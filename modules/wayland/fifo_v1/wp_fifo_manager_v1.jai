@@ -60,11 +60,9 @@ wp_fifo_manager_v1_destroy :: (self: *Wp_Fifo_Manager_V1) {
 // protocol error. If a surface is acted on by multiple software
 // components, general best practice is that only the component
 // performing wl_surface.attach operations should use this protocol.
-wp_fifo_manager_v1_get_fifo :: (self: *Wp_Fifo_Manager_V1, surface: *Wl_Surface) -> *Wp_Fifo_V1 {
+wp_fifo_manager_v1_get_fifo :: (self: *Wp_Fifo_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Fifo_Manager_V1_Get_Fifo_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_FIFO_MANAGER_V1_GET_FIFO, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_FIFO_MANAGER_V1_GET_FIFO, new_id, *args);
 }
 
 WP_FIFO_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

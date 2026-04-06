@@ -82,11 +82,9 @@ zxdg_shell_v6_destroy :: (self: *Zxdg_Shell_V6) {
 // Create a positioner object. A positioner object is used to position
 // surfaces relative to some parent surface. See the interface description
 // and xdg_surface.get_popup for details.
-zxdg_shell_v6_create_positioner :: (self: *Zxdg_Shell_V6) -> *Zxdg_Positioner_V6 {
+zxdg_shell_v6_create_positioner :: (self: *Zxdg_Shell_V6, new_id: u32) {
     args := Zxdg_Shell_V6_Create_Positioner_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, ZXDG_SHELL_V6_CREATE_POSITIONER, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZXDG_SHELL_V6_CREATE_POSITIONER, new_id, *args);
 }
 
 // create a shell surface from a surface
@@ -101,11 +99,9 @@ zxdg_shell_v6_create_positioner :: (self: *Zxdg_Shell_V6) -> *Zxdg_Positioner_V6
 //
 // See the documentation of xdg_surface for more details about what an
 // xdg_surface is and how it is used.
-zxdg_shell_v6_get_xdg_surface :: (self: *Zxdg_Shell_V6, surface: *Wl_Surface) -> *Zxdg_Surface_V6 {
+zxdg_shell_v6_get_xdg_surface :: (self: *Zxdg_Shell_V6, new_id: u32, surface: *Wl_Surface) {
     args := Zxdg_Shell_V6_Get_Xdg_Surface_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, ZXDG_SHELL_V6_GET_XDG_SURFACE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZXDG_SHELL_V6_GET_XDG_SURFACE, new_id, *args);
 }
 
 // respond to a ping event

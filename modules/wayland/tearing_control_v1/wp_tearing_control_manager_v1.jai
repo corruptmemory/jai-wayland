@@ -58,11 +58,9 @@ wp_tearing_control_manager_v1_destroy :: (self: *Wp_Tearing_Control_Manager_V1) 
 //
 // If the given wl_surface already has a wp_tearing_control_v1 object
 // associated, the tearing_control_exists protocol error is raised.
-wp_tearing_control_manager_v1_get_tearing_control :: (self: *Wp_Tearing_Control_Manager_V1, surface: *Wl_Surface) -> *Wp_Tearing_Control_V1 {
+wp_tearing_control_manager_v1_get_tearing_control :: (self: *Wp_Tearing_Control_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Tearing_Control_Manager_V1_Get_Tearing_Control_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_TEARING_CONTROL_MANAGER_V1_GET_TEARING_CONTROL, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_TEARING_CONTROL_MANAGER_V1_GET_TEARING_CONTROL, new_id, *args);
 }
 
 WP_TEARING_CONTROL_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

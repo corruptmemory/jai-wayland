@@ -67,11 +67,9 @@ zwp_linux_explicit_synchronization_v1_destroy :: (self: *Zwp_Linux_Explicit_Sync
 // extension internally. If a client is using such an API for a
 // wl_surface, it should not directly use this extension on that surface,
 // to avoid raising a synchronization_exists protocol error.
-zwp_linux_explicit_synchronization_v1_get_synchronization :: (self: *Zwp_Linux_Explicit_Synchronization_V1, surface: *Wl_Surface) -> *Zwp_Linux_Surface_Synchronization_V1 {
+zwp_linux_explicit_synchronization_v1_get_synchronization :: (self: *Zwp_Linux_Explicit_Synchronization_V1, new_id: u32, surface: *Wl_Surface) {
     args := Zwp_Linux_Explicit_Synchronization_V1_Get_Synchronization_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_GET_SYNCHRONIZATION, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_GET_SYNCHRONIZATION, new_id, *args);
 }
 
 ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_INTERFACE :: Interface_Descriptor.{

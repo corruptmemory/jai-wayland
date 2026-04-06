@@ -283,11 +283,9 @@ zwp_input_method_context_v1_keysym :: (self: *Zwp_Input_Method_Context_V1, seria
 // key events to generate text events (with pre-edit) over the wire. This
 // allows input methods which compose multiple key events for inputting
 // text like it is done for CJK languages.
-zwp_input_method_context_v1_grab_keyboard :: (self: *Zwp_Input_Method_Context_V1) -> *Wl_Keyboard {
+zwp_input_method_context_v1_grab_keyboard :: (self: *Zwp_Input_Method_Context_V1, new_id: u32) {
     args := Zwp_Input_Method_Context_V1_Grab_Keyboard_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_GRAB_KEYBOARD, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_INPUT_METHOD_CONTEXT_V1_GRAB_KEYBOARD, new_id, *args);
 }
 
 // forward key event

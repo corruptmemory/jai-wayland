@@ -52,11 +52,9 @@ zwp_xwayland_keyboard_grab_manager_v1_destroy :: (self: *Zwp_Xwayland_Keyboard_G
 // * does not guarantee that events sent to this client are continuous,
 // a compositor may change and reroute keyboard events while the grab
 // is nominally active.
-zwp_xwayland_keyboard_grab_manager_v1_grab_keyboard :: (self: *Zwp_Xwayland_Keyboard_Grab_Manager_V1, surface: *Wl_Surface, seat: *Wl_Seat) -> *Zwp_Xwayland_Keyboard_Grab_V1 {
+zwp_xwayland_keyboard_grab_manager_v1_grab_keyboard :: (self: *Zwp_Xwayland_Keyboard_Grab_Manager_V1, new_id: u32, surface: *Wl_Surface, seat: *Wl_Seat) {
     args := Zwp_Xwayland_Keyboard_Grab_Manager_V1_Grab_Keyboard_Args.{ surface = surface.id, seat = seat.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_GRAB_KEYBOARD, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_GRAB_KEYBOARD, new_id, *args);
 }
 
 ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

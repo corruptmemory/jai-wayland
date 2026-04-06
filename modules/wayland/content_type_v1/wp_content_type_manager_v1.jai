@@ -48,11 +48,9 @@ wp_content_type_manager_v1_destroy :: (self: *Wp_Content_Type_Manager_V1) {
 //
 // Creating a wp_content_type_v1 from a wl_surface which already has one
 // attached is a client error: already_constructed.
-wp_content_type_manager_v1_get_surface_content_type :: (self: *Wp_Content_Type_Manager_V1, surface: *Wl_Surface) -> *Wp_Content_Type_V1 {
+wp_content_type_manager_v1_get_surface_content_type :: (self: *Wp_Content_Type_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Content_Type_Manager_V1_Get_Surface_Content_Type_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_CONTENT_TYPE_MANAGER_V1_GET_SURFACE_CONTENT_TYPE, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_CONTENT_TYPE_MANAGER_V1_GET_SURFACE_CONTENT_TYPE, new_id, *args);
 }
 
 WP_CONTENT_TYPE_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

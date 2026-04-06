@@ -51,11 +51,9 @@ zxdg_exporter_v2_destroy :: (self: *Zxdg_Exporter_V2) {
 // be used to create an xdg_imported multiple times. Only xdg_toplevel
 // equivalent surfaces may be exported, otherwise an invalid_surface
 // protocol error is sent.
-zxdg_exporter_v2_export_toplevel :: (self: *Zxdg_Exporter_V2, surface: *Wl_Surface) -> *Zxdg_Exported_V2 {
+zxdg_exporter_v2_export_toplevel :: (self: *Zxdg_Exporter_V2, new_id: u32, surface: *Wl_Surface) {
     args := Zxdg_Exporter_V2_Export_Toplevel_Args.{ surface = surface.id };
-    new_id := marshal_constructor(self.conn, self.id, ZXDG_EXPORTER_V2_EXPORT_TOPLEVEL, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZXDG_EXPORTER_V2_EXPORT_TOPLEVEL, new_id, *args);
 }
 
 ZXDG_EXPORTER_V2_INTERFACE :: Interface_Descriptor.{

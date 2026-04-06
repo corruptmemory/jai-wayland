@@ -33,11 +33,9 @@ zwp_text_input_manager_v3_destroy :: (self: *Zwp_Text_Input_Manager_V3) {
 
 // create a new text input object
 // Creates a new text-input object for a given seat.
-zwp_text_input_manager_v3_get_text_input :: (self: *Zwp_Text_Input_Manager_V3, seat: *Wl_Seat) -> *Zwp_Text_Input_V3 {
+zwp_text_input_manager_v3_get_text_input :: (self: *Zwp_Text_Input_Manager_V3, new_id: u32, seat: *Wl_Seat) {
     args := Zwp_Text_Input_Manager_V3_Get_Text_Input_Args.{ seat = seat.id };
-    new_id := marshal_constructor(self.conn, self.id, ZWP_TEXT_INPUT_MANAGER_V3_GET_TEXT_INPUT, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_TEXT_INPUT_MANAGER_V3_GET_TEXT_INPUT, new_id, *args);
 }
 
 ZWP_TEXT_INPUT_MANAGER_V3_INTERFACE :: Interface_Descriptor.{

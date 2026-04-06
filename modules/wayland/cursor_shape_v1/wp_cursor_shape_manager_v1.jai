@@ -48,11 +48,9 @@ wp_cursor_shape_manager_v1_destroy :: (self: *Wp_Cursor_Shape_Manager_V1) {
 //
 // When the pointer capability is removed from the wl_seat, the
 // wp_cursor_shape_device_v1 object becomes inert.
-wp_cursor_shape_manager_v1_get_pointer :: (self: *Wp_Cursor_Shape_Manager_V1, pointer: *Wl_Pointer) -> *Wp_Cursor_Shape_Device_V1 {
+wp_cursor_shape_manager_v1_get_pointer :: (self: *Wp_Cursor_Shape_Manager_V1, new_id: u32, pointer: *Wl_Pointer) {
     args := Wp_Cursor_Shape_Manager_V1_Get_Pointer_Args.{ pointer = pointer.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_POINTER, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_POINTER, new_id, *args);
 }
 
 // manage the cursor shape of a tablet tool device
@@ -60,11 +58,9 @@ wp_cursor_shape_manager_v1_get_pointer :: (self: *Wp_Cursor_Shape_Manager_V1, po
 //
 // When the zwp_tablet_tool_v2 is removed, the wp_cursor_shape_device_v1
 // object becomes inert.
-wp_cursor_shape_manager_v1_get_tablet_tool_v2 :: (self: *Wp_Cursor_Shape_Manager_V1, tablet_tool: *Zwp_Tablet_Tool_V2) -> *Wp_Cursor_Shape_Device_V1 {
+wp_cursor_shape_manager_v1_get_tablet_tool_v2 :: (self: *Wp_Cursor_Shape_Manager_V1, new_id: u32, tablet_tool: *Zwp_Tablet_Tool_V2) {
     args := Wp_Cursor_Shape_Manager_V1_Get_Tablet_Tool_V2_Args.{ tablet_tool = tablet_tool.id };
-    new_id := marshal_constructor(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_TABLET_TOOL_V2, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_TABLET_TOOL_V2, new_id, *args);
 }
 
 WP_CURSOR_SHAPE_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

@@ -20,11 +20,9 @@ Zwp_Text_Input_Manager_V1_Create_Text_Input_Args :: struct {
 
 // create text input
 // Creates a new text_input object.
-zwp_text_input_manager_v1_create_text_input :: (self: *Zwp_Text_Input_Manager_V1) -> *Zwp_Text_Input_V1 {
+zwp_text_input_manager_v1_create_text_input :: (self: *Zwp_Text_Input_Manager_V1, new_id: u32) {
     args := Zwp_Text_Input_Manager_V1_Create_Text_Input_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, ZWP_TEXT_INPUT_MANAGER_V1_CREATE_TEXT_INPUT, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, ZWP_TEXT_INPUT_MANAGER_V1_CREATE_TEXT_INPUT, new_id, *args);
 }
 
 ZWP_TEXT_INPUT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

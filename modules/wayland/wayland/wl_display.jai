@@ -75,11 +75,9 @@ Wl_Display_Get_Registry_Args :: struct {
 // attempt to use it after that point.
 //
 // The callback_data passed in the callback is undefined and should be ignored.
-wl_display_sync :: (self: *Wl_Display) -> *Wl_Callback {
+wl_display_sync :: (self: *Wl_Display, new_id: u32) {
     args := Wl_Display_Sync_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WL_DISPLAY_SYNC, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_DISPLAY_SYNC, new_id, *args);
 }
 
 // get global registry object
@@ -92,11 +90,9 @@ wl_display_sync :: (self: *Wl_Display) -> *Wl_Callback {
 // client disconnects, not when the client side proxy is destroyed.
 // Therefore, clients should invoke get_registry as infrequently as
 // possible to avoid wasting memory.
-wl_display_get_registry :: (self: *Wl_Display) -> *Wl_Registry {
+wl_display_get_registry :: (self: *Wl_Display, new_id: u32) {
     args := Wl_Display_Get_Registry_Args.{};
-    new_id := marshal_constructor(self.conn, self.id, WL_DISPLAY_GET_REGISTRY, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, WL_DISPLAY_GET_REGISTRY, new_id, *args);
 }
 
 WL_DISPLAY_INTERFACE :: Interface_Descriptor.{

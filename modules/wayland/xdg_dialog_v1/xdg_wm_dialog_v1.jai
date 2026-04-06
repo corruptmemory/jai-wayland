@@ -53,11 +53,9 @@ xdg_wm_dialog_v1_destroy :: (self: *Xdg_Wm_Dialog_V1) {
 //
 // Compositors must raise an already_used error if clients attempt to
 // create multiple xdg_dialog_v1 objects for the same xdg_toplevel.
-xdg_wm_dialog_v1_get_xdg_dialog :: (self: *Xdg_Wm_Dialog_V1, toplevel: *Xdg_Toplevel) -> *Xdg_Dialog_V1 {
+xdg_wm_dialog_v1_get_xdg_dialog :: (self: *Xdg_Wm_Dialog_V1, new_id: u32, toplevel: *Xdg_Toplevel) {
     args := Xdg_Wm_Dialog_V1_Get_Xdg_Dialog_Args.{ toplevel = toplevel.id };
-    new_id := marshal_constructor(self.conn, self.id, XDG_WM_DIALOG_V1_GET_XDG_DIALOG, *args);
-    // TODO(Phase 4): allocate proxy properly
-    return null;
+    marshal_constructor(self.conn, self.id, XDG_WM_DIALOG_V1_GET_XDG_DIALOG, new_id, *args);
 }
 
 XDG_WM_DIALOG_V1_INTERFACE :: Interface_Descriptor.{
