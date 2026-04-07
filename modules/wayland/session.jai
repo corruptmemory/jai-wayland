@@ -1,6 +1,8 @@
 #import "Basic";
+#import "Pool";
 
 WaylandSession :: struct {
+    pool: Pool;
     conn: Connection;
     registry: Wl_Registry;
     compositor: Wl_Compositor;
@@ -52,14 +54,23 @@ for_expansion :: (session: *WaylandSession, body: Code, flags: For_Flags) #expan
 init_wayland_session :: () -> bool {
     s := New(WaylandSession);
     context.wayland_session = s;
+    set_allocators(*s.pool);
 
     if !wayland_connect(*s.conn) {
         print("Could not connect to Wayland compositor.\n");
+        release(*s.pool);
         free(s);
         return false;
     }
 
-    discover_globals();
+    // All allocations during discovery (globals array, copy_string'd interface
+    // names) go through the pool — released in one shot by end_wayland_session.
+    new_context := context;
+    new_context.allocator.proc = pool_allocator_proc;
+    new_context.allocator.data = *s.pool;
+    push_context new_context {
+        discover_globals();
+    }
 
     s.compositor_name = find_global("wl_compositor");
     s.shm_name        = find_global("wl_shm");
@@ -68,6 +79,7 @@ init_wayland_session :: () -> bool {
     if s.compositor_name == 0 || s.shm_name == 0 || s.wm_base_name == 0 {
         print("Missing required globals\n");
         wayland_disconnect(*s.conn);
+        release(*s.pool);
         free(s);
         return false;
     }
@@ -85,6 +97,7 @@ init_wayland_session :: () -> bool {
 
 end_wayland_session :: () {
     wayland_disconnect(*context.wayland_session.conn);
+    release(*context.wayland_session.pool);
     free(context.wayland_session);
 }
 
