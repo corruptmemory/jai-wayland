@@ -5,13 +5,13 @@
 
 // The marshal macro. T is the arg struct type; #run runs at compile time,
 // generating serialization code specific to T, which #insert injects.
-marshal :: (conn: *Connection, object_id: u32, opcode: u16, args: *$T) #expand {
+marshal :: (batch: *MessageBuilder, object_id: u32, opcode: u16, args: *$T) #expand {
     #insert #run generate_marshal_code(type_info(T));
 }
 
 // Marshal a constructor request. Writes new_id as the first arg,
 // then writes the struct args. Caller provides the pre-allocated new_id.
-marshal_constructor :: (conn: *Connection, object_id: u32, opcode: u16, new_id: u32, args: *$T) #expand {
+marshal_constructor :: (batch: *MessageBuilder, object_id: u32, opcode: u16, new_id: u32, args: *$T) #expand {
     _new_id := new_id;
     #insert #run generate_marshal_constructor_code(type_info(T));
 }
@@ -51,7 +51,7 @@ emit_fixed_path :: (si: *Type_Info_Struct, msg_size: u32) -> string {
     offset: u32 = HEADER_SIZE;
     for member: si.members {
         if is_fd_type(member.type) {
-            print_to_builder(*sb, "    connection_queue_fd(conn, cast(s32) args.%);\n", member.name);
+            print_to_builder(*sb, "    message_queue_fd(batch, cast(s32) args.%);\n", member.name);
             continue;
         }
         if is_fixed_type(member.type) {
@@ -72,7 +72,7 @@ emit_fixed_path :: (si: *Type_Info_Struct, msg_size: u32) -> string {
         offset += 4;
     }
 
-    print_to_builder(*sb, "    connection_queue(conn, _buf.data, MSG_SIZE);\n");
+    print_to_builder(*sb, "    message_queue(batch, _buf.data, MSG_SIZE);\n");
     print_to_builder(*sb, "}\n");
 
     return builder_to_string(*sb);
@@ -105,7 +105,7 @@ emit_variable_path :: (si: *Type_Info_Struct) -> string {
     // Emit writes for each member
     for member: si.members {
         if is_fd_type(member.type) {
-            print_to_builder(*sb, "    connection_queue_fd(conn, cast(s32) args.%);\n", member.name);
+            print_to_builder(*sb, "    message_queue_fd(batch, cast(s32) args.%);\n", member.name);
             continue;
         }
         if member.type.type == .STRING {
@@ -133,7 +133,7 @@ emit_variable_path :: (si: *Type_Info_Struct) -> string {
 
     // Write header last (now we know size)
     print_to_builder(*sb, "    write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) opcode);\n");
-    print_to_builder(*sb, "    connection_queue(conn, _buf.data, _offset);\n");
+    print_to_builder(*sb, "    message_queue(batch, _buf.data, _offset);\n");
     print_to_builder(*sb, "}\n");
 
     return builder_to_string(*sb);
@@ -196,7 +196,7 @@ emit_constructor_fixed_path :: (si: *Type_Info_Struct, msg_size: u32) -> string 
     offset: u32 = HEADER_SIZE + 4;  // start after header + new_id
     for member: si.members {
         if is_fd_type(member.type) {
-            print_to_builder(*sb, "    connection_queue_fd(conn, cast(s32) args.%);\n", member.name);
+            print_to_builder(*sb, "    message_queue_fd(batch, cast(s32) args.%);\n", member.name);
             continue;
         }
         if is_fixed_type(member.type) {
@@ -217,7 +217,7 @@ emit_constructor_fixed_path :: (si: *Type_Info_Struct, msg_size: u32) -> string 
         offset += 4;
     }
 
-    print_to_builder(*sb, "    connection_queue(conn, _buf.data, MSG_SIZE);\n");
+    print_to_builder(*sb, "    message_queue(batch, _buf.data, MSG_SIZE);\n");
     print_to_builder(*sb, "}\n");
 
     return builder_to_string(*sb);
@@ -249,7 +249,7 @@ emit_constructor_variable_path :: (si: *Type_Info_Struct) -> string {
 
     for member: si.members {
         if is_fd_type(member.type) {
-            print_to_builder(*sb, "    connection_queue_fd(conn, cast(s32) args.%);\n", member.name);
+            print_to_builder(*sb, "    message_queue_fd(batch, cast(s32) args.%);\n", member.name);
             continue;
         }
         if member.type.type == .STRING {
@@ -276,7 +276,7 @@ emit_constructor_variable_path :: (si: *Type_Info_Struct) -> string {
     }
 
     print_to_builder(*sb, "    write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) opcode);\n");
-    print_to_builder(*sb, "    connection_queue(conn, _buf.data, _offset);\n");
+    print_to_builder(*sb, "    message_queue(batch, _buf.data, _offset);\n");
     print_to_builder(*sb, "}\n");
 
     return builder_to_string(*sb);
