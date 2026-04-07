@@ -30,7 +30,6 @@
 //
 Xdg_Popup :: struct {
     id: u32;
-    version: u32 = #run XDG_POPUP_INTERFACE.version;
 }
 
 // Request opcodes

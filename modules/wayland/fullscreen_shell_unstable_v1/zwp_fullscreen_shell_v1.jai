@@ -39,7 +39,6 @@
 //
 Zwp_Fullscreen_Shell_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_FULLSCREEN_SHELL_V1_INTERFACE.version;
 }
 
 // Request opcodes

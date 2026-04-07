@@ -12,7 +12,6 @@
 //
 Wp_Presentation :: struct {
     id: u32;
-    version: u32 = #run WP_PRESENTATION_INTERFACE.version;
 }
 
 // Request opcodes

@@ -54,7 +54,6 @@
 //
 Xdg_Surface :: struct {
     id: u32;
-    version: u32 = #run XDG_SURFACE_INTERFACE.version;
 }
 
 // Request opcodes

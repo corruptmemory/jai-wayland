@@ -14,7 +14,6 @@
 //
 Wl_Pointer :: struct {
     id: u32;
-    version: u32 = #run WL_POINTER_INTERFACE.version;
 }
 
 // Request opcodes

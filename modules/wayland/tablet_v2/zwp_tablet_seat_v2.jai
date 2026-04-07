@@ -9,7 +9,6 @@
 //
 Zwp_Tablet_Seat_V2 :: struct {
     id: u32;
-    version: u32 = #run ZWP_TABLET_SEAT_V2_INTERFACE.version;
 }
 
 // Request opcodes

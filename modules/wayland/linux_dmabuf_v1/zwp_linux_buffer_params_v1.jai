@@ -22,7 +22,6 @@
 //
 Zwp_Linux_Buffer_Params_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_LINUX_BUFFER_PARAMS_V1_INTERFACE.version;
 }
 
 // Request opcodes

@@ -31,7 +31,6 @@
 //
 Zwp_Linux_Dmabuf_Feedback_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_LINUX_DMABUF_FEEDBACK_V1_INTERFACE.version;
 }
 
 // Request opcodes

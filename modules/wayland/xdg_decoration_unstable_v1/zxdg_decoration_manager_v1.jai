@@ -28,7 +28,6 @@
 //
 Zxdg_Decoration_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run ZXDG_DECORATION_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

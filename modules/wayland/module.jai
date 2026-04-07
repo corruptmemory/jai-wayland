@@ -7,6 +7,7 @@
 #load "shm.jai";
 #load "registry.jai";
 #load "session.jai";
+#load "type_registry.jai";
 
 #load "wayland/wayland.jai";
 

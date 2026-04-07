@@ -25,7 +25,6 @@
 //
 Wl_Subcompositor :: struct {
     id: u32;
-    version: u32 = #run WL_SUBCOMPOSITOR_INTERFACE.version;
 }
 
 // Request opcodes

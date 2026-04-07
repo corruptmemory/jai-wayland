@@ -45,3 +45,16 @@ MAX_MESSAGE_SIZE :: 4096;
 
 // Maximum fds per sendmsg call.
 MAX_FDS_OUT :: 28;
+
+// Base struct for interface type restriction.
+// Any struct with an id: u32 field satisfies $T/interface Versionable.
+Versionable :: struct {
+    id: u32;
+}
+
+// Type metadata for runtime type -> interface mapping.
+TypeMetadata :: struct {
+    ti: *Type_Info;
+    version: u32;
+    interface_name: string;
+}

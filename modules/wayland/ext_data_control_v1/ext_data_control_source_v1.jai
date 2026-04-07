@@ -10,7 +10,6 @@
 //
 Ext_Data_Control_Source_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_DATA_CONTROL_SOURCE_V1_INTERFACE.version;
 }
 
 // Request opcodes

@@ -25,7 +25,6 @@
 //
 Ext_Workspace_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_WORKSPACE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

@@ -17,7 +17,6 @@
 //
 Wp_Presentation_Feedback :: struct {
     id: u32;
-    version: u32 = #run WP_PRESENTATION_FEEDBACK_INTERFACE.version;
 }
 
 // Event opcodes

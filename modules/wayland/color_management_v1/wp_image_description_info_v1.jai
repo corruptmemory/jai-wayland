@@ -28,7 +28,6 @@
 //
 Wp_Image_Description_Info_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_IMAGE_DESCRIPTION_INFO_V1_INTERFACE.version;
 }
 
 // Event opcodes

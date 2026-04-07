@@ -11,7 +11,6 @@
 //
 Wl_Callback :: struct {
     id: u32;
-    version: u32 = #run WL_CALLBACK_INTERFACE.version;
 }
 
 // Event opcodes

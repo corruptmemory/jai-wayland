@@ -54,7 +54,6 @@
 //
 Ext_Session_Lock_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_SESSION_LOCK_V1_INTERFACE.version;
 }
 
 // Request opcodes

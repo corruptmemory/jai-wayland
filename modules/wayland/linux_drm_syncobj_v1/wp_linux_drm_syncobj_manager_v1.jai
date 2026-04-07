@@ -10,7 +10,6 @@
 //
 Wp_Linux_Drm_Syncobj_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

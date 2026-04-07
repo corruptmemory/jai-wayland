@@ -21,7 +21,6 @@
 //
 Zwp_Pointer_Gesture_Swipe_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_POINTER_GESTURE_SWIPE_V1_INTERFACE.version;
 }
 
 // Request opcodes

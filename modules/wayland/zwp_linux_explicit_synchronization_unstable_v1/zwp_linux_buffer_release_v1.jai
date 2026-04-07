@@ -23,7 +23,6 @@
 //
 Zwp_Linux_Buffer_Release_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_LINUX_BUFFER_RELEASE_V1_INTERFACE.version;
 }
 
 // Event opcodes

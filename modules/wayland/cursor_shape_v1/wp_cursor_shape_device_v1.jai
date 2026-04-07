@@ -7,7 +7,6 @@
 //
 Wp_Cursor_Shape_Device_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_CURSOR_SHAPE_DEVICE_V1_INTERFACE.version;
 }
 
 // Request opcodes

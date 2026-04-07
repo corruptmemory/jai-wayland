@@ -18,7 +18,6 @@
 //
 Wp_Pointer_Warp_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_POINTER_WARP_V1_INTERFACE.version;
 }
 
 // Request opcodes

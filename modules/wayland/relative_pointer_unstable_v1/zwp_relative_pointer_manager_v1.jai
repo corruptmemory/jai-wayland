@@ -8,7 +8,6 @@
 //
 Zwp_Relative_Pointer_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_RELATIVE_POINTER_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

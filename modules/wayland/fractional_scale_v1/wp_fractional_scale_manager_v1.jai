@@ -7,7 +7,6 @@
 //
 Wp_Fractional_Scale_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_FRACTIONAL_SCALE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

@@ -26,7 +26,6 @@
 //
 Zwp_Tablet_Tool_V2 :: struct {
     id: u32;
-    version: u32 = #run ZWP_TABLET_TOOL_V2_INTERFACE.version;
 }
 
 // Request opcodes

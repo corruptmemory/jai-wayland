@@ -25,7 +25,6 @@
 //
 Xdg_Positioner :: struct {
     id: u32;
-    version: u32 = #run XDG_POSITIONER_INTERFACE.version;
 }
 
 // Request opcodes

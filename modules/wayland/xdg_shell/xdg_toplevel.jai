@@ -27,7 +27,6 @@
 //
 Xdg_Toplevel :: struct {
     id: u32;
-    version: u32 = #run XDG_TOPLEVEL_INTERFACE.version;
 }
 
 // Request opcodes

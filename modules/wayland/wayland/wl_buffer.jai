@@ -21,7 +21,6 @@
 //
 Wl_Buffer :: struct {
     id: u32;
-    version: u32 = #run WL_BUFFER_INTERFACE.version;
 }
 
 // Request opcodes

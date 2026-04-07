@@ -10,7 +10,6 @@
 //
 Zwp_Tablet_Pad_Dial_V2 :: struct {
     id: u32;
-    version: u32 = #run ZWP_TABLET_PAD_DIAL_V2_INTERFACE.version;
 }
 
 // Request opcodes

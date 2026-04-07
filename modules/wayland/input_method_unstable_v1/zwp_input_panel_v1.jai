@@ -7,7 +7,6 @@
 //
 Zwp_Input_Panel_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_INPUT_PANEL_V1_INTERFACE.version;
 }
 
 // Request opcodes

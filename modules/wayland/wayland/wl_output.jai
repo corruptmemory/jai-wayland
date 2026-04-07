@@ -12,7 +12,6 @@
 //
 Wl_Output :: struct {
     id: u32;
-    version: u32 = #run WL_OUTPUT_INTERFACE.version;
 }
 
 // Request opcodes

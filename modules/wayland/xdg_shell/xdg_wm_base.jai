@@ -11,7 +11,6 @@
 //
 Xdg_Wm_Base :: struct {
     id: u32;
-    version: u32 = #run XDG_WM_BASE_INTERFACE.version;
 }
 
 // Request opcodes

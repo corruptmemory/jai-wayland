@@ -22,7 +22,6 @@
 //
 Zwp_Confined_Pointer_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_CONFINED_POINTER_V1_INTERFACE.version;
 }
 
 // Request opcodes

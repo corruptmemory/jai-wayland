@@ -165,7 +165,18 @@ main :: () {
         else   print("ERROR: Failed to write %\n", module_path);
     }
 
-    // 9. Summary
+    // 9. Write type_registry.jai
+    {
+        registry_content := generate_type_registry(protocols);
+        registry_path := tprint("%/type_registry.jai", OUTPUT_DIR);
+        sb: String_Builder;
+        print_to_builder(*sb, "%", registry_content);
+        ok := write_entire_file(registry_path, *sb);
+        if ok  print("Wrote %\n", registry_path);
+        else   print("ERROR: Failed to write %\n", registry_path);
+    }
+
+    // 10. Summary
     print("\nGeneration complete: % protocols, % interfaces.\n", protocols.count, total_interfaces);
     print("Output directory: %/\n", OUTPUT_DIR);
 }

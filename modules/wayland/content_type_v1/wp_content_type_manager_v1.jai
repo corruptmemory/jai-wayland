@@ -13,7 +13,6 @@
 //
 Wp_Content_Type_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_CONTENT_TYPE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

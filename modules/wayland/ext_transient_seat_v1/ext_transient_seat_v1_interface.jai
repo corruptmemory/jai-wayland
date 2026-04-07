@@ -8,7 +8,6 @@
 //
 Ext_Transient_Seat_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_TRANSIENT_SEAT_V1_INTERFACE.version;
 }
 
 // Request opcodes

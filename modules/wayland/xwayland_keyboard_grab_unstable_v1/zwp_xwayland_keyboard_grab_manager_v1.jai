@@ -7,7 +7,6 @@
 //
 Zwp_Xwayland_Keyboard_Grab_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_XWAYLAND_KEYBOARD_GRAB_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

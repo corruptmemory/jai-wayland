@@ -12,7 +12,6 @@
 //
 Wp_Viewporter :: struct {
     id: u32;
-    version: u32 = #run WP_VIEWPORTER_INTERFACE.version;
 }
 
 // Request opcodes

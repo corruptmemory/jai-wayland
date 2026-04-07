@@ -14,7 +14,6 @@
 //
 Wp_Drm_Lease_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_DRM_LEASE_V1_INTERFACE.version;
 }
 
 // Request opcodes

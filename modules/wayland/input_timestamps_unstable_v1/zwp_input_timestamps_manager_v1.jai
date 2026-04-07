@@ -8,7 +8,6 @@
 //
 Zwp_Input_Timestamps_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_INPUT_TIMESTAMPS_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

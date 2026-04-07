@@ -32,7 +32,6 @@
 //
 Zwp_Text_Input_V3 :: struct {
     id: u32;
-    version: u32 = #run ZWP_TEXT_INPUT_V3_INTERFACE.version;
 }
 
 // Request opcodes

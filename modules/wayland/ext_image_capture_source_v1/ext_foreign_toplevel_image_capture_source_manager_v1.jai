@@ -8,7 +8,6 @@
 //
 Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

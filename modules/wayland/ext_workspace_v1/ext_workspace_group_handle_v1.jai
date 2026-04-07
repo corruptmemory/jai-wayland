@@ -17,7 +17,6 @@
 //
 Ext_Workspace_Group_Handle_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_WORKSPACE_GROUP_HANDLE_V1_INTERFACE.version;
 }
 
 // Request opcodes

@@ -14,7 +14,6 @@
 //
 Wl_Touch :: struct {
     id: u32;
-    version: u32 = #run WL_TOUCH_INTERFACE.version;
 }
 
 // Request opcodes

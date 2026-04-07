@@ -22,7 +22,6 @@
 //
 Ext_Image_Copy_Capture_Session_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_IMAGE_COPY_CAPTURE_SESSION_V1_INTERFACE.version;
 }
 
 // Request opcodes

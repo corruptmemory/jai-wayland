@@ -39,7 +39,6 @@
 //
 Zxdg_Popup_V6 :: struct {
     id: u32;
-    version: u32 = #run ZXDG_POPUP_V6_INTERFACE.version;
 }
 
 // Request opcodes

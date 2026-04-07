@@ -10,7 +10,6 @@
 //
 Wl_Seat :: struct {
     id: u32;
-    version: u32 = #run WL_SEAT_INTERFACE.version;
 }
 
 // Request opcodes

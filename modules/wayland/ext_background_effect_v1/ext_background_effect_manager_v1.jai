@@ -17,7 +17,6 @@
 //
 Ext_Background_Effect_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_BACKGROUND_EFFECT_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

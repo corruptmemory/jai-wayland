@@ -106,21 +106,58 @@ discover_globals :: () -> u32 {
     return registry_id;
 }
 
-// Look up a global by interface name. Returns the global's name (u32)
-// for use with wl_registry_bind, or 0 if not found.
-find_global :: (globals: [] Global_Info, iface_name: string) -> u32 {
+// Look up a global by interface name.
+get_global :: (globals: [] Global_Info, iface_name: string) -> Global_Info, bool {
     for globals {
-        if it.interface_name == iface_name  return it.name;
+        if it.interface_name == iface_name  return it, true;
     }
-    return 0;
+    return .{}, false;
 }
 
 // Same as above, but uses the context session.
-find_global :: (iface_name: string) -> u32 {
+get_global :: (iface_name: string) -> Global_Info, bool {
     for context.wayland_session.globals {
-        if it.interface_name == iface_name  return it.name;
+        if it.interface_name == iface_name  return it, true;
     }
-    return 0;
+    return .{}, false;
+}
+
+// Overload 1: common case — pass the struct, type known at compile time.
+// Version negotiated automatically as min(advertised, supported).
+wl_registry_bind :: (batch: *MessageBuilder, self: *Wl_Registry, target: *$T/interface Versionable) -> bool {
+    return wl_registry_bind(batch, self, target.id, type_info(T));
+}
+
+// Overload 2: explicit type + id
+wl_registry_bind :: (batch: *MessageBuilder, self: *Wl_Registry, id: u32, $T: Type) -> bool {
+    return wl_registry_bind(batch, self, id, type_info(T));
+}
+
+// Overload 3: fully dynamic — id + *Type_Info
+wl_registry_bind :: (batch: *MessageBuilder, self: *Wl_Registry, id: u32, ti: *Type_Info) -> bool {
+    md, found := find_type_metadata(ti);
+    if !found return false;
+
+    gi, gfound := get_global(md.interface_name);
+    if !gfound return false;
+
+    version: u32 = ifx gi.version < md.version then gi.version else md.version;
+
+    _msg_size: u32 = HEADER_SIZE;
+    _msg_size += 4;  // gi.name
+    _msg_size += 4 + align4(cast(u32)(md.interface_name.count + 1));  // interface_name string
+    _msg_size += 4;  // version
+    _msg_size += 4;  // id
+    _buf: [MAX_MESSAGE_SIZE] u8;
+    write_u32(_buf.data, self.id);
+    _offset: u32 = HEADER_SIZE;
+    write_u32(_buf.data + _offset, gi.name); _offset += 4;
+    _offset += write_string(_buf.data + _offset, md.interface_name);
+    write_u32(_buf.data + _offset, version); _offset += 4;
+    write_u32(_buf.data + _offset, id); _offset += 4;
+    write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) WL_REGISTRY_BIND);
+    message_queue(batch, _buf.data, _offset);
+    return true;
 }
 
 // Initialize a wl_display proxy. Always ID 1.

@@ -11,7 +11,6 @@
 //
 Zwp_Primary_Selection_Offer_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_PRIMARY_SELECTION_OFFER_V1_INTERFACE.version;
 }
 
 // Request opcodes

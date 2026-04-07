@@ -27,7 +27,6 @@
 //
 Wp_Image_Description_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_IMAGE_DESCRIPTION_V1_INTERFACE.version;
 }
 
 // Request opcodes

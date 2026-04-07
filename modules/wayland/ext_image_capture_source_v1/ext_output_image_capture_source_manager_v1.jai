@@ -7,7 +7,6 @@
 //
 Ext_Output_Image_Capture_Source_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_OUTPUT_IMAGE_CAPTURE_SOURCE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

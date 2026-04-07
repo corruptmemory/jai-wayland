@@ -26,7 +26,6 @@
 //
 Wl_Registry :: struct {
     id: u32;
-    version: u32 = #run WL_REGISTRY_INTERFACE.version;
 }
 
 // Request opcodes
@@ -62,26 +61,6 @@ Wl_Registry_Bind_Args :: struct {
     name: u32;
 }
 
-
-// bind an object to the display
-// Binds a new, client-created object to the server using the
-// specified name as the identifier.
-wl_registry_bind :: (batch: *MessageBuilder, self: *Wl_Registry, name: u32, interface_name: string, version: u32, new_id: u32) {
-    _msg_size: u32 = HEADER_SIZE;
-    _msg_size += 4;
-    _msg_size += 4 + align4(cast(u32)(interface_name.count + 1));  // interface_name string
-    _msg_size += 4;  // version
-    _msg_size += 4;  // new_id
-    _buf: [MAX_MESSAGE_SIZE] u8;
-    write_u32(_buf.data, self.id);
-    _offset: u32 = HEADER_SIZE;
-    write_u32(_buf.data + _offset, name); _offset += 4;
-    _offset += write_string(_buf.data + _offset, interface_name);
-    write_u32(_buf.data + _offset, version); _offset += 4;
-    write_u32(_buf.data + _offset, new_id); _offset += 4;
-    write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) WL_REGISTRY_BIND);
-    message_queue(batch, _buf.data, _offset);
-}
 
 WL_REGISTRY_INTERFACE :: Interface_Descriptor.{
     name = "wl_registry",

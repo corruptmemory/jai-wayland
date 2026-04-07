@@ -7,7 +7,6 @@
 //
 Zxdg_Output_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run ZXDG_OUTPUT_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

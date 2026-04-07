@@ -14,7 +14,6 @@
 //
 Wp_Tearing_Control_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_TEARING_CONTROL_V1_INTERFACE.version;
 }
 
 // Request opcodes

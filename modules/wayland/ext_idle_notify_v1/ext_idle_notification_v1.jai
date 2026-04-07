@@ -28,7 +28,6 @@
 //
 Ext_Idle_Notification_V1 :: struct {
     id: u32;
-    version: u32 = #run EXT_IDLE_NOTIFICATION_V1_INTERFACE.version;
 }
 
 // Request opcodes

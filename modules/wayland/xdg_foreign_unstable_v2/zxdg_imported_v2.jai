@@ -9,7 +9,6 @@
 //
 Zxdg_Imported_V2 :: struct {
     id: u32;
-    version: u32 = #run ZXDG_IMPORTED_V2_INTERFACE.version;
 }
 
 // Request opcodes

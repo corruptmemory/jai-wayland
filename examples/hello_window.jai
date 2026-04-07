@@ -21,7 +21,7 @@ main :: () {
 
     // Bind wl_shm
     shm := Wl_Shm.{ id = allocate_id() };
-    wl_registry_bind(*batch, registry(), shm_name(), "wl_shm", 1, shm.id);
+    wl_registry_bind(*batch, registry(), *shm);
     wayland_send(*batch);
 
     // Drain wl_shm.format events

@@ -10,7 +10,6 @@
 //
 Wl_Data_Source :: struct {
     id: u32;
-    version: u32 = #run WL_DATA_SOURCE_INTERFACE.version;
 }
 
 // Request opcodes

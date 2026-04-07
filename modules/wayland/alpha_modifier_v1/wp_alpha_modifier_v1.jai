@@ -14,7 +14,6 @@
 //
 Wp_Alpha_Modifier_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_ALPHA_MODIFIER_V1_INTERFACE.version;
 }
 
 // Request opcodes

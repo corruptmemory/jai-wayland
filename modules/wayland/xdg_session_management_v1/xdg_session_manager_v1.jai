@@ -16,7 +16,6 @@
 //
 Xdg_Session_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run XDG_SESSION_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

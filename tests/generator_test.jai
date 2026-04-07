@@ -320,12 +320,7 @@ test_generate_request_untyped_new_id :: () {
     array_add(*req.args, arg2);
 
     result := generate_request(*iface, *req, 0);
-    assert(contains(result, "interface_name: string"), "Untyped new_id should have interface_name param, got:\n%", result);
-    assert(contains(result, "version: u32"), "Untyped new_id should have version param, got:\n%", result);
-    assert(contains(result, "new_id: u32"), "Untyped new_id should have new_id param, got:\n%", result);
-    assert(contains(result, "write_string"), "Should use write_string for interface_name, got:\n%", result);
-    assert(contains(result, "batch: *MessageBuilder"), "Missing batch parameter, got:\n%", result);
-    assert(contains(result, "message_queue(batch,"), "Should use message_queue(batch,), got:\n%", result);
+    assert(result.count == 0, "Untyped new_id should return empty string (hand-written in registry.jai), got:\n%", result);
     print("  PASS: test_generate_request_untyped_new_id\n");
 }
 
@@ -340,7 +335,7 @@ test_generate_interface_struct :: () {
     result := generate_interface_struct(*iface);
     assert(contains(result, "Wl_Surface :: struct"), "Missing struct");
     assert(contains(result, "id: u32"), "Missing id field");
-    assert(contains(result, "version: u32 = #run WL_SURFACE_INTERFACE.version"), "Missing version field with default, got:\n%", result);
+    assert(!contains(result, "version"), "Should not have version field");
     assert(!contains(result, "conn: *Connection"), "Should not have conn field");
     assert(contains(result, "a compositable surface"), "Missing summary comment");
     print("  PASS: test_generate_interface_struct\n");
@@ -455,6 +450,7 @@ test_generate_module_root :: () {
     result := generate_module_root(names);
     assert(contains(result, "#load \"types.jai\""), "Missing types load");
     assert(contains(result, "#load \"session.jai\""), "Missing session load");
+    assert(contains(result, "#load \"type_registry.jai\""), "Missing type_registry load");
     assert(contains(result, "#load \"wayland/wayland.jai\""), "Missing wayland load");
     assert(contains(result, "#load \"xdg_shell/xdg_shell.jai\""), "Missing xdg_shell load");
     print("  PASS: test_generate_module_root\n");

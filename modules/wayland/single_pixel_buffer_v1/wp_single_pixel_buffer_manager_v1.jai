@@ -8,7 +8,6 @@
 //
 Wp_Single_Pixel_Buffer_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_SINGLE_PIXEL_BUFFER_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

@@ -17,7 +17,6 @@
 //
 Wl_Shell_Surface :: struct {
     id: u32;
-    version: u32 = #run WL_SHELL_SURFACE_INTERFACE.version;
 }
 
 // Request opcodes

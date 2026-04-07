@@ -8,7 +8,6 @@
 //
 Wl_Fixes :: struct {
     id: u32;
-    version: u32 = #run WL_FIXES_INTERFACE.version;
 }
 
 // Request opcodes

@@ -5,7 +5,6 @@
 //
 Xdg_Toplevel_Drag_V1 :: struct {
     id: u32;
-    version: u32 = #run XDG_TOPLEVEL_DRAG_V1_INTERFACE.version;
 }
 
 // Request opcodes

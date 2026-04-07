@@ -13,7 +13,6 @@
 //
 Wl_Shm_Pool :: struct {
     id: u32;
-    version: u32 = #run WL_SHM_POOL_INTERFACE.version;
 }
 
 // Request opcodes

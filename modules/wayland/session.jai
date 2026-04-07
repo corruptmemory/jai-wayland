@@ -7,9 +7,6 @@ WaylandSession :: struct {
     registry: Wl_Registry;
     compositor: Wl_Compositor;
     wm_base: Xdg_Wm_Base;
-    compositor_name: u32;
-    shm_name: u32;
-    wm_base_name: u32;
     globals: [..] Global_Info;
 }
 
@@ -72,11 +69,11 @@ init_wayland_session :: () -> bool {
         discover_globals();
     }
 
-    s.compositor_name = find_global("wl_compositor");
-    s.shm_name        = find_global("wl_shm");
-    s.wm_base_name    = find_global("xdg_wm_base");
+    _, comp_ok := get_global("wl_compositor");
+    _, shm_ok  := get_global("wl_shm");
+    _, wm_ok   := get_global("xdg_wm_base");
 
-    if s.compositor_name == 0 || s.shm_name == 0 || s.wm_base_name == 0 {
+    if !comp_ok || !shm_ok || !wm_ok {
         print("Missing required globals\n");
         wayland_disconnect(*s.conn);
         release(*s.pool);
@@ -88,8 +85,8 @@ init_wayland_session :: () -> bool {
     s.wm_base    = Xdg_Wm_Base.{ id = allocate_id() };
 
     batch: MessageBuilder;
-    wl_registry_bind(*batch, *s.registry, s.compositor_name, "wl_compositor", 6, s.compositor.id);
-    wl_registry_bind(*batch, *s.registry, s.wm_base_name, "xdg_wm_base", 6, s.wm_base.id);
+    wl_registry_bind(*batch, *s.registry, *s.compositor);
+    wl_registry_bind(*batch, *s.registry, *s.wm_base);
     wayland_send(*s.conn, *batch);
 
     return true;
@@ -119,10 +116,6 @@ compositor :: inline () -> *Wl_Compositor {
 
 wm_base :: inline () -> *Xdg_Wm_Base {
     return *context.wayland_session.wm_base;
-}
-
-shm_name :: inline () -> u32 {
-    return context.wayland_session.shm_name;
 }
 
 allocate_id :: inline () -> u32 {

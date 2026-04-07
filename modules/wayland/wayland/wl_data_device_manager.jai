@@ -16,7 +16,6 @@
 //
 Wl_Data_Device_Manager :: struct {
     id: u32;
-    version: u32 = #run WL_DATA_DEVICE_MANAGER_INTERFACE.version;
 }
 
 // Request opcodes

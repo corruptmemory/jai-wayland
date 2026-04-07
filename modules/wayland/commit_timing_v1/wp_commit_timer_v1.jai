@@ -7,7 +7,6 @@
 //
 Wp_Commit_Timer_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_COMMIT_TIMER_V1_INTERFACE.version;
 }
 
 // Request opcodes

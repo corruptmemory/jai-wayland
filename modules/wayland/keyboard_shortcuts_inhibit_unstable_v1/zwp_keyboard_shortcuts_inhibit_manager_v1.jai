@@ -7,7 +7,6 @@
 //
 Zwp_Keyboard_Shortcuts_Inhibit_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_KEYBOARD_SHORTCUTS_INHIBIT_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

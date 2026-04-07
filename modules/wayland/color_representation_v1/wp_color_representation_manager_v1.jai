@@ -11,7 +11,6 @@
 //
 Wp_Color_Representation_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run WP_COLOR_REPRESENTATION_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

@@ -10,7 +10,6 @@
 //
 Wl_Region :: struct {
     id: u32;
-    version: u32 = #run WL_REGION_INTERFACE.version;
 }
 
 // Request opcodes

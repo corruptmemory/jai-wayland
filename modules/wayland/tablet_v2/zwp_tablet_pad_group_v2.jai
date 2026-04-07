@@ -27,7 +27,6 @@
 //
 Zwp_Tablet_Pad_Group_V2 :: struct {
     id: u32;
-    version: u32 = #run ZWP_TABLET_PAD_GROUP_V2_INTERFACE.version;
 }
 
 // Request opcodes

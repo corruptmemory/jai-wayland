@@ -25,7 +25,6 @@
 //
 Zxdg_Positioner_V6 :: struct {
     id: u32;
-    version: u32 = #run ZXDG_POSITIONER_V6_INTERFACE.version;
 }
 
 // Request opcodes

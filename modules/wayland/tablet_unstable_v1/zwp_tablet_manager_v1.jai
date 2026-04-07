@@ -9,7 +9,6 @@
 //
 Zwp_Tablet_Manager_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_TABLET_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes

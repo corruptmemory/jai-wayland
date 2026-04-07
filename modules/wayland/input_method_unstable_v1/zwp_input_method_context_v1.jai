@@ -29,7 +29,6 @@
 //
 Zwp_Input_Method_Context_V1 :: struct {
     id: u32;
-    version: u32 = #run ZWP_INPUT_METHOD_CONTEXT_V1_INTERFACE.version;
 }
 
 // Request opcodes

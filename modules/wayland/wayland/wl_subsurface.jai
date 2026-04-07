@@ -58,7 +58,6 @@
 //
 Wl_Subsurface :: struct {
     id: u32;
-    version: u32 = #run WL_SUBSURFACE_INTERFACE.version;
 }
 
 // Request opcodes
