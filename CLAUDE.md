@@ -12,9 +12,9 @@ Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire
 ./build.sh              # Build main → build/main
 ./build.sh - test       # Build and run 22 XML/protocol tests
 ./build.sh - gen_test   # Build and run 36 generator tests
-./build.sh - wire_test  # Build and run 16 wire protocol tests
+./build.sh - wire_test  # Build and run 22 wire protocol tests
 ./build.sh - marshal_test  # Build and run 9 marshal macro tests
-./build.sh - compile_test  # Build and run 9 compilation smoke tests (imports generated module)
+./build.sh - compile_test  # Build and run 8 compilation smoke tests (imports generated module)
 ./build.sh - generate   # Regenerate modules/wayland/ from protocol XML
 ./build.sh - hello_globals  # Build and run hello_globals example (live compositor)
 ./build.sh - hello_window   # Build and run hello_window example (black window)
@@ -41,7 +41,8 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 
 **Code generator** (`src/generator.jai` + `src/generate_main.jai`):
 - Standalone tool reading Protocol structs, emitting Jai source files
-- Per-interface files with: doc comments, struct (with `conn: *Connection`), opcodes, enums (regular + bitfield), event tagged unions, request arg structs, typed request functions with `marshal()`/`marshal_constructor()` calls, interface descriptor
+- Per-interface files with: doc comments, struct (`id: u32` + `version: u32` with compile-time default), opcodes, enums (regular + bitfield), event tagged unions, request arg structs, typed request functions with `marshal()`/`marshal_constructor()` calls, interface descriptor
+- Request functions take `batch: *MessageBuilder` as first param (string builder pattern)
 - Naming transforms: `wl_surface` → `Wl_Surface` (type), `WL_SURFACE_ATTACH` (opcode), `wl_surface_attach` (function)
 - Handles special cases: untyped `new_id` (polymorphic `$T`), destructors, cross-interface enum refs, numeric identifiers, reserved words
 - Deduplicates protocols (core > stable > staging > unstable priority)
@@ -49,32 +50,35 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 
 **Wire protocol** (`modules/wayland/wire.jai`, `connection.jai`, `marshal.jai`):
 - `wire.jai` — `inline` primitive writers (`write_u32`, `write_s32`, `read_u32`, `read_s32`), `pack_header`/`unpack_header`, `write_string`/`write_array` with 4-byte padding, `align4`
-- `connection.jai` — `Connection` struct (socket fd, send/recv buffers, fd queues, object ID allocator), `wayland_connect`/`wayland_disconnect`, `connection_queue`/`connection_queue_fd`/`connection_flush` (sendmsg with SCM_RIGHTS), `connection_read` (recvmsg with SCM_RIGHTS), `connection_peek_message`/`connection_consume_message`/`connection_pop_fd`
-- `marshal.jai` — compile-time marshal macro using `#expand` + `#insert #run generate_marshal_code(type_info(T))`. Walks request arg struct members at compile time, emits type-specific serialization code. Two paths: fixed-size (stack buffer) and variable-size (runtime computation for strings/arrays). `Fd` args (distinct s32) route to `connection_queue_fd` (SCM_RIGHTS out-of-band). Also `marshal_constructor` for new_id allocation.
+- `connection.jai` — Three types: `Connection` (socket fd + object ID allocator), `MessageBuilder` (polymorphic outgoing batch buffer), `ReceiveBuffer` (polymorphic incoming buffer). `wayland_connect`/`wayland_disconnect`, `wayland_send(conn, batch)`/`wayland_receive(conn, buf)`/`wayland_send_receive`. `message_queue`/`message_queue_fd` for building messages, `receive_peek_message`/`receive_consume_message`/`receive_pop_fd` for reading.
+- `marshal.jai` — compile-time marshal macro using `#expand` + `#insert #run generate_marshal_code(type_info(T))`. Walks request arg struct members at compile time, emits type-specific serialization code. Two paths: fixed-size (stack buffer) and variable-size (runtime computation for strings/arrays). `Fd` args (distinct s32) route to `message_queue_fd` (SCM_RIGHTS out-of-band). Takes `*MessageBuilder` as target. Also `marshal_constructor` for new_id allocation.
 
 **Generated module** (`modules/wayland/`):
-- `module.jai` → `#load` chain → `types.jai`, `wire.jai`, `connection.jai`, `marshal.jai`, `shm.jai`, `registry.jai` → per-protocol directories → per-interface files
+- `module.jai` → `#load` chain → `types.jai`, `wire.jai`, `connection.jai`, `marshal.jai`, `shm.jai`, `registry.jai`, `session.jai` → per-protocol directories → per-interface files
 - `types.jai` — shared types: `Interface_Descriptor`, `Wire_Arg_Type`, `Fixed`, `Fd` (distinct s32), wire constants
-- Request functions have real `marshal()` calls that serialize args into the connection buffer
+- Interface structs: `id: u32` + `version: u32 = #run DESCRIPTOR.version` (no `conn` field, version defaulted)
+- Request functions take `batch: *MessageBuilder` as first param, then `self: *Interface`, then protocol args. Use `marshal()` calls that serialize args into the MessageBuilder.
 - Constructor functions take `new_id: u32` from caller — no internal allocation, no return value
 
-**Client API** (`modules/wayland/registry.jai`, `shm.jai`):
-- `registry.jai` — `discover_globals(conn)` performs get_registry + sync roundtrip, returns `[] Global_Info` + registry ID. `find_global(globals, name)` looks up a global by interface name. `init_display(conn)` creates the wl_display proxy (always ID 1).
+**Client API** (`modules/wayland/registry.jai`, `session.jai`, `shm.jai`):
+- `session.jai` — `WaylandSession` struct (Connection, ReceiveBuffer, globals, bound objects). Lives in `#add_context wayland_session: *WaylandSession;`. `init_wayland_session()` connects, discovers globals, binds compositor/wm_base. `for_expansion` on `*WaylandSession` iterates incoming messages, handles ping/pong transparently, yields `WaylandMessageHeader`. Context-based convenience overloads: `allocate_id()`, `wayland_send(*batch)`, `session()`, `connection()`, `registry()`, `compositor()`, `wm_base()`, `shm_name()`.
+- `registry.jai` — `discover_globals(conn)` performs get_registry + sync roundtrip using MessageBuilder/ReceiveBuffer, returns `[] Global_Info` + registry ID. Context-based overload stores into session. `find_global(globals, name)` / `find_global(name)` lookups. `init_display(conn)` creates wl_display proxy (always ID 1).
 - `shm.jai` — `memfd_create(name, flags)` thin wrapper over Linux syscall for anonymous shared memory.
-- **Design: no inversion of control.** Application owns the event loop, switches on object IDs, decodes events inline with `read_u32`/`read_string`/`read_array`. No callbacks, no dispatch tables, no event queues.
+- **Design: no inversion of control.** Application owns the event loop via `for session() { ... }`, switches on object IDs, decodes events inline with `read_u32`/`read_string`/`read_array`. No callbacks, no dispatch tables, no event queues.
+- **Message-shaped API:** Requests are batched into a `MessageBuilder` (string builder pattern), sent explicitly with `wayland_send`. No hidden flush state.
 - Wire read helpers: `read_string(src) -> string, u32` and `read_array(src) -> [] u8, u32` — mirrors of write_string/write_array.
 
 **Examples** (`examples/`):
 - `hello_globals.jai` — 20 lines, connects and prints all compositor globals. First live test.
-- `hello_window.jai` — ~150 lines, full 6-phase protocol: discover globals, bind compositor/shm/xdg_wm_base, create surface + toplevel, create wl_shm buffer, attach + commit, event loop with ping/pong and close handling. Displays a black 640x480 window.
+- `hello_window.jai` — ~120 lines, message-shaped API: init session, bind shm, create surface/xdg_surface/toplevel via MessageBuilder batches, struct literals with version defaults, `for session()` event loop with automatic ping/pong. Displays a black 640x480 window.
 
 **Tests:**
 - `tests/xml_test.jai`: 22 tests (pull parser, entities, protocol parsing)
 - `tests/generator_test.jai`: 36 tests (naming, enums, events, requests, assembly, end-to-end)
-- `tests/wire_test.jai`: 20 tests (primitive writers/readers, header pack/unpack, string/array read/write, buffer queueing)
-- `tests/marshal_test.jai`: 9 tests (fixed args, fd, string, array, Fixed, empty, constructors)
-- `tests/compile_test.jai`: 9 tests (imports generated module, verifies types/Fd/conn/arg structs compile)
-- **Total: 96 tests across 5 test suites**
+- `tests/wire_test.jai`: 22 tests (primitive writers/readers, header pack/unpack, string/array read/write, MessageBuilder queueing, ReceiveBuffer peek/consume/pop_fd)
+- `tests/marshal_test.jai`: 9 tests (fixed args, fd, string, array, Fixed, empty, constructors — all target MessageBuilder)
+- `tests/compile_test.jai`: 8 tests (imports generated module, verifies types/Fd/arg structs/version defaults compile)
+- **Total: 97 tests across 5 test suites**
 
 ## Jai Toolchain
 
@@ -93,7 +97,7 @@ Jai compiler expected at `~/jai/jai/`. Standard library at `~/jai/jai/modules/`.
 
 ## Wire Protocol Design
 
-**Compile-time marshalling:** The `marshal` macro walks request arg struct fields via `type_info` at compile time and emits type-specific byte-packing code. `#inline` primitive writers ensure zero-overhead — the optimizer sees only raw stores. This is the "Lisp-like macro" pattern from `csv_write_row` in jai-http.
+**Compile-time marshalling:** The `marshal(batch, object_id, opcode, args)` macro walks request arg struct fields via `type_info` at compile time and emits type-specific byte-packing code into the MessageBuilder. `#inline` primitive writers ensure zero-overhead — the optimizer sees only raw stores. This is the "Lisp-like macro" pattern from `csv_write_row` in jai-http.
 
 **Type-to-wire mapping (all 4-byte aligned, native-endian):**
 - `u32`/`s32` → 4 bytes direct
@@ -128,6 +132,8 @@ These edge cases were discovered during the compilation smoke test against all 5
 - `docs/plans/2026-04-03-code-generator-design.md` — Phase 2 code generator design (hybrid approach: typed stubs + shared marshal core)
 - `docs/plans/2026-04-03-code-generator-impl.md` — Phase 2 implementation plan (12 tasks)
 - `docs/plans/2026-04-04-wire-protocol-impl.md` — Phase 3 wire protocol implementation plan (11 tasks)
+- `docs/plans/2026-04-07-noise-reduction-design.md` — Message-shaped API redesign: Connection/MessageBuilder/ReceiveBuffer split
+- `docs/plans/2026-04-07-noise-reduction-impl.md` — Noise reduction implementation plan (10 tasks)
 
 ## Next Steps
 
