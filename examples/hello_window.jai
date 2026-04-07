@@ -17,13 +17,12 @@ main :: () {
     }
     defer end_wayland_session();
 
+    batch: MessageBuilder;
+
     // Bind wl_shm
     shm := Wl_Shm.{ id = allocate_id() };
-    {
-        batch: MessageBuilder;
-        wl_registry_bind(*batch, registry(), shm_name(), "wl_shm", 1, shm.id);
-        wayland_send(*batch);
-    }
+    wl_registry_bind(*batch, registry(), shm_name(), "wl_shm", 1, shm.id);
+    wayland_send(*batch);
 
     // Drain wl_shm.format events
     drain_messages();
@@ -32,15 +31,12 @@ main :: () {
     surface := Wl_Surface.{ id = allocate_id() };
     xdg_surface := Xdg_Surface.{ id = allocate_id() };
     toplevel := Xdg_Toplevel.{ id = allocate_id() };
-    {
-        batch: MessageBuilder;
-        wl_compositor_create_surface(*batch, compositor(), surface.id);
-        xdg_wm_base_get_xdg_surface(*batch, wm_base(), xdg_surface.id, *surface);
-        xdg_surface_get_toplevel(*batch, *xdg_surface, toplevel.id);
-        xdg_toplevel_set_title(*batch, *toplevel, "hello");
-        wl_surface_commit(*batch, *surface);
-        wayland_send(*batch);
-    }
+    wl_compositor_create_surface(*batch, compositor(), surface.id);
+    xdg_wm_base_get_xdg_surface(*batch, wm_base(), xdg_surface.id, *surface);
+    xdg_surface_get_toplevel(*batch, *xdg_surface, toplevel.id);
+    xdg_toplevel_set_title(*batch, *toplevel, "hello");
+    wl_surface_commit(*batch, *surface);
+    wayland_send(*batch);
 
     // Wait for xdg_surface.configure
     configure_serial: u32 = 0;
@@ -66,19 +62,16 @@ main :: () {
 
     pool := Wl_Shm_Pool.{ id = allocate_id() };
     buffer := Wl_Buffer.{ id = allocate_id() };
-    {
-        batch: MessageBuilder;
-        xdg_surface_ack_configure(*batch, *xdg_surface, configure_serial);
-        wl_shm_create_pool(*batch, *shm, pool.id, cast(Fd) fd, cast(s32) BUF_SIZE);
-        wl_shm_pool_create_buffer(*batch, *pool, buffer.id,
-            offset = 0, width = WIDTH, height = HEIGHT,
-            stride = STRIDE, format = cast(u32) Wl_Shm_Format.XRGB8888);
-        wl_shm_pool_destroy(*batch, *pool);
-        wl_surface_attach(*batch, *surface, *buffer, 0, 0);
-        wl_surface_damage_buffer(*batch, *surface, 0, 0, WIDTH, HEIGHT);
-        wl_surface_commit(*batch, *surface);
-        wayland_send(*batch);
-    }
+    xdg_surface_ack_configure(*batch, *xdg_surface, configure_serial);
+    wl_shm_create_pool(*batch, *shm, pool.id, cast(Fd) fd, cast(s32) BUF_SIZE);
+    wl_shm_pool_create_buffer(*batch, *pool, buffer.id,
+        offset = 0, width = WIDTH, height = HEIGHT,
+        stride = STRIDE, format = cast(u32) Wl_Shm_Format.XRGB8888);
+    wl_shm_pool_destroy(*batch, *pool);
+    wl_surface_attach(*batch, *surface, *buffer, 0, 0);
+    wl_surface_damage_buffer(*batch, *surface, 0, 0, WIDTH, HEIGHT);
+    wl_surface_commit(*batch, *surface);
+    wayland_send(*batch);
 
     print("Window displayed. Close the window or press Ctrl+C to exit.\n");
 
