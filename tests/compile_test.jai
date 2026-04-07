@@ -5,7 +5,7 @@ test_types_exist :: () {
     d: Wl_Display;
     assert(d.id == 0);
     s: Wl_Surface;
-    assert(s.version == 0);
+    assert(s.version == WL_SURFACE_INTERFACE.version);
     print("  PASS: test_types_exist\n");
 }
 
@@ -50,12 +50,6 @@ test_fd_type :: () {
     print("  PASS: test_fd_type\n");
 }
 
-test_conn_field :: () {
-    surface: Wl_Surface;
-    assert(surface.conn == null);
-    print("  PASS: test_conn_field\n");
-}
-
 test_request_arg_structs :: () {
     // Verify request arg structs exist and compile
     args: Wl_Surface_Attach_Args;
@@ -75,7 +69,6 @@ main :: () {
     test_descriptors_exist();
     test_xdg_types();
     test_fd_type();
-    test_conn_field();
     test_request_arg_structs();
     print("\nAll tests passed.\n");
 }

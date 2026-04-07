@@ -13,8 +13,7 @@
 //
 Wp_Color_Management_Output_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_COLOR_MANAGEMENT_OUTPUT_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -46,9 +45,9 @@ Wp_Color_Management_Output_V1_Get_Image_Description_Args :: struct {
 // destroy the color management output (destructor)
 // Destroy the color wp_color_management_output_v1 object. This does not
 // affect any remaining protocol objects.
-wp_color_management_output_v1_destroy :: (self: *Wp_Color_Management_Output_V1) {
+wp_color_management_output_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Color_Management_Output_V1) {
     args := Wp_Color_Management_Output_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_COLOR_MANAGEMENT_OUTPUT_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_COLOR_MANAGEMENT_OUTPUT_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -84,9 +83,9 @@ wp_color_management_output_v1_destroy :: (self: *Wp_Color_Management_Output_V1) 
 // wp_image_description_v1.failed event with the low_version cause.
 //
 // Otherwise the object shall immediately deliver the ready event.
-wp_color_management_output_v1_get_image_description :: (self: *Wp_Color_Management_Output_V1, new_id: u32) {
+wp_color_management_output_v1_get_image_description :: (batch: *MessageBuilder, self: *Wp_Color_Management_Output_V1, new_id: u32) {
     args := Wp_Color_Management_Output_V1_Get_Image_Description_Args.{};
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGEMENT_OUTPUT_V1_GET_IMAGE_DESCRIPTION, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGEMENT_OUTPUT_V1_GET_IMAGE_DESCRIPTION, new_id, *args);
 }
 
 WP_COLOR_MANAGEMENT_OUTPUT_V1_INTERFACE :: Interface_Descriptor.{

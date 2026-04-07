@@ -9,8 +9,7 @@
 //
 Xdg_Activation_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_ACTIVATION_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -36,9 +35,9 @@ Xdg_Activation_V1_Activate_Args :: struct {
 //
 // The child objects created via this interface are unaffected and should
 // be destroyed separately.
-xdg_activation_v1_destroy :: (self: *Xdg_Activation_V1) {
+xdg_activation_v1_destroy :: (batch: *MessageBuilder, self: *Xdg_Activation_V1) {
     args := Xdg_Activation_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_ACTIVATION_V1_DESTROY, *args);
+    marshal(batch, self.id, XDG_ACTIVATION_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -46,9 +45,9 @@ xdg_activation_v1_destroy :: (self: *Xdg_Activation_V1) {
 // Creates an xdg_activation_token_v1 object that will provide
 // the initiating client with a unique token for this activation. This
 // token should be offered to the clients to be activated.
-xdg_activation_v1_get_activation_token :: (self: *Xdg_Activation_V1, new_id: u32) {
+xdg_activation_v1_get_activation_token :: (batch: *MessageBuilder, self: *Xdg_Activation_V1, new_id: u32) {
     args := Xdg_Activation_V1_Get_Activation_Token_Args.{};
-    marshal_constructor(self.conn, self.id, XDG_ACTIVATION_V1_GET_ACTIVATION_TOKEN, new_id, *args);
+    marshal_constructor(batch, self.id, XDG_ACTIVATION_V1_GET_ACTIVATION_TOKEN, new_id, *args);
 }
 
 // notify new interaction being available
@@ -62,9 +61,9 @@ xdg_activation_v1_get_activation_token :: (self: *Xdg_Activation_V1, new_id: u32
 //
 // Compositors can ignore unknown activation tokens when an invalid
 // token is passed.
-xdg_activation_v1_activate :: (self: *Xdg_Activation_V1, token: string, surface: *Wl_Surface) {
+xdg_activation_v1_activate :: (batch: *MessageBuilder, self: *Xdg_Activation_V1, token: string, surface: *Wl_Surface) {
     args := Xdg_Activation_V1_Activate_Args.{ token = token, surface = surface.id };
-    marshal(self.conn, self.id, XDG_ACTIVATION_V1_ACTIVATE, *args);
+    marshal(batch, self.id, XDG_ACTIVATION_V1_ACTIVATE, *args);
 }
 
 XDG_ACTIVATION_V1_INTERFACE :: Interface_Descriptor.{

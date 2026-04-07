@@ -30,8 +30,7 @@
 //
 Xdg_Popup :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_POPUP_INTERFACE.version;
 }
 
 // Request opcodes
@@ -98,9 +97,9 @@ Xdg_Popup_Reposition_Args :: struct {
 //
 // If this xdg_popup is not the "topmost" popup, the
 // xdg_wm_base.not_the_topmost_popup protocol error will be sent.
-xdg_popup_destroy :: (self: *Xdg_Popup) {
+xdg_popup_destroy :: (batch: *MessageBuilder, self: *Xdg_Popup) {
     args := Xdg_Popup_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_POPUP_DESTROY, *args);
+    marshal(batch, self.id, XDG_POPUP_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -142,9 +141,9 @@ xdg_popup_destroy :: (self: *Xdg_Popup) {
 // and touch events for all their surfaces as normal (similar to an
 // "owner-events" grab in X11 parlance), while the top most grabbing popup
 // will always have keyboard focus.
-xdg_popup_grab :: (self: *Xdg_Popup, seat: *Wl_Seat, serial: u32) {
+xdg_popup_grab :: (batch: *MessageBuilder, self: *Xdg_Popup, seat: *Wl_Seat, serial: u32) {
     args := Xdg_Popup_Grab_Args.{ seat = seat.id, serial = serial };
-    marshal(self.conn, self.id, XDG_POPUP_GRAB, *args);
+    marshal(batch, self.id, XDG_POPUP_GRAB, *args);
 }
 
 // recalculate the popup's location
@@ -171,9 +170,9 @@ xdg_popup_grab :: (self: *Xdg_Popup, seat: *Wl_Seat, serial: u32) {
 // If the popup is repositioned together with a parent that is being
 // resized, but not in response to a configure event, the client should
 // send an xdg_positioner.set_parent_size request.
-xdg_popup_reposition :: (self: *Xdg_Popup, positioner: *Xdg_Positioner, token: u32) {
+xdg_popup_reposition :: (batch: *MessageBuilder, self: *Xdg_Popup, positioner: *Xdg_Positioner, token: u32) {
     args := Xdg_Popup_Reposition_Args.{ positioner = positioner.id, token = token };
-    marshal(self.conn, self.id, XDG_POPUP_REPOSITION, *args);
+    marshal(batch, self.id, XDG_POPUP_REPOSITION, *args);
 }
 
 XDG_POPUP_INTERFACE :: Interface_Descriptor.{

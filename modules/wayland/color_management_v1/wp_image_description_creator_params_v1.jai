@@ -47,8 +47,7 @@
 //
 Wp_Image_Description_Creator_Params_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -167,9 +166,9 @@ Wp_Image_Description_Creator_Params_V1_Set_Max_Fall_Args :: struct {
 //
 // The resulting image description object does not allow get_information
 // request.
-wp_image_description_creator_params_v1_create :: (self: *Wp_Image_Description_Creator_Params_V1, new_id: u32) {
+wp_image_description_creator_params_v1_create :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, new_id: u32) {
     args := Wp_Image_Description_Creator_Params_V1_Create_Args.{};
-    marshal_constructor(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_CREATE, new_id, *args);
+    marshal_constructor(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_CREATE, new_id, *args);
 }
 
 // named transfer characteristic
@@ -185,9 +184,9 @@ wp_image_description_creator_params_v1_create :: (self: *Wp_Image_Description_Cr
 //
 // If transfer characteristic has already been set on this object, the
 // protocol error already_set is raised.
-wp_image_description_creator_params_v1_set_tf_named :: (self: *Wp_Image_Description_Creator_Params_V1, tf: u32) {
+wp_image_description_creator_params_v1_set_tf_named :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, tf: u32) {
     args := Wp_Image_Description_Creator_Params_V1_Set_Tf_Named_Args.{ tf = tf };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_TF_NAMED, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_TF_NAMED, *args);
 }
 
 // transfer characteristic as a power curve
@@ -209,9 +208,9 @@ wp_image_description_creator_params_v1_set_tf_named :: (self: *Wp_Image_Descript
 // This request can be used when the compositor advertises
 // wp_color_manager_v1.feature.set_tf_power. Otherwise this request raises
 // the protocol error unsupported_feature.
-wp_image_description_creator_params_v1_set_tf_power :: (self: *Wp_Image_Description_Creator_Params_V1, eexp: u32) {
+wp_image_description_creator_params_v1_set_tf_power :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, eexp: u32) {
     args := Wp_Image_Description_Creator_Params_V1_Set_Tf_Power_Args.{ eexp = eexp };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_TF_POWER, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_TF_POWER, *args);
 }
 
 // named primaries
@@ -225,9 +224,9 @@ wp_image_description_creator_params_v1_set_tf_power :: (self: *Wp_Image_Descript
 //
 // If primaries have already been set on this object, the protocol error
 // already_set is raised.
-wp_image_description_creator_params_v1_set_primaries_named :: (self: *Wp_Image_Description_Creator_Params_V1, primaries: u32) {
+wp_image_description_creator_params_v1_set_primaries_named :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, primaries: u32) {
     args := Wp_Image_Description_Creator_Params_V1_Set_Primaries_Named_Args.{ primaries = primaries };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_PRIMARIES_NAMED, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_PRIMARIES_NAMED, *args);
 }
 
 // primaries as chromaticity coordinates
@@ -244,9 +243,9 @@ wp_image_description_creator_params_v1_set_primaries_named :: (self: *Wp_Image_D
 // This request can be used if the compositor advertises
 // wp_color_manager_v1.feature.set_primaries. Otherwise this request raises
 // the protocol error unsupported_feature.
-wp_image_description_creator_params_v1_set_primaries :: (self: *Wp_Image_Description_Creator_Params_V1, r_x: s32, r_y: s32, g_x: s32, g_y: s32, b_x: s32, b_y: s32, w_x: s32, w_y: s32) {
+wp_image_description_creator_params_v1_set_primaries :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, r_x: s32, r_y: s32, g_x: s32, g_y: s32, b_x: s32, b_y: s32, w_x: s32, w_y: s32) {
     args := Wp_Image_Description_Creator_Params_V1_Set_Primaries_Args.{ r_x = r_x, r_y = r_y, g_x = g_x, g_y = g_y, b_x = b_x, b_y = b_y, w_x = w_x, w_y = w_y };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_PRIMARIES, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_PRIMARIES, *args);
 }
 
 // primary color volume luminance range and reference white
@@ -299,9 +298,9 @@ wp_image_description_creator_params_v1_set_primaries :: (self: *Wp_Image_Descrip
 // This request can be used if the compositor advertises
 // wp_color_manager_v1.feature.set_luminances. Otherwise this request
 // raises the protocol error unsupported_feature.
-wp_image_description_creator_params_v1_set_luminances :: (self: *Wp_Image_Description_Creator_Params_V1, min_lum: u32, max_lum: u32, reference_lum: u32) {
+wp_image_description_creator_params_v1_set_luminances :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, min_lum: u32, max_lum: u32, reference_lum: u32) {
     args := Wp_Image_Description_Creator_Params_V1_Set_Luminances_Args.{ min_lum = min_lum, max_lum = max_lum, reference_lum = reference_lum };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_LUMINANCES, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_LUMINANCES, *args);
 }
 
 // mastering display primaries as chromaticity coordinates
@@ -351,9 +350,9 @@ wp_image_description_creator_params_v1_set_luminances :: (self: *Wp_Image_Descri
 // compositor does not support it, the result is implementation defined.
 // Compositors are recommended to detect this case and fail the image
 // description gracefully, but it may as well result in color artifacts.
-wp_image_description_creator_params_v1_set_mastering_display_primaries :: (self: *Wp_Image_Description_Creator_Params_V1, r_x: s32, r_y: s32, g_x: s32, g_y: s32, b_x: s32, b_y: s32, w_x: s32, w_y: s32) {
+wp_image_description_creator_params_v1_set_mastering_display_primaries :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, r_x: s32, r_y: s32, g_x: s32, g_y: s32, b_x: s32, b_y: s32, w_x: s32, w_y: s32) {
     args := Wp_Image_Description_Creator_Params_V1_Set_Mastering_Display_Primaries_Args.{ r_x = r_x, r_y = r_y, g_x = g_x, g_y = g_y, b_x = b_x, b_y = b_y, w_x = w_x, w_y = w_y };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_MASTERING_DISPLAY_PRIMARIES, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_MASTERING_DISPLAY_PRIMARIES, *args);
 }
 
 // display mastering luminance range
@@ -390,18 +389,18 @@ wp_image_description_creator_params_v1_set_mastering_display_primaries :: (self:
 // compositor does not support it, the result is implementation defined.
 // Compositors are recommended to detect this case and fail the image
 // description gracefully, but it may as well result in color artifacts.
-wp_image_description_creator_params_v1_set_mastering_luminance :: (self: *Wp_Image_Description_Creator_Params_V1, min_lum: u32, max_lum: u32) {
+wp_image_description_creator_params_v1_set_mastering_luminance :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, min_lum: u32, max_lum: u32) {
     args := Wp_Image_Description_Creator_Params_V1_Set_Mastering_Luminance_Args.{ min_lum = min_lum, max_lum = max_lum };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_MASTERING_LUMINANCE, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_MASTERING_LUMINANCE, *args);
 }
 
 // maximum content light level
 // Sets the maximum content light level (max_cll) as defined by CTA-861-H.
 //
 // max_cll is undefined by default.
-wp_image_description_creator_params_v1_set_max_cll :: (self: *Wp_Image_Description_Creator_Params_V1, max_cll: u32) {
+wp_image_description_creator_params_v1_set_max_cll :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, max_cll: u32) {
     args := Wp_Image_Description_Creator_Params_V1_Set_Max_Cll_Args.{ max_cll = max_cll };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_MAX_CLL, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_MAX_CLL, *args);
 }
 
 // maximum frame-average light level
@@ -409,9 +408,9 @@ wp_image_description_creator_params_v1_set_max_cll :: (self: *Wp_Image_Descripti
 // CTA-861-H.
 //
 // max_fall is undefined by default.
-wp_image_description_creator_params_v1_set_max_fall :: (self: *Wp_Image_Description_Creator_Params_V1, max_fall: u32) {
+wp_image_description_creator_params_v1_set_max_fall :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Params_V1, max_fall: u32) {
     args := Wp_Image_Description_Creator_Params_V1_Set_Max_Fall_Args.{ max_fall = max_fall };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_MAX_FALL, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_SET_MAX_FALL, *args);
 }
 
 WP_IMAGE_DESCRIPTION_CREATOR_PARAMS_V1_INTERFACE :: Interface_Descriptor.{

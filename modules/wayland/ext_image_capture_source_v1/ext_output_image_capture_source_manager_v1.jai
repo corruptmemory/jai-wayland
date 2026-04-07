@@ -7,8 +7,7 @@
 //
 Ext_Output_Image_Capture_Source_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_OUTPUT_IMAGE_CAPTURE_SOURCE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -28,18 +27,18 @@ Ext_Output_Image_Capture_Source_Manager_V1_Destroy_Args :: struct {
 // will show the same content as the output. Some elements may be omitted,
 // such as cursors and overlays that have been marked as transparent to
 // capturing.
-ext_output_image_capture_source_manager_v1_create_source :: (self: *Ext_Output_Image_Capture_Source_Manager_V1, new_id: u32, output: *Wl_Output) {
+ext_output_image_capture_source_manager_v1_create_source :: (batch: *MessageBuilder, self: *Ext_Output_Image_Capture_Source_Manager_V1, new_id: u32, output: *Wl_Output) {
     args := Ext_Output_Image_Capture_Source_Manager_V1_Create_Source_Args.{ output = output.id };
-    marshal_constructor(self.conn, self.id, EXT_OUTPUT_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_OUTPUT_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, new_id, *args);
 }
 
 // delete this object (destructor)
 // Destroys the manager. This request may be sent at any time by the client
 // and objects created by the manager will remain valid after its
 // destruction.
-ext_output_image_capture_source_manager_v1_destroy :: (self: *Ext_Output_Image_Capture_Source_Manager_V1) {
+ext_output_image_capture_source_manager_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Output_Image_Capture_Source_Manager_V1) {
     args := Ext_Output_Image_Capture_Source_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_OUTPUT_IMAGE_CAPTURE_SOURCE_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_OUTPUT_IMAGE_CAPTURE_SOURCE_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

@@ -31,8 +31,7 @@
 //
 Wp_Linux_Drm_Syncobj_Surface_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -78,9 +77,9 @@ Wp_Linux_Drm_Syncobj_Surface_V1_Set_Release_Point_Args :: struct {
 // set_release_point since the last commit may be discarded by the
 // compositor. Any timeline point set by this object before the last
 // commit will not be affected.
-wp_linux_drm_syncobj_surface_v1_destroy :: (self: *Wp_Linux_Drm_Syncobj_Surface_V1) {
+wp_linux_drm_syncobj_surface_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Linux_Drm_Syncobj_Surface_V1) {
     args := Wp_Linux_Drm_Syncobj_Surface_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -107,9 +106,9 @@ wp_linux_drm_syncobj_surface_v1_destroy :: (self: *Wp_Linux_Drm_Syncobj_Surface_
 // surface commit time there is a pending buffer attached but no pending
 // acquire timeline point set, the no_acquire_point protocol error is
 // raised.
-wp_linux_drm_syncobj_surface_v1_set_acquire_point :: (self: *Wp_Linux_Drm_Syncobj_Surface_V1, timeline: *Wp_Linux_Drm_Syncobj_Timeline_V1, point_hi: u32, point_lo: u32) {
+wp_linux_drm_syncobj_surface_v1_set_acquire_point :: (batch: *MessageBuilder, self: *Wp_Linux_Drm_Syncobj_Surface_V1, timeline: *Wp_Linux_Drm_Syncobj_Timeline_V1, point_hi: u32, point_lo: u32) {
     args := Wp_Linux_Drm_Syncobj_Surface_V1_Set_Acquire_Point_Args.{ timeline = timeline.id, point_hi = point_hi, point_lo = point_lo };
-    marshal(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_SET_ACQUIRE_POINT, *args);
+    marshal(batch, self.id, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_SET_ACQUIRE_POINT, *args);
 }
 
 // set the release timeline point
@@ -156,9 +155,9 @@ wp_linux_drm_syncobj_surface_v1_set_acquire_point :: (self: *Wp_Linux_Drm_Syncob
 // surface commit time there is a pending buffer attached but no pending
 // release timeline point set, the no_release_point protocol error is
 // raised.
-wp_linux_drm_syncobj_surface_v1_set_release_point :: (self: *Wp_Linux_Drm_Syncobj_Surface_V1, timeline: *Wp_Linux_Drm_Syncobj_Timeline_V1, point_hi: u32, point_lo: u32) {
+wp_linux_drm_syncobj_surface_v1_set_release_point :: (batch: *MessageBuilder, self: *Wp_Linux_Drm_Syncobj_Surface_V1, timeline: *Wp_Linux_Drm_Syncobj_Timeline_V1, point_hi: u32, point_lo: u32) {
     args := Wp_Linux_Drm_Syncobj_Surface_V1_Set_Release_Point_Args.{ timeline = timeline.id, point_hi = point_hi, point_lo = point_lo };
-    marshal(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_SET_RELEASE_POINT, *args);
+    marshal(batch, self.id, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_SET_RELEASE_POINT, *args);
 }
 
 WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_INTERFACE :: Interface_Descriptor.{

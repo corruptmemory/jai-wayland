@@ -10,8 +10,7 @@
 //
 Ext_Data_Control_Offer_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_DATA_CONTROL_OFFER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -54,16 +53,16 @@ Ext_Data_Control_Offer_V1_Destroy_Args :: struct {
 // then closes its end, at which point the transfer is complete.
 //
 // This request may happen multiple times for different MIME types.
-ext_data_control_offer_v1_receive :: (self: *Ext_Data_Control_Offer_V1, mime_type: string, fd: Fd) {
+ext_data_control_offer_v1_receive :: (batch: *MessageBuilder, self: *Ext_Data_Control_Offer_V1, mime_type: string, fd: Fd) {
     args := Ext_Data_Control_Offer_V1_Receive_Args.{ mime_type = mime_type, fd = fd };
-    marshal(self.conn, self.id, EXT_DATA_CONTROL_OFFER_V1_RECEIVE, *args);
+    marshal(batch, self.id, EXT_DATA_CONTROL_OFFER_V1_RECEIVE, *args);
 }
 
 // destroy this offer (destructor)
 // Destroys the data offer object.
-ext_data_control_offer_v1_destroy :: (self: *Ext_Data_Control_Offer_V1) {
+ext_data_control_offer_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Data_Control_Offer_V1) {
     args := Ext_Data_Control_Offer_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_DATA_CONTROL_OFFER_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_DATA_CONTROL_OFFER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

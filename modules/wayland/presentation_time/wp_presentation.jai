@@ -12,8 +12,7 @@
 //
 Wp_Presentation :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_PRESENTATION_INTERFACE.version;
 }
 
 // Request opcodes
@@ -58,9 +57,9 @@ Wp_Presentation_Feedback_Args :: struct {
 // Informs the server that the client will no longer be using
 // this protocol object. Existing objects created by this object
 // are not affected.
-wp_presentation_destroy :: (self: *Wp_Presentation) {
+wp_presentation_destroy :: (batch: *MessageBuilder, self: *Wp_Presentation) {
     args := Wp_Presentation_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_PRESENTATION_DESTROY, *args);
+    marshal(batch, self.id, WP_PRESENTATION_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -73,9 +72,9 @@ wp_presentation_destroy :: (self: *Wp_Presentation) {
 //
 // For details on what information is returned, see the
 // presentation_feedback interface.
-wp_presentation_feedback :: (self: *Wp_Presentation, new_id: u32, surface: *Wl_Surface) {
+wp_presentation_feedback :: (batch: *MessageBuilder, self: *Wp_Presentation, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Presentation_Feedback_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_PRESENTATION_FEEDBACK, new_id, *args);
+    marshal_constructor(batch, self.id, WP_PRESENTATION_FEEDBACK, new_id, *args);
 }
 
 WP_PRESENTATION_INTERFACE :: Interface_Descriptor.{

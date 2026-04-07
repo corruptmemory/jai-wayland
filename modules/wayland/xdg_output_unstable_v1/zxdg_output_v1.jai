@@ -15,8 +15,7 @@
 //
 Zxdg_Output_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_OUTPUT_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -78,9 +77,9 @@ Zxdg_Output_V1_Destroy_Args :: struct {
 // destroy the xdg_output object (destructor)
 // Using this request a client can tell the server that it is not
 // going to use the xdg_output object anymore.
-zxdg_output_v1_destroy :: (self: *Zxdg_Output_V1) {
+zxdg_output_v1_destroy :: (batch: *MessageBuilder, self: *Zxdg_Output_V1) {
     args := Zxdg_Output_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_OUTPUT_V1_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_OUTPUT_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

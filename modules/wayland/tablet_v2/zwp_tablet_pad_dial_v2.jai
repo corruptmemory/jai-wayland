@@ -10,8 +10,7 @@
 //
 Zwp_Tablet_Pad_Dial_V2 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_TABLET_PAD_DIAL_V2_INTERFACE.version;
 }
 
 // Request opcodes
@@ -71,16 +70,16 @@ Zwp_Tablet_Pad_Dial_V2_Destroy_Args :: struct {
 // zwp_tablet_pad_group_v2.mode_switch event received for the group of this
 // dial. Requests providing other serials than the most recent one will be
 // ignored.
-zwp_tablet_pad_dial_v2_set_feedback :: (self: *Zwp_Tablet_Pad_Dial_V2, description: string, serial: u32) {
+zwp_tablet_pad_dial_v2_set_feedback :: (batch: *MessageBuilder, self: *Zwp_Tablet_Pad_Dial_V2, description: string, serial: u32) {
     args := Zwp_Tablet_Pad_Dial_V2_Set_Feedback_Args.{ description = description, serial = serial };
-    marshal(self.conn, self.id, ZWP_TABLET_PAD_DIAL_V2_SET_FEEDBACK, *args);
+    marshal(batch, self.id, ZWP_TABLET_PAD_DIAL_V2_SET_FEEDBACK, *args);
 }
 
 // destroy the dial object (destructor)
 // This destroys the client's resource for this dial object.
-zwp_tablet_pad_dial_v2_destroy :: (self: *Zwp_Tablet_Pad_Dial_V2) {
+zwp_tablet_pad_dial_v2_destroy :: (batch: *MessageBuilder, self: *Zwp_Tablet_Pad_Dial_V2) {
     args := Zwp_Tablet_Pad_Dial_V2_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_TABLET_PAD_DIAL_V2_DESTROY, *args);
+    marshal(batch, self.id, ZWP_TABLET_PAD_DIAL_V2_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

@@ -36,8 +36,7 @@
 //
 Zxdg_Surface_V6 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_SURFACE_V6_INTERFACE.version;
 }
 
 // Request opcodes
@@ -97,9 +96,9 @@ Zxdg_Surface_V6_Ack_Configure_Args :: struct {
 // after its role object has been destroyed. If the role object still
 // exists when this request is issued, the zxdg_shell_v6.defunct_surfaces
 // is raised.
-zxdg_surface_v6_destroy :: (self: *Zxdg_Surface_V6) {
+zxdg_surface_v6_destroy :: (batch: *MessageBuilder, self: *Zxdg_Surface_V6) {
     args := Zxdg_Surface_V6_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_SURFACE_V6_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_SURFACE_V6_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -110,9 +109,9 @@ zxdg_surface_v6_destroy :: (self: *Zxdg_Surface_V6) {
 //
 // See the documentation of xdg_toplevel for more details about what an
 // xdg_toplevel is and how it is used.
-zxdg_surface_v6_get_toplevel :: (self: *Zxdg_Surface_V6, new_id: u32) {
+zxdg_surface_v6_get_toplevel :: (batch: *MessageBuilder, self: *Zxdg_Surface_V6, new_id: u32) {
     args := Zxdg_Surface_V6_Get_Toplevel_Args.{};
-    marshal_constructor(self.conn, self.id, ZXDG_SURFACE_V6_GET_TOPLEVEL, new_id, *args);
+    marshal_constructor(batch, self.id, ZXDG_SURFACE_V6_GET_TOPLEVEL, new_id, *args);
 }
 
 // assign the xdg_popup surface role
@@ -122,9 +121,9 @@ zxdg_surface_v6_get_toplevel :: (self: *Zxdg_Surface_V6, new_id: u32) {
 //
 // See the documentation of xdg_popup for more details about what an
 // xdg_popup is and how it is used.
-zxdg_surface_v6_get_popup :: (self: *Zxdg_Surface_V6, new_id: u32, parent: *Zxdg_Surface_V6, positioner: *Zxdg_Positioner_V6) {
+zxdg_surface_v6_get_popup :: (batch: *MessageBuilder, self: *Zxdg_Surface_V6, new_id: u32, parent: *Zxdg_Surface_V6, positioner: *Zxdg_Positioner_V6) {
     args := Zxdg_Surface_V6_Get_Popup_Args.{ parent = parent.id, positioner = positioner.id };
-    marshal_constructor(self.conn, self.id, ZXDG_SURFACE_V6_GET_POPUP, new_id, *args);
+    marshal_constructor(batch, self.id, ZXDG_SURFACE_V6_GET_POPUP, new_id, *args);
 }
 
 // set the new window geometry
@@ -151,9 +150,9 @@ zxdg_surface_v6_get_popup :: (self: *Zxdg_Surface_V6, new_id: u32, parent: *Zxdg
 // the set window geometry clamped to the bounding rectangle of the
 // combined geometry of the surface of the xdg_surface and the associated
 // subsurfaces.
-zxdg_surface_v6_set_window_geometry :: (self: *Zxdg_Surface_V6, x: s32, y: s32, width: s32, height: s32) {
+zxdg_surface_v6_set_window_geometry :: (batch: *MessageBuilder, self: *Zxdg_Surface_V6, x: s32, y: s32, width: s32, height: s32) {
     args := Zxdg_Surface_V6_Set_Window_Geometry_Args.{ x = x, y = y, width = width, height = height };
-    marshal(self.conn, self.id, ZXDG_SURFACE_V6_SET_WINDOW_GEOMETRY, *args);
+    marshal(batch, self.id, ZXDG_SURFACE_V6_SET_WINDOW_GEOMETRY, *args);
 }
 
 // ack a configure event
@@ -179,9 +178,9 @@ zxdg_surface_v6_set_window_geometry :: (self: *Zxdg_Surface_V6, x: s32, y: s32, 
 //
 // If an invalid serial is used, the zxdg_shell_v6.invalid_surface_state
 // error is raised.
-zxdg_surface_v6_ack_configure :: (self: *Zxdg_Surface_V6, serial: u32) {
+zxdg_surface_v6_ack_configure :: (batch: *MessageBuilder, self: *Zxdg_Surface_V6, serial: u32) {
     args := Zxdg_Surface_V6_Ack_Configure_Args.{ serial = serial };
-    marshal(self.conn, self.id, ZXDG_SURFACE_V6_ACK_CONFIGURE, *args);
+    marshal(batch, self.id, ZXDG_SURFACE_V6_ACK_CONFIGURE, *args);
 }
 
 ZXDG_SURFACE_V6_INTERFACE :: Interface_Descriptor.{

@@ -26,8 +26,7 @@
 //
 Zwp_Tablet_Tool_V2 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_TABLET_TOOL_V2_INTERFACE.version;
 }
 
 // Request opcodes
@@ -304,16 +303,16 @@ Zwp_Tablet_Tool_V2_Destroy_Args :: struct {
 // zwp_tablet_tool_v2. If the surface already has another role or has
 // previously been used as cursor surface for a different tool, a
 // protocol error is raised.
-zwp_tablet_tool_v2_set_cursor :: (self: *Zwp_Tablet_Tool_V2, serial: u32, surface: *Wl_Surface, hotspot_x: s32, hotspot_y: s32) {
+zwp_tablet_tool_v2_set_cursor :: (batch: *MessageBuilder, self: *Zwp_Tablet_Tool_V2, serial: u32, surface: *Wl_Surface, hotspot_x: s32, hotspot_y: s32) {
     args := Zwp_Tablet_Tool_V2_Set_Cursor_Args.{ serial = serial, surface = surface.id, hotspot_x = hotspot_x, hotspot_y = hotspot_y };
-    marshal(self.conn, self.id, ZWP_TABLET_TOOL_V2_SET_CURSOR, *args);
+    marshal(batch, self.id, ZWP_TABLET_TOOL_V2_SET_CURSOR, *args);
 }
 
 // destroy the tool object (destructor)
 // This destroys the client's resource for this tool object.
-zwp_tablet_tool_v2_destroy :: (self: *Zwp_Tablet_Tool_V2) {
+zwp_tablet_tool_v2_destroy :: (batch: *MessageBuilder, self: *Zwp_Tablet_Tool_V2) {
     args := Zwp_Tablet_Tool_V2_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_TABLET_TOOL_V2_DESTROY, *args);
+    marshal(batch, self.id, ZWP_TABLET_TOOL_V2_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

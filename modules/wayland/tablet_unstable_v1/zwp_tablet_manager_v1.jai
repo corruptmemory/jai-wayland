@@ -9,8 +9,7 @@
 //
 Zwp_Tablet_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_TABLET_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -28,17 +27,17 @@ Zwp_Tablet_Manager_V1_Destroy_Args :: struct {
 // get the tablet seat
 // Get the wp_tablet_seat object for the given seat. This object
 // provides access to all graphics tablets in this seat.
-zwp_tablet_manager_v1_get_tablet_seat :: (self: *Zwp_Tablet_Manager_V1, new_id: u32, seat: *Wl_Seat) {
+zwp_tablet_manager_v1_get_tablet_seat :: (batch: *MessageBuilder, self: *Zwp_Tablet_Manager_V1, new_id: u32, seat: *Wl_Seat) {
     args := Zwp_Tablet_Manager_V1_Get_Tablet_Seat_Args.{ seat = seat.id };
-    marshal_constructor(self.conn, self.id, ZWP_TABLET_MANAGER_V1_GET_TABLET_SEAT, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_TABLET_MANAGER_V1_GET_TABLET_SEAT, new_id, *args);
 }
 
 // release the memory for the tablet manager object (destructor)
 // Destroy the wp_tablet_manager object. Objects created from this
 // object are unaffected and should be destroyed separately.
-zwp_tablet_manager_v1_destroy :: (self: *Zwp_Tablet_Manager_V1) {
+zwp_tablet_manager_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Tablet_Manager_V1) {
     args := Zwp_Tablet_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_TABLET_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_TABLET_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

@@ -11,8 +11,7 @@
 //
 Ext_Background_Effect_Surface_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_BACKGROUND_EFFECT_SURFACE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -35,9 +34,9 @@ Ext_Background_Effect_Surface_V1_Set_Blur_Region_Args :: struct {
 // release the blur object (destructor)
 // Informs the server that the client will no longer be using this protocol
 // object. The effect regions will be removed on the next commit.
-ext_background_effect_surface_v1_destroy :: (self: *Ext_Background_Effect_Surface_V1) {
+ext_background_effect_surface_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Background_Effect_Surface_V1) {
     args := Ext_Background_Effect_Surface_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_BACKGROUND_EFFECT_SURFACE_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_BACKGROUND_EFFECT_SURFACE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -59,9 +58,9 @@ ext_background_effect_surface_v1_destroy :: (self: *Ext_Background_Effect_Surfac
 //
 // If the associated surface has been destroyed, the surface_destroyed
 // error will be raised.
-ext_background_effect_surface_v1_set_blur_region :: (self: *Ext_Background_Effect_Surface_V1, region: *Wl_Region) {
+ext_background_effect_surface_v1_set_blur_region :: (batch: *MessageBuilder, self: *Ext_Background_Effect_Surface_V1, region: *Wl_Region) {
     args := Ext_Background_Effect_Surface_V1_Set_Blur_Region_Args.{ region = region.id };
-    marshal(self.conn, self.id, EXT_BACKGROUND_EFFECT_SURFACE_V1_SET_BLUR_REGION, *args);
+    marshal(batch, self.id, EXT_BACKGROUND_EFFECT_SURFACE_V1_SET_BLUR_REGION, *args);
 }
 
 EXT_BACKGROUND_EFFECT_SURFACE_V1_INTERFACE :: Interface_Descriptor.{

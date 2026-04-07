@@ -9,8 +9,7 @@
 //
 Zxdg_Importer_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_IMPORTER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -28,9 +27,9 @@ Zxdg_Importer_V1_Import_Args :: struct {
 // destroy the xdg_importer object (destructor)
 // Notify the compositor that the xdg_importer object will no longer be
 // used.
-zxdg_importer_v1_destroy :: (self: *Zxdg_Importer_V1) {
+zxdg_importer_v1_destroy :: (batch: *MessageBuilder, self: *Zxdg_Importer_V1) {
     args := Zxdg_Importer_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_IMPORTER_V1_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_IMPORTER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -40,9 +39,9 @@ zxdg_importer_v1_destroy :: (self: *Zxdg_Importer_V1) {
 // called, a new xdg_imported object will be created. This new object
 // represents the imported surface, and the importing client can
 // manipulate its relationship using it. See xdg_imported for details.
-zxdg_importer_v1_import :: (self: *Zxdg_Importer_V1, new_id: u32, handle: string) {
+zxdg_importer_v1_import :: (batch: *MessageBuilder, self: *Zxdg_Importer_V1, new_id: u32, handle: string) {
     args := Zxdg_Importer_V1_Import_Args.{ handle = handle };
-    marshal_constructor(self.conn, self.id, ZXDG_IMPORTER_V1_IMPORT, new_id, *args);
+    marshal_constructor(batch, self.id, ZXDG_IMPORTER_V1_IMPORT, new_id, *args);
 }
 
 ZXDG_IMPORTER_V1_INTERFACE :: Interface_Descriptor.{

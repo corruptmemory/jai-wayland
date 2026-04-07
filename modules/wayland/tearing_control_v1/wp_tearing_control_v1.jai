@@ -14,8 +14,7 @@
 //
 Wp_Tearing_Control_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_TEARING_CONTROL_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -45,17 +44,17 @@ Wp_Tearing_Control_V1_Destroy_Args :: struct {
 // The compositor is free to dynamically respect or ignore this hint based
 // on various conditions like hardware capabilities, surface state and
 // user preferences.
-wp_tearing_control_v1_set_presentation_hint :: (self: *Wp_Tearing_Control_V1, hint: u32) {
+wp_tearing_control_v1_set_presentation_hint :: (batch: *MessageBuilder, self: *Wp_Tearing_Control_V1, hint: u32) {
     args := Wp_Tearing_Control_V1_Set_Presentation_Hint_Args.{ hint = hint };
-    marshal(self.conn, self.id, WP_TEARING_CONTROL_V1_SET_PRESENTATION_HINT, *args);
+    marshal(batch, self.id, WP_TEARING_CONTROL_V1_SET_PRESENTATION_HINT, *args);
 }
 
 // destroy tearing control object (destructor)
 // Destroy this surface tearing object and revert the presentation hint to
 // vsync. The change will be applied on the next wl_surface.commit.
-wp_tearing_control_v1_destroy :: (self: *Wp_Tearing_Control_V1) {
+wp_tearing_control_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Tearing_Control_V1) {
     args := Wp_Tearing_Control_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_TEARING_CONTROL_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_TEARING_CONTROL_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

@@ -14,8 +14,7 @@
 //
 Wp_Drm_Lease_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_DRM_LEASE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -56,9 +55,9 @@ Wp_Drm_Lease_V1_Destroy_Args :: struct {
 // Upon destruction, the compositor should advertise the connector for
 // leasing again by sending the connector event through the
 // wp_drm_lease_device_v1 interface.
-wp_drm_lease_v1_destroy :: (self: *Wp_Drm_Lease_V1) {
+wp_drm_lease_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Drm_Lease_V1) {
     args := Wp_Drm_Lease_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_DRM_LEASE_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_DRM_LEASE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

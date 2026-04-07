@@ -18,8 +18,7 @@
 //
 Zwp_Idle_Inhibitor_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_IDLE_INHIBITOR_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -31,9 +30,9 @@ Zwp_Idle_Inhibitor_V1_Destroy_Args :: struct {
 
 // destroy the idle inhibitor object (destructor)
 // Remove the inhibitor effect from the associated wl_surface.
-zwp_idle_inhibitor_v1_destroy :: (self: *Zwp_Idle_Inhibitor_V1) {
+zwp_idle_inhibitor_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Idle_Inhibitor_V1) {
     args := Zwp_Idle_Inhibitor_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_IDLE_INHIBITOR_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_IDLE_INHIBITOR_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

@@ -16,8 +16,7 @@
 //
 Wp_Security_Context_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_SECURITY_CONTEXT_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -57,9 +56,9 @@ Wp_Security_Context_V1_Commit_Args :: struct {
 
 // destroy the security context object (destructor)
 // Destroy the security context object.
-wp_security_context_v1_destroy :: (self: *Wp_Security_Context_V1) {
+wp_security_context_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Security_Context_V1) {
     args := Wp_Security_Context_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_SECURITY_CONTEXT_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_SECURITY_CONTEXT_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -72,9 +71,9 @@ wp_security_context_v1_destroy :: (self: *Wp_Security_Context_V1) {
 //
 // It is a protocol error to call this request twice. The already_set
 // error is sent in this case.
-wp_security_context_v1_set_sandbox_engine :: (self: *Wp_Security_Context_V1, name: string) {
+wp_security_context_v1_set_sandbox_engine :: (batch: *MessageBuilder, self: *Wp_Security_Context_V1, name: string) {
     args := Wp_Security_Context_V1_Set_Sandbox_Engine_Args.{ name = name };
-    marshal(self.conn, self.id, WP_SECURITY_CONTEXT_V1_SET_SANDBOX_ENGINE, *args);
+    marshal(batch, self.id, WP_SECURITY_CONTEXT_V1_SET_SANDBOX_ENGINE, *args);
 }
 
 // set the application ID
@@ -91,9 +90,9 @@ wp_security_context_v1_set_sandbox_engine :: (self: *Wp_Security_Context_V1, nam
 //
 // It is a protocol error to call this request twice. The already_set
 // error is sent in this case.
-wp_security_context_v1_set_app_id :: (self: *Wp_Security_Context_V1, app_id: string) {
+wp_security_context_v1_set_app_id :: (batch: *MessageBuilder, self: *Wp_Security_Context_V1, app_id: string) {
     args := Wp_Security_Context_V1_Set_App_Id_Args.{ app_id = app_id };
-    marshal(self.conn, self.id, WP_SECURITY_CONTEXT_V1_SET_APP_ID, *args);
+    marshal(batch, self.id, WP_SECURITY_CONTEXT_V1_SET_APP_ID, *args);
 }
 
 // set the instance ID
@@ -108,9 +107,9 @@ wp_security_context_v1_set_app_id :: (self: *Wp_Security_Context_V1, app_id: str
 //
 // It is a protocol error to call this request twice. The already_set
 // error is sent in this case.
-wp_security_context_v1_set_instance_id :: (self: *Wp_Security_Context_V1, instance_id: string) {
+wp_security_context_v1_set_instance_id :: (batch: *MessageBuilder, self: *Wp_Security_Context_V1, instance_id: string) {
     args := Wp_Security_Context_V1_Set_Instance_Id_Args.{ instance_id = instance_id };
-    marshal(self.conn, self.id, WP_SECURITY_CONTEXT_V1_SET_INSTANCE_ID, *args);
+    marshal(batch, self.id, WP_SECURITY_CONTEXT_V1_SET_INSTANCE_ID, *args);
 }
 
 // register the security context
@@ -124,9 +123,9 @@ wp_security_context_v1_set_instance_id :: (self: *Wp_Security_Context_V1, instan
 //
 // It's a protocol error to send any request other than "destroy" after
 // this request. In this case, the already_used error is sent.
-wp_security_context_v1_commit :: (self: *Wp_Security_Context_V1) {
+wp_security_context_v1_commit :: (batch: *MessageBuilder, self: *Wp_Security_Context_V1) {
     args := Wp_Security_Context_V1_Commit_Args.{};
-    marshal(self.conn, self.id, WP_SECURITY_CONTEXT_V1_COMMIT, *args);
+    marshal(batch, self.id, WP_SECURITY_CONTEXT_V1_COMMIT, *args);
 }
 
 WP_SECURITY_CONTEXT_V1_INTERFACE :: Interface_Descriptor.{

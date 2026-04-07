@@ -8,8 +8,7 @@
 //
 Zxdg_Exporter_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_EXPORTER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -27,9 +26,9 @@ Zxdg_Exporter_V1_Export_Args :: struct {
 // destroy the xdg_exporter object (destructor)
 // Notify the compositor that the xdg_exporter object will no longer be
 // used.
-zxdg_exporter_v1_destroy :: (self: *Zxdg_Exporter_V1) {
+zxdg_exporter_v1_destroy :: (batch: *MessageBuilder, self: *Zxdg_Exporter_V1) {
     args := Zxdg_Exporter_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_EXPORTER_V1_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_EXPORTER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -42,9 +41,9 @@ zxdg_exporter_v1_destroy :: (self: *Zxdg_Exporter_V1) {
 // A surface may be exported multiple times, and each exported handle may
 // be used to create an xdg_imported multiple times. Only xdg_surface
 // surfaces may be exported.
-zxdg_exporter_v1_export :: (self: *Zxdg_Exporter_V1, new_id: u32, surface: *Wl_Surface) {
+zxdg_exporter_v1_export :: (batch: *MessageBuilder, self: *Zxdg_Exporter_V1, new_id: u32, surface: *Wl_Surface) {
     args := Zxdg_Exporter_V1_Export_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, ZXDG_EXPORTER_V1_EXPORT, new_id, *args);
+    marshal_constructor(batch, self.id, ZXDG_EXPORTER_V1_EXPORT, new_id, *args);
 }
 
 ZXDG_EXPORTER_V1_INTERFACE :: Interface_Descriptor.{

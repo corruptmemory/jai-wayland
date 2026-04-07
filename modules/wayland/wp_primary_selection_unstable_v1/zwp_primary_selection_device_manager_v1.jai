@@ -10,8 +10,7 @@
 //
 Zwp_Primary_Selection_Device_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -32,23 +31,23 @@ Zwp_Primary_Selection_Device_Manager_V1_Destroy_Args :: struct {
 
 // create a new primary selection source
 // Create a new primary selection source.
-zwp_primary_selection_device_manager_v1_create_source :: (self: *Zwp_Primary_Selection_Device_Manager_V1, new_id: u32) {
+zwp_primary_selection_device_manager_v1_create_source :: (batch: *MessageBuilder, self: *Zwp_Primary_Selection_Device_Manager_V1, new_id: u32) {
     args := Zwp_Primary_Selection_Device_Manager_V1_Create_Source_Args.{};
-    marshal_constructor(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_CREATE_SOURCE, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_CREATE_SOURCE, new_id, *args);
 }
 
 // create a new primary selection device
 // Create a new data device for a given seat.
-zwp_primary_selection_device_manager_v1_get_device :: (self: *Zwp_Primary_Selection_Device_Manager_V1, new_id: u32, seat: *Wl_Seat) {
+zwp_primary_selection_device_manager_v1_get_device :: (batch: *MessageBuilder, self: *Zwp_Primary_Selection_Device_Manager_V1, new_id: u32, seat: *Wl_Seat) {
     args := Zwp_Primary_Selection_Device_Manager_V1_Get_Device_Args.{ seat = seat.id };
-    marshal_constructor(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_GET_DEVICE, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_GET_DEVICE, new_id, *args);
 }
 
 // destroy the primary selection device manager (destructor)
 // Destroy the primary selection device manager.
-zwp_primary_selection_device_manager_v1_destroy :: (self: *Zwp_Primary_Selection_Device_Manager_V1) {
+zwp_primary_selection_device_manager_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Primary_Selection_Device_Manager_V1) {
     args := Zwp_Primary_Selection_Device_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_PRIMARY_SELECTION_DEVICE_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

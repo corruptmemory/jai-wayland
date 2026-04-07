@@ -31,8 +31,7 @@
 //
 Zwp_Linux_Dmabuf_Feedback_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_LINUX_DMABUF_FEEDBACK_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -113,9 +112,9 @@ Zwp_Linux_Dmabuf_Feedback_V1_Destroy_Args :: struct {
 // destroy the feedback object (destructor)
 // Using this request a client can tell the server that it is not going to
 // use the wp_linux_dmabuf_feedback object anymore.
-zwp_linux_dmabuf_feedback_v1_destroy :: (self: *Zwp_Linux_Dmabuf_Feedback_V1) {
+zwp_linux_dmabuf_feedback_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Linux_Dmabuf_Feedback_V1) {
     args := Zwp_Linux_Dmabuf_Feedback_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_LINUX_DMABUF_FEEDBACK_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_LINUX_DMABUF_FEEDBACK_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

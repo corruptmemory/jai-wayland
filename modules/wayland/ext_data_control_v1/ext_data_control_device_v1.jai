@@ -9,8 +9,7 @@
 //
 Ext_Data_Control_Device_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_DATA_CONTROL_DEVICE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -83,16 +82,16 @@ Ext_Data_Control_Device_V1_Set_Primary_Selection_Args :: struct {
 // source triggers the used_source protocol error.
 //
 // To unset the selection, set the source to NULL.
-ext_data_control_device_v1_set_selection :: (self: *Ext_Data_Control_Device_V1, source: *Ext_Data_Control_Source_V1) {
+ext_data_control_device_v1_set_selection :: (batch: *MessageBuilder, self: *Ext_Data_Control_Device_V1, source: *Ext_Data_Control_Source_V1) {
     args := Ext_Data_Control_Device_V1_Set_Selection_Args.{ source = source.id };
-    marshal(self.conn, self.id, EXT_DATA_CONTROL_DEVICE_V1_SET_SELECTION, *args);
+    marshal(batch, self.id, EXT_DATA_CONTROL_DEVICE_V1_SET_SELECTION, *args);
 }
 
 // destroy this data device (destructor)
 // Destroys the data device object.
-ext_data_control_device_v1_destroy :: (self: *Ext_Data_Control_Device_V1) {
+ext_data_control_device_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Data_Control_Device_V1) {
     args := Ext_Data_Control_Device_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_DATA_CONTROL_DEVICE_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_DATA_CONTROL_DEVICE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -108,9 +107,9 @@ ext_data_control_device_v1_destroy :: (self: *Ext_Data_Control_Device_V1) {
 //
 // The compositor will ignore this request if it does not support primary
 // selection.
-ext_data_control_device_v1_set_primary_selection :: (self: *Ext_Data_Control_Device_V1, source: *Ext_Data_Control_Source_V1) {
+ext_data_control_device_v1_set_primary_selection :: (batch: *MessageBuilder, self: *Ext_Data_Control_Device_V1, source: *Ext_Data_Control_Source_V1) {
     args := Ext_Data_Control_Device_V1_Set_Primary_Selection_Args.{ source = source.id };
-    marshal(self.conn, self.id, EXT_DATA_CONTROL_DEVICE_V1_SET_PRIMARY_SELECTION, *args);
+    marshal(batch, self.id, EXT_DATA_CONTROL_DEVICE_V1_SET_PRIMARY_SELECTION, *args);
 }
 
 EXT_DATA_CONTROL_DEVICE_V1_INTERFACE :: Interface_Descriptor.{

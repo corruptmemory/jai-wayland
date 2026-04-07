@@ -7,8 +7,7 @@
 //
 Zwp_Text_Input_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_TEXT_INPUT_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -20,9 +19,9 @@ Zwp_Text_Input_Manager_V1_Create_Text_Input_Args :: struct {
 
 // create text input
 // Creates a new text_input object.
-zwp_text_input_manager_v1_create_text_input :: (self: *Zwp_Text_Input_Manager_V1, new_id: u32) {
+zwp_text_input_manager_v1_create_text_input :: (batch: *MessageBuilder, self: *Zwp_Text_Input_Manager_V1, new_id: u32) {
     args := Zwp_Text_Input_Manager_V1_Create_Text_Input_Args.{};
-    marshal_constructor(self.conn, self.id, ZWP_TEXT_INPUT_MANAGER_V1_CREATE_TEXT_INPUT, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_TEXT_INPUT_MANAGER_V1_CREATE_TEXT_INPUT, new_id, *args);
 }
 
 ZWP_TEXT_INPUT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

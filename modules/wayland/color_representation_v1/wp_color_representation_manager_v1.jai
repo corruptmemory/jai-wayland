@@ -11,8 +11,7 @@
 //
 Wp_Color_Representation_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_COLOR_REPRESENTATION_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -68,9 +67,9 @@ Wp_Color_Representation_Manager_V1_Get_Surface_Args :: struct {
 // destroy the manager (destructor)
 // Destroy the wp_color_representation_manager_v1 object. This does not
 // affect any other objects in any way.
-wp_color_representation_manager_v1_destroy :: (self: *Wp_Color_Representation_Manager_V1) {
+wp_color_representation_manager_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Color_Representation_Manager_V1) {
     args := Wp_Color_Representation_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_COLOR_REPRESENTATION_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_COLOR_REPRESENTATION_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -82,9 +81,9 @@ wp_color_representation_manager_v1_destroy :: (self: *Wp_Color_Representation_Ma
 // the given wl_surface.
 //
 // See the wp_color_representation_surface_v1 interface for more details.
-wp_color_representation_manager_v1_get_surface :: (self: *Wp_Color_Representation_Manager_V1, new_id: u32, surface: *Wl_Surface) {
+wp_color_representation_manager_v1_get_surface :: (batch: *MessageBuilder, self: *Wp_Color_Representation_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Color_Representation_Manager_V1_Get_Surface_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_COLOR_REPRESENTATION_MANAGER_V1_GET_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_REPRESENTATION_MANAGER_V1_GET_SURFACE, new_id, *args);
 }
 
 WP_COLOR_REPRESENTATION_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

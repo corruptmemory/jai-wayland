@@ -22,8 +22,7 @@
 //
 Zwp_Linux_Buffer_Params_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_LINUX_BUFFER_PARAMS_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -113,9 +112,9 @@ Zwp_Linux_Buffer_Params_V1_Create_Immed_Args :: struct {
 // delete this object, used or not (destructor)
 // Cleans up the temporary data sent to the server for dmabuf-based
 // wl_buffer creation.
-zwp_linux_buffer_params_v1_destroy :: (self: *Zwp_Linux_Buffer_Params_V1) {
+zwp_linux_buffer_params_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Linux_Buffer_Params_V1) {
     args := Zwp_Linux_Buffer_Params_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -139,9 +138,9 @@ zwp_linux_buffer_params_v1_destroy :: (self: *Zwp_Linux_Buffer_Params_V1) {
 // This request raises the PLANE_IDX error if plane_idx is too large.
 // The error PLANE_SET is raised if attempting to set a plane that
 // was already set.
-zwp_linux_buffer_params_v1_add :: (self: *Zwp_Linux_Buffer_Params_V1, fd: Fd, plane_idx: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) {
+zwp_linux_buffer_params_v1_add :: (batch: *MessageBuilder, self: *Zwp_Linux_Buffer_Params_V1, fd: Fd, plane_idx: u32, offset: u32, stride: u32, modifier_hi: u32, modifier_lo: u32) {
     args := Zwp_Linux_Buffer_Params_V1_Add_Args.{ fd = fd, plane_idx = plane_idx, offset = offset, stride = stride, modifier_hi = modifier_hi, modifier_lo = modifier_lo };
-    marshal(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_ADD, *args);
+    marshal(batch, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_ADD, *args);
 }
 
 // create a wl_buffer from the given dmabufs
@@ -204,9 +203,9 @@ zwp_linux_buffer_params_v1_add :: (self: *Zwp_Linux_Buffer_Params_V1, fd: Fd, pl
 //
 // It is not mandatory to issue 'create'. If a client wants to
 // cancel the buffer creation, it can just destroy this object.
-zwp_linux_buffer_params_v1_create :: (self: *Zwp_Linux_Buffer_Params_V1, width: s32, height: s32, format: u32, flags: u32) {
+zwp_linux_buffer_params_v1_create :: (batch: *MessageBuilder, self: *Zwp_Linux_Buffer_Params_V1, width: s32, height: s32, format: u32, flags: u32) {
     args := Zwp_Linux_Buffer_Params_V1_Create_Args.{ width = width, height = height, format = format, flags = flags };
-    marshal(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE, *args);
+    marshal(batch, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE, *args);
 }
 
 // immediately create a wl_buffer from the given dmabufs
@@ -233,9 +232,9 @@ zwp_linux_buffer_params_v1_create :: (self: *Zwp_Linux_Buffer_Params_V1, width: 
 //
 // This takes the same arguments as a 'create' request, and obeys the
 // same restrictions.
-zwp_linux_buffer_params_v1_create_immed :: (self: *Zwp_Linux_Buffer_Params_V1, new_id: u32, width: s32, height: s32, format: u32, flags: u32) {
+zwp_linux_buffer_params_v1_create_immed :: (batch: *MessageBuilder, self: *Zwp_Linux_Buffer_Params_V1, new_id: u32, width: s32, height: s32, format: u32, flags: u32) {
     args := Zwp_Linux_Buffer_Params_V1_Create_Immed_Args.{ width = width, height = height, format = format, flags = flags };
-    marshal_constructor(self.conn, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE_IMMED, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_LINUX_BUFFER_PARAMS_V1_CREATE_IMMED, new_id, *args);
 }
 
 ZWP_LINUX_BUFFER_PARAMS_V1_INTERFACE :: Interface_Descriptor.{

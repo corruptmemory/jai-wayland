@@ -10,8 +10,7 @@
 //
 Ext_Idle_Notifier_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_IDLE_NOTIFIER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -36,9 +35,9 @@ Ext_Idle_Notifier_V1_Get_Input_Idle_Notification_Args :: struct {
 // destroy the manager (destructor)
 // Destroy the manager object. All objects created via this interface
 // remain valid.
-ext_idle_notifier_v1_destroy :: (self: *Ext_Idle_Notifier_V1) {
+ext_idle_notifier_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Idle_Notifier_V1) {
     args := Ext_Idle_Notifier_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_IDLE_NOTIFIER_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_IDLE_NOTIFIER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -51,9 +50,9 @@ ext_idle_notifier_v1_destroy :: (self: *Ext_Idle_Notifier_V1) {
 //
 // A zero timeout is valid and means the client wants to be notified as
 // soon as possible when the seat is inactive.
-ext_idle_notifier_v1_get_idle_notification :: (self: *Ext_Idle_Notifier_V1, new_id: u32, timeout: u32, seat: *Wl_Seat) {
+ext_idle_notifier_v1_get_idle_notification :: (batch: *MessageBuilder, self: *Ext_Idle_Notifier_V1, new_id: u32, timeout: u32, seat: *Wl_Seat) {
     args := Ext_Idle_Notifier_V1_Get_Idle_Notification_Args.{ timeout = timeout, seat = seat.id };
-    marshal_constructor(self.conn, self.id, EXT_IDLE_NOTIFIER_V1_GET_IDLE_NOTIFICATION, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_IDLE_NOTIFIER_V1_GET_IDLE_NOTIFICATION, new_id, *args);
 }
 
 // create a notification object
@@ -67,9 +66,9 @@ ext_idle_notifier_v1_get_idle_notification :: (self: *Ext_Idle_Notifier_V1, new_
 //
 // A zero timeout is valid and means the client wants to be notified as
 // soon as possible when the seat is inactive.
-ext_idle_notifier_v1_get_input_idle_notification :: (self: *Ext_Idle_Notifier_V1, new_id: u32, timeout: u32, seat: *Wl_Seat) {
+ext_idle_notifier_v1_get_input_idle_notification :: (batch: *MessageBuilder, self: *Ext_Idle_Notifier_V1, new_id: u32, timeout: u32, seat: *Wl_Seat) {
     args := Ext_Idle_Notifier_V1_Get_Input_Idle_Notification_Args.{ timeout = timeout, seat = seat.id };
-    marshal_constructor(self.conn, self.id, EXT_IDLE_NOTIFIER_V1_GET_INPUT_IDLE_NOTIFICATION, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_IDLE_NOTIFIER_V1_GET_INPUT_IDLE_NOTIFICATION, new_id, *args);
 }
 
 EXT_IDLE_NOTIFIER_V1_INTERFACE :: Interface_Descriptor.{

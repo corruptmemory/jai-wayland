@@ -17,8 +17,7 @@
 //
 Xdg_Wm_Dialog_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_WM_DIALOG_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -41,9 +40,9 @@ Xdg_Wm_Dialog_V1_Get_Xdg_Dialog_Args :: struct {
 // destroy the dialog manager object (destructor)
 // Destroys the xdg_wm_dialog_v1 object. This does not affect
 // the xdg_dialog_v1 objects generated through it.
-xdg_wm_dialog_v1_destroy :: (self: *Xdg_Wm_Dialog_V1) {
+xdg_wm_dialog_v1_destroy :: (batch: *MessageBuilder, self: *Xdg_Wm_Dialog_V1) {
     args := Xdg_Wm_Dialog_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_WM_DIALOG_V1_DESTROY, *args);
+    marshal(batch, self.id, XDG_WM_DIALOG_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -53,9 +52,9 @@ xdg_wm_dialog_v1_destroy :: (self: *Xdg_Wm_Dialog_V1) {
 //
 // Compositors must raise an already_used error if clients attempt to
 // create multiple xdg_dialog_v1 objects for the same xdg_toplevel.
-xdg_wm_dialog_v1_get_xdg_dialog :: (self: *Xdg_Wm_Dialog_V1, new_id: u32, toplevel: *Xdg_Toplevel) {
+xdg_wm_dialog_v1_get_xdg_dialog :: (batch: *MessageBuilder, self: *Xdg_Wm_Dialog_V1, new_id: u32, toplevel: *Xdg_Toplevel) {
     args := Xdg_Wm_Dialog_V1_Get_Xdg_Dialog_Args.{ toplevel = toplevel.id };
-    marshal_constructor(self.conn, self.id, XDG_WM_DIALOG_V1_GET_XDG_DIALOG, new_id, *args);
+    marshal_constructor(batch, self.id, XDG_WM_DIALOG_V1_GET_XDG_DIALOG, new_id, *args);
 }
 
 XDG_WM_DIALOG_V1_INTERFACE :: Interface_Descriptor.{

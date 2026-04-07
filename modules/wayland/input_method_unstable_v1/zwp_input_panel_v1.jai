@@ -7,8 +7,7 @@
 //
 Zwp_Input_Panel_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_INPUT_PANEL_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -19,9 +18,9 @@ Zwp_Input_Panel_V1_Get_Input_Panel_Surface_Args :: struct {
 }
 
 
-zwp_input_panel_v1_get_input_panel_surface :: (self: *Zwp_Input_Panel_V1, new_id: u32, surface: *Wl_Surface) {
+zwp_input_panel_v1_get_input_panel_surface :: (batch: *MessageBuilder, self: *Zwp_Input_Panel_V1, new_id: u32, surface: *Wl_Surface) {
     args := Zwp_Input_Panel_V1_Get_Input_Panel_Surface_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, ZWP_INPUT_PANEL_V1_GET_INPUT_PANEL_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_INPUT_PANEL_V1_GET_INPUT_PANEL_SURFACE, new_id, *args);
 }
 
 ZWP_INPUT_PANEL_V1_INTERFACE :: Interface_Descriptor.{

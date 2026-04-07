@@ -22,8 +22,7 @@
 //
 Zwp_Pointer_Gestures_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_POINTER_GESTURES_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -51,34 +50,34 @@ Zwp_Pointer_Gestures_V1_Get_Hold_Gesture_Args :: struct {
 // get swipe gesture
 // Create a swipe gesture object. See the
 // wl_pointer_gesture_swipe interface for details.
-zwp_pointer_gestures_v1_get_swipe_gesture :: (self: *Zwp_Pointer_Gestures_V1, new_id: u32, pointer: *Wl_Pointer) {
+zwp_pointer_gestures_v1_get_swipe_gesture :: (batch: *MessageBuilder, self: *Zwp_Pointer_Gestures_V1, new_id: u32, pointer: *Wl_Pointer) {
     args := Zwp_Pointer_Gestures_V1_Get_Swipe_Gesture_Args.{ pointer = pointer.id };
-    marshal_constructor(self.conn, self.id, ZWP_POINTER_GESTURES_V1_GET_SWIPE_GESTURE, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_POINTER_GESTURES_V1_GET_SWIPE_GESTURE, new_id, *args);
 }
 
 // get pinch gesture
 // Create a pinch gesture object. See the
 // wl_pointer_gesture_pinch interface for details.
-zwp_pointer_gestures_v1_get_pinch_gesture :: (self: *Zwp_Pointer_Gestures_V1, new_id: u32, pointer: *Wl_Pointer) {
+zwp_pointer_gestures_v1_get_pinch_gesture :: (batch: *MessageBuilder, self: *Zwp_Pointer_Gestures_V1, new_id: u32, pointer: *Wl_Pointer) {
     args := Zwp_Pointer_Gestures_V1_Get_Pinch_Gesture_Args.{ pointer = pointer.id };
-    marshal_constructor(self.conn, self.id, ZWP_POINTER_GESTURES_V1_GET_PINCH_GESTURE, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_POINTER_GESTURES_V1_GET_PINCH_GESTURE, new_id, *args);
 }
 
 // destroy the pointer gesture object (destructor)
 // Destroy the pointer gesture object. Swipe, pinch and hold objects
 // created via this gesture object remain valid.
-zwp_pointer_gestures_v1_release :: (self: *Zwp_Pointer_Gestures_V1) {
+zwp_pointer_gestures_v1_release :: (batch: *MessageBuilder, self: *Zwp_Pointer_Gestures_V1) {
     args := Zwp_Pointer_Gestures_V1_Release_Args.{};
-    marshal(self.conn, self.id, ZWP_POINTER_GESTURES_V1_RELEASE, *args);
+    marshal(batch, self.id, ZWP_POINTER_GESTURES_V1_RELEASE, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
 // get hold gesture
 // Create a hold gesture object. See the
 // wl_pointer_gesture_hold interface for details.
-zwp_pointer_gestures_v1_get_hold_gesture :: (self: *Zwp_Pointer_Gestures_V1, new_id: u32, pointer: *Wl_Pointer) {
+zwp_pointer_gestures_v1_get_hold_gesture :: (batch: *MessageBuilder, self: *Zwp_Pointer_Gestures_V1, new_id: u32, pointer: *Wl_Pointer) {
     args := Zwp_Pointer_Gestures_V1_Get_Hold_Gesture_Args.{ pointer = pointer.id };
-    marshal_constructor(self.conn, self.id, ZWP_POINTER_GESTURES_V1_GET_HOLD_GESTURE, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_POINTER_GESTURES_V1_GET_HOLD_GESTURE, new_id, *args);
 }
 
 ZWP_POINTER_GESTURES_V1_INTERFACE :: Interface_Descriptor.{

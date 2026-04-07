@@ -13,8 +13,7 @@
 //
 Wp_Color_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_COLOR_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -195,9 +194,9 @@ Wp_Color_Manager_V1_Get_Image_Description_Args :: struct {
 // destroy the color manager (destructor)
 // Destroy the wp_color_manager_v1 object. This does not affect any other
 // objects in any way.
-wp_color_manager_v1_destroy :: (self: *Wp_Color_Manager_V1) {
+wp_color_manager_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Color_Manager_V1) {
     args := Wp_Color_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_COLOR_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_COLOR_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -206,9 +205,9 @@ wp_color_manager_v1_destroy :: (self: *Wp_Color_Manager_V1) {
 // given wl_output.
 //
 // See the wp_color_management_output_v1 interface for more details.
-wp_color_manager_v1_get_output :: (self: *Wp_Color_Manager_V1, new_id: u32, output: *Wl_Output) {
+wp_color_manager_v1_get_output :: (batch: *MessageBuilder, self: *Wp_Color_Manager_V1, new_id: u32, output: *Wl_Output) {
     args := Wp_Color_Manager_V1_Get_Output_Args.{ output = output.id };
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGER_V1_GET_OUTPUT, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGER_V1_GET_OUTPUT, new_id, *args);
 }
 
 // create a color management interface for a wl_surface
@@ -219,9 +218,9 @@ wp_color_manager_v1_get_output :: (self: *Wp_Color_Manager_V1, new_id: u32, outp
 // given wl_surface.
 //
 // See the wp_color_management_surface_v1 interface for more details.
-wp_color_manager_v1_get_surface :: (self: *Wp_Color_Manager_V1, new_id: u32, surface: *Wl_Surface) {
+wp_color_manager_v1_get_surface :: (batch: *MessageBuilder, self: *Wp_Color_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Color_Manager_V1_Get_Surface_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGER_V1_GET_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGER_V1_GET_SURFACE, new_id, *args);
 }
 
 // create a color management feedback interface
@@ -230,9 +229,9 @@ wp_color_manager_v1_get_surface :: (self: *Wp_Color_Manager_V1, new_id: u32, sur
 //
 // See the wp_color_management_surface_feedback_v1 interface for more
 // details.
-wp_color_manager_v1_get_surface_feedback :: (self: *Wp_Color_Manager_V1, new_id: u32, surface: *Wl_Surface) {
+wp_color_manager_v1_get_surface_feedback :: (batch: *MessageBuilder, self: *Wp_Color_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Color_Manager_V1_Get_Surface_Feedback_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGER_V1_GET_SURFACE_FEEDBACK, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGER_V1_GET_SURFACE_FEEDBACK, new_id, *args);
 }
 
 // make a new ICC-based image description creator object
@@ -244,9 +243,9 @@ wp_color_manager_v1_get_surface_feedback :: (self: *Wp_Color_Manager_V1, new_id:
 // This request can be used when the compositor advertises
 // wp_color_manager_v1.feature.icc_v2_v4.
 // Otherwise this request raises the protocol error unsupported_feature.
-wp_color_manager_v1_create_icc_creator :: (self: *Wp_Color_Manager_V1, new_id: u32) {
+wp_color_manager_v1_create_icc_creator :: (batch: *MessageBuilder, self: *Wp_Color_Manager_V1, new_id: u32) {
     args := Wp_Color_Manager_V1_Create_Icc_Creator_Args.{};
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGER_V1_CREATE_ICC_CREATOR, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGER_V1_CREATE_ICC_CREATOR, new_id, *args);
 }
 
 // make a new parametric image description creator object
@@ -258,9 +257,9 @@ wp_color_manager_v1_create_icc_creator :: (self: *Wp_Color_Manager_V1, new_id: u
 // This request can be used when the compositor advertises
 // wp_color_manager_v1.feature.parametric.
 // Otherwise this request raises the protocol error unsupported_feature.
-wp_color_manager_v1_create_parametric_creator :: (self: *Wp_Color_Manager_V1, new_id: u32) {
+wp_color_manager_v1_create_parametric_creator :: (batch: *MessageBuilder, self: *Wp_Color_Manager_V1, new_id: u32) {
     args := Wp_Color_Manager_V1_Create_Parametric_Creator_Args.{};
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGER_V1_CREATE_PARAMETRIC_CREATOR, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGER_V1_CREATE_PARAMETRIC_CREATOR, new_id, *args);
 }
 
 // create Windows-scRGB image description object
@@ -308,9 +307,9 @@ wp_color_manager_v1_create_parametric_creator :: (self: *Wp_Color_Manager_V1, ne
 //
 // The resulting image description object does not allow get_information
 // request. The wp_image_description_v1.ready event shall be sent.
-wp_color_manager_v1_create_windows_scrgb :: (self: *Wp_Color_Manager_V1, new_id: u32) {
+wp_color_manager_v1_create_windows_scrgb :: (batch: *MessageBuilder, self: *Wp_Color_Manager_V1, new_id: u32) {
     args := Wp_Color_Manager_V1_Create_Windows_Scrgb_Args.{};
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGER_V1_CREATE_WINDOWS_SCRGB, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGER_V1_CREATE_WINDOWS_SCRGB, new_id, *args);
 }
 
 // create an image description from a reference
@@ -318,9 +317,9 @@ wp_color_manager_v1_create_windows_scrgb :: (self: *Wp_Color_Manager_V1, new_id:
 //
 // The get_information request can be used if and only if the request that
 // creates the reference allows it.
-wp_color_manager_v1_get_image_description :: (self: *Wp_Color_Manager_V1, new_id: u32, reference: *Wp_Image_Description_Reference_V1) {
+wp_color_manager_v1_get_image_description :: (batch: *MessageBuilder, self: *Wp_Color_Manager_V1, new_id: u32, reference: *Wp_Image_Description_Reference_V1) {
     args := Wp_Color_Manager_V1_Get_Image_Description_Args.{ reference = reference.id };
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGER_V1_GET_IMAGE_DESCRIPTION, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGER_V1_GET_IMAGE_DESCRIPTION, new_id, *args);
 }
 
 WP_COLOR_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

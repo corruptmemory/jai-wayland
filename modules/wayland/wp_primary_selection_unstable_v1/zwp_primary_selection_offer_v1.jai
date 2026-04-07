@@ -11,8 +11,7 @@
 //
 Zwp_Primary_Selection_Offer_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_PRIMARY_SELECTION_OFFER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -54,16 +53,16 @@ Zwp_Primary_Selection_Offer_V1_Destroy_Args :: struct {
 //
 // The receiving client reads from the read end of the pipe until EOF and
 // closes its end, at which point the transfer is complete.
-zwp_primary_selection_offer_v1_receive :: (self: *Zwp_Primary_Selection_Offer_V1, mime_type: string, fd: Fd) {
+zwp_primary_selection_offer_v1_receive :: (batch: *MessageBuilder, self: *Zwp_Primary_Selection_Offer_V1, mime_type: string, fd: Fd) {
     args := Zwp_Primary_Selection_Offer_V1_Receive_Args.{ mime_type = mime_type, fd = fd };
-    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_OFFER_V1_RECEIVE, *args);
+    marshal(batch, self.id, ZWP_PRIMARY_SELECTION_OFFER_V1_RECEIVE, *args);
 }
 
 // destroy the primary selection offer (destructor)
 // Destroy the primary selection offer.
-zwp_primary_selection_offer_v1_destroy :: (self: *Zwp_Primary_Selection_Offer_V1) {
+zwp_primary_selection_offer_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Primary_Selection_Offer_V1) {
     args := Zwp_Primary_Selection_Offer_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_PRIMARY_SELECTION_OFFER_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_PRIMARY_SELECTION_OFFER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

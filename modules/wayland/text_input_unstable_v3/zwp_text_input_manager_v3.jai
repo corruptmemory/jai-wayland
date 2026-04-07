@@ -7,8 +7,7 @@
 //
 Zwp_Text_Input_Manager_V3 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_TEXT_INPUT_MANAGER_V3_INTERFACE.version;
 }
 
 // Request opcodes
@@ -25,17 +24,17 @@ Zwp_Text_Input_Manager_V3_Get_Text_Input_Args :: struct {
 
 // Destroy the wp_text_input_manager (destructor)
 // Destroy the wp_text_input_manager object.
-zwp_text_input_manager_v3_destroy :: (self: *Zwp_Text_Input_Manager_V3) {
+zwp_text_input_manager_v3_destroy :: (batch: *MessageBuilder, self: *Zwp_Text_Input_Manager_V3) {
     args := Zwp_Text_Input_Manager_V3_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_TEXT_INPUT_MANAGER_V3_DESTROY, *args);
+    marshal(batch, self.id, ZWP_TEXT_INPUT_MANAGER_V3_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a new text input object
 // Creates a new text-input object for a given seat.
-zwp_text_input_manager_v3_get_text_input :: (self: *Zwp_Text_Input_Manager_V3, new_id: u32, seat: *Wl_Seat) {
+zwp_text_input_manager_v3_get_text_input :: (batch: *MessageBuilder, self: *Zwp_Text_Input_Manager_V3, new_id: u32, seat: *Wl_Seat) {
     args := Zwp_Text_Input_Manager_V3_Get_Text_Input_Args.{ seat = seat.id };
-    marshal_constructor(self.conn, self.id, ZWP_TEXT_INPUT_MANAGER_V3_GET_TEXT_INPUT, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_TEXT_INPUT_MANAGER_V3_GET_TEXT_INPUT, new_id, *args);
 }
 
 ZWP_TEXT_INPUT_MANAGER_V3_INTERFACE :: Interface_Descriptor.{

@@ -13,8 +13,7 @@
 //
 Wl_Shm_Pool :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_SHM_POOL_INTERFACE.version;
 }
 
 // Request opcodes
@@ -50,9 +49,9 @@ Wl_Shm_Pool_Resize_Args :: struct {
 // A buffer will keep a reference to the pool it was created from
 // so it is valid to destroy the pool immediately after creating
 // a buffer from it.
-wl_shm_pool_create_buffer :: (self: *Wl_Shm_Pool, new_id: u32, offset: s32, width: s32, height: s32, stride: s32, format: u32) {
+wl_shm_pool_create_buffer :: (batch: *MessageBuilder, self: *Wl_Shm_Pool, new_id: u32, offset: s32, width: s32, height: s32, stride: s32, format: u32) {
     args := Wl_Shm_Pool_Create_Buffer_Args.{ offset = offset, width = width, height = height, stride = stride, format = format };
-    marshal_constructor(self.conn, self.id, WL_SHM_POOL_CREATE_BUFFER, new_id, *args);
+    marshal_constructor(batch, self.id, WL_SHM_POOL_CREATE_BUFFER, new_id, *args);
 }
 
 // destroy the pool (destructor)
@@ -61,9 +60,9 @@ wl_shm_pool_create_buffer :: (self: *Wl_Shm_Pool, new_id: u32, offset: s32, widt
 // The mmapped memory will be released when all
 // buffers that have been created from this pool
 // are gone.
-wl_shm_pool_destroy :: (self: *Wl_Shm_Pool) {
+wl_shm_pool_destroy :: (batch: *MessageBuilder, self: *Wl_Shm_Pool) {
     args := Wl_Shm_Pool_Destroy_Args.{};
-    marshal(self.conn, self.id, WL_SHM_POOL_DESTROY, *args);
+    marshal(batch, self.id, WL_SHM_POOL_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -78,9 +77,9 @@ wl_shm_pool_destroy :: (self: *Wl_Shm_Pool) {
 // file descriptor passed at creation time. It is the client's
 // responsibility to ensure that the file is at least as big as
 // the new pool size.
-wl_shm_pool_resize :: (self: *Wl_Shm_Pool, size: s32) {
+wl_shm_pool_resize :: (batch: *MessageBuilder, self: *Wl_Shm_Pool, size: s32) {
     args := Wl_Shm_Pool_Resize_Args.{ size = size };
-    marshal(self.conn, self.id, WL_SHM_POOL_RESIZE, *args);
+    marshal(batch, self.id, WL_SHM_POOL_RESIZE, *args);
 }
 
 WL_SHM_POOL_INTERFACE :: Interface_Descriptor.{

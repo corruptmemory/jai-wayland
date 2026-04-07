@@ -10,8 +10,7 @@
 //
 Ext_Data_Control_Source_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_DATA_CONTROL_SOURCE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -61,16 +60,16 @@ Ext_Data_Control_Source_V1_Destroy_Args :: struct {
 //
 // Calling this after ext_data_control_device.set_selection is a protocol
 // error.
-ext_data_control_source_v1_offer :: (self: *Ext_Data_Control_Source_V1, mime_type: string) {
+ext_data_control_source_v1_offer :: (batch: *MessageBuilder, self: *Ext_Data_Control_Source_V1, mime_type: string) {
     args := Ext_Data_Control_Source_V1_Offer_Args.{ mime_type = mime_type };
-    marshal(self.conn, self.id, EXT_DATA_CONTROL_SOURCE_V1_OFFER, *args);
+    marshal(batch, self.id, EXT_DATA_CONTROL_SOURCE_V1_OFFER, *args);
 }
 
 // destroy this source (destructor)
 // Destroys the data source object.
-ext_data_control_source_v1_destroy :: (self: *Ext_Data_Control_Source_V1) {
+ext_data_control_source_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Data_Control_Source_V1) {
     args := Ext_Data_Control_Source_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_DATA_CONTROL_SOURCE_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_DATA_CONTROL_SOURCE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

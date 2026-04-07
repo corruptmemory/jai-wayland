@@ -10,8 +10,7 @@
 //
 Wp_Linux_Drm_Syncobj_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -41,9 +40,9 @@ Wp_Linux_Drm_Syncobj_Manager_V1_Import_Timeline_Args :: struct {
 // destroy explicit synchronization factory object (destructor)
 // Destroy this explicit synchronization factory object. Other objects
 // shall not be affected by this request.
-wp_linux_drm_syncobj_manager_v1_destroy :: (self: *Wp_Linux_Drm_Syncobj_Manager_V1) {
+wp_linux_drm_syncobj_manager_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Linux_Drm_Syncobj_Manager_V1) {
     args := Wp_Linux_Drm_Syncobj_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -59,18 +58,18 @@ wp_linux_drm_syncobj_manager_v1_destroy :: (self: *Wp_Linux_Drm_Syncobj_Manager_
 // extension internally. If a client is using such an API for a
 // wl_surface, it should not directly use this extension on that surface,
 // to avoid raising a surface_exists protocol error.
-wp_linux_drm_syncobj_manager_v1_get_surface :: (self: *Wp_Linux_Drm_Syncobj_Manager_V1, new_id: u32, surface: *Wl_Surface) {
+wp_linux_drm_syncobj_manager_v1_get_surface :: (batch: *MessageBuilder, self: *Wp_Linux_Drm_Syncobj_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Linux_Drm_Syncobj_Manager_V1_Get_Surface_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_GET_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_GET_SURFACE, new_id, *args);
 }
 
 // import a DRM syncobj timeline
 // Import a DRM synchronization object timeline.
 //
 // If the FD cannot be imported, the invalid_timeline error is raised.
-wp_linux_drm_syncobj_manager_v1_import_timeline :: (self: *Wp_Linux_Drm_Syncobj_Manager_V1, new_id: u32, fd: Fd) {
+wp_linux_drm_syncobj_manager_v1_import_timeline :: (batch: *MessageBuilder, self: *Wp_Linux_Drm_Syncobj_Manager_V1, new_id: u32, fd: Fd) {
     args := Wp_Linux_Drm_Syncobj_Manager_V1_Import_Timeline_Args.{ fd = fd };
-    marshal_constructor(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_IMPORT_TIMELINE, new_id, *args);
+    marshal_constructor(batch, self.id, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_IMPORT_TIMELINE, new_id, *args);
 }
 
 WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

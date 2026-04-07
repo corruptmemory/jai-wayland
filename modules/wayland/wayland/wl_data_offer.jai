@@ -12,8 +12,7 @@
 //
 Wl_Data_Offer :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_DATA_OFFER_INTERFACE.version;
 }
 
 // Request opcodes
@@ -103,9 +102,9 @@ Wl_Data_Offer_Set_Actions_Args :: struct {
 // will be cancelled and the corresponding drag source will receive
 // wl_data_source.cancelled. Clients may still use this event in
 // conjunction with wl_data_source.action for feedback.
-wl_data_offer_accept :: (self: *Wl_Data_Offer, serial: u32, mime_type: string) {
+wl_data_offer_accept :: (batch: *MessageBuilder, self: *Wl_Data_Offer, serial: u32, mime_type: string) {
     args := Wl_Data_Offer_Accept_Args.{ serial = serial, mime_type = mime_type };
-    marshal(self.conn, self.id, WL_DATA_OFFER_ACCEPT, *args);
+    marshal(batch, self.id, WL_DATA_OFFER_ACCEPT, *args);
 }
 
 // request that the data is transferred
@@ -124,16 +123,16 @@ wl_data_offer_accept :: (self: *Wl_Data_Offer, serial: u32, mime_type: string) {
 // both before and after wl_data_device.drop. Drag-and-drop destination
 // clients may preemptively fetch data or examine it more closely to
 // determine acceptance.
-wl_data_offer_receive :: (self: *Wl_Data_Offer, mime_type: string, fd: Fd) {
+wl_data_offer_receive :: (batch: *MessageBuilder, self: *Wl_Data_Offer, mime_type: string, fd: Fd) {
     args := Wl_Data_Offer_Receive_Args.{ mime_type = mime_type, fd = fd };
-    marshal(self.conn, self.id, WL_DATA_OFFER_RECEIVE, *args);
+    marshal(batch, self.id, WL_DATA_OFFER_RECEIVE, *args);
 }
 
 // destroy data offer (destructor)
 // Destroy the data offer.
-wl_data_offer_destroy :: (self: *Wl_Data_Offer) {
+wl_data_offer_destroy :: (batch: *MessageBuilder, self: *Wl_Data_Offer) {
     args := Wl_Data_Offer_Destroy_Args.{};
-    marshal(self.conn, self.id, WL_DATA_OFFER_DESTROY, *args);
+    marshal(batch, self.id, WL_DATA_OFFER_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -152,9 +151,9 @@ wl_data_offer_destroy :: (self: *Wl_Data_Offer) {
 //
 // If wl_data_offer.finish request is received for a non drag and drop
 // operation, the invalid_finish protocol error is raised.
-wl_data_offer_finish :: (self: *Wl_Data_Offer) {
+wl_data_offer_finish :: (batch: *MessageBuilder, self: *Wl_Data_Offer) {
     args := Wl_Data_Offer_Finish_Args.{};
-    marshal(self.conn, self.id, WL_DATA_OFFER_FINISH, *args);
+    marshal(batch, self.id, WL_DATA_OFFER_FINISH, *args);
 }
 
 // set the available/preferred drag-and-drop actions
@@ -189,9 +188,9 @@ wl_data_offer_finish :: (self: *Wl_Data_Offer) {
 //
 // This request can only be made on drag-and-drop offers, a protocol error
 // will be raised otherwise.
-wl_data_offer_set_actions :: (self: *Wl_Data_Offer, dnd_actions: u32, preferred_action: u32) {
+wl_data_offer_set_actions :: (batch: *MessageBuilder, self: *Wl_Data_Offer, dnd_actions: u32, preferred_action: u32) {
     args := Wl_Data_Offer_Set_Actions_Args.{ dnd_actions = dnd_actions, preferred_action = preferred_action };
-    marshal(self.conn, self.id, WL_DATA_OFFER_SET_ACTIONS, *args);
+    marshal(batch, self.id, WL_DATA_OFFER_SET_ACTIONS, *args);
 }
 
 WL_DATA_OFFER_INTERFACE :: Interface_Descriptor.{

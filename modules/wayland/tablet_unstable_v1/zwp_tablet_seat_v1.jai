@@ -9,8 +9,7 @@
 //
 Zwp_Tablet_Seat_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_TABLET_SEAT_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -47,9 +46,9 @@ Zwp_Tablet_Seat_V1_Destroy_Args :: struct {
 // release the memory for the tablet seat object (destructor)
 // Destroy the wp_tablet_seat object. Objects created from this
 // object are unaffected and should be destroyed separately.
-zwp_tablet_seat_v1_destroy :: (self: *Zwp_Tablet_Seat_V1) {
+zwp_tablet_seat_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Tablet_Seat_V1) {
     args := Zwp_Tablet_Seat_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_TABLET_SEAT_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_TABLET_SEAT_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

@@ -14,8 +14,7 @@
 //
 Wl_Pointer :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_POINTER_INTERFACE.version;
 }
 
 // Request opcodes
@@ -239,9 +238,9 @@ Wl_Pointer_Release_Args :: struct {
 // The serial parameter must match the latest wl_pointer.enter
 // serial number sent to the client. Otherwise the request will be
 // ignored.
-wl_pointer_set_cursor :: (self: *Wl_Pointer, serial: u32, surface: *Wl_Surface, hotspot_x: s32, hotspot_y: s32) {
+wl_pointer_set_cursor :: (batch: *MessageBuilder, self: *Wl_Pointer, serial: u32, surface: *Wl_Surface, hotspot_x: s32, hotspot_y: s32) {
     args := Wl_Pointer_Set_Cursor_Args.{ serial = serial, surface = surface.id, hotspot_x = hotspot_x, hotspot_y = hotspot_y };
-    marshal(self.conn, self.id, WL_POINTER_SET_CURSOR, *args);
+    marshal(batch, self.id, WL_POINTER_SET_CURSOR, *args);
 }
 
 // release the pointer object (destructor)
@@ -250,9 +249,9 @@ wl_pointer_set_cursor :: (self: *Wl_Pointer, serial: u32, surface: *Wl_Surface, 
 //
 // This request destroys the pointer proxy object, so clients must not call
 // wl_pointer_destroy() after using this request.
-wl_pointer_release :: (self: *Wl_Pointer) {
+wl_pointer_release :: (batch: *MessageBuilder, self: *Wl_Pointer) {
     args := Wl_Pointer_Release_Args.{};
-    marshal(self.conn, self.id, WL_POINTER_RELEASE, *args);
+    marshal(batch, self.id, WL_POINTER_RELEASE, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

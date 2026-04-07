@@ -11,8 +11,7 @@
 //
 Wp_Color_Management_Surface_Feedback_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -65,9 +64,9 @@ Wp_Color_Management_Surface_Feedback_V1_Get_Preferred_Parametric_Args :: struct 
 
 // destroy the color management interface for a surface (destructor)
 // Destroy the wp_color_management_surface_feedback_v1 object.
-wp_color_management_surface_feedback_v1_destroy :: (self: *Wp_Color_Management_Surface_Feedback_V1) {
+wp_color_management_surface_feedback_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Color_Management_Surface_Feedback_V1) {
     args := Wp_Color_Management_Surface_Feedback_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -105,9 +104,9 @@ wp_color_management_surface_feedback_v1_destroy :: (self: *Wp_Color_Management_S
 // description object shall immediately deliver the
 // wp_image_description_v1.failed event with the low_version cause,
 // otherwise the object shall immediately deliver the ready event.
-wp_color_management_surface_feedback_v1_get_preferred :: (self: *Wp_Color_Management_Surface_Feedback_V1, new_id: u32) {
+wp_color_management_surface_feedback_v1_get_preferred :: (batch: *MessageBuilder, self: *Wp_Color_Management_Surface_Feedback_V1, new_id: u32) {
     args := Wp_Color_Management_Surface_Feedback_V1_Get_Preferred_Args.{};
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_GET_PREFERRED, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_GET_PREFERRED, new_id, *args);
 }
 
 // get the preferred image description
@@ -117,9 +116,9 @@ wp_color_management_surface_feedback_v1_get_preferred :: (self: *Wp_Color_Manage
 //
 // If the compositor doesn't support parametric image descriptions, the
 // unsupported_feature error is emitted.
-wp_color_management_surface_feedback_v1_get_preferred_parametric :: (self: *Wp_Color_Management_Surface_Feedback_V1, new_id: u32) {
+wp_color_management_surface_feedback_v1_get_preferred_parametric :: (batch: *MessageBuilder, self: *Wp_Color_Management_Surface_Feedback_V1, new_id: u32) {
     args := Wp_Color_Management_Surface_Feedback_V1_Get_Preferred_Parametric_Args.{};
-    marshal_constructor(self.conn, self.id, WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_GET_PREFERRED_PARAMETRIC, new_id, *args);
+    marshal_constructor(batch, self.id, WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_GET_PREFERRED_PARAMETRIC, new_id, *args);
 }
 
 WP_COLOR_MANAGEMENT_SURFACE_FEEDBACK_V1_INTERFACE :: Interface_Descriptor.{

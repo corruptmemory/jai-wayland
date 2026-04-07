@@ -17,8 +17,7 @@
 //
 Wp_Fifo_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_FIFO_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -45,9 +44,9 @@ Wp_Fifo_Manager_V1_Get_Fifo_Args :: struct {
 // Informs the server that the client will no longer be using
 // this protocol object. Existing objects created by this object
 // are not affected.
-wp_fifo_manager_v1_destroy :: (self: *Wp_Fifo_Manager_V1) {
+wp_fifo_manager_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Fifo_Manager_V1) {
     args := Wp_Fifo_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_FIFO_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_FIFO_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -60,9 +59,9 @@ wp_fifo_manager_v1_destroy :: (self: *Wp_Fifo_Manager_V1) {
 // protocol error. If a surface is acted on by multiple software
 // components, general best practice is that only the component
 // performing wl_surface.attach operations should use this protocol.
-wp_fifo_manager_v1_get_fifo :: (self: *Wp_Fifo_Manager_V1, new_id: u32, surface: *Wl_Surface) {
+wp_fifo_manager_v1_get_fifo :: (batch: *MessageBuilder, self: *Wp_Fifo_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Fifo_Manager_V1_Get_Fifo_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_FIFO_MANAGER_V1_GET_FIFO, new_id, *args);
+    marshal_constructor(batch, self.id, WP_FIFO_MANAGER_V1_GET_FIFO, new_id, *args);
 }
 
 WP_FIFO_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

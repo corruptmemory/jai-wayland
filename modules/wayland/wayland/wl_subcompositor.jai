@@ -25,8 +25,7 @@
 //
 Wl_Subcompositor :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_SUBCOMPOSITOR_INTERFACE.version;
 }
 
 // Request opcodes
@@ -53,9 +52,9 @@ Wl_Subcompositor_Get_Subsurface_Args :: struct {
 // Informs the server that the client will not be using this
 // protocol object anymore. This does not affect any other
 // objects, wl_subsurface objects included.
-wl_subcompositor_destroy :: (self: *Wl_Subcompositor) {
+wl_subcompositor_destroy :: (batch: *MessageBuilder, self: *Wl_Subcompositor) {
     args := Wl_Subcompositor_Destroy_Args.{};
-    marshal(self.conn, self.id, WL_SUBCOMPOSITOR_DESTROY, *args);
+    marshal(batch, self.id, WL_SUBCOMPOSITOR_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -79,9 +78,9 @@ wl_subcompositor_destroy :: (self: *Wl_Subcompositor) {
 //
 // This request modifies the behaviour of wl_surface.commit request on
 // the sub-surface, see the documentation on wl_subsurface interface.
-wl_subcompositor_get_subsurface :: (self: *Wl_Subcompositor, new_id: u32, surface: *Wl_Surface, parent: *Wl_Surface) {
+wl_subcompositor_get_subsurface :: (batch: *MessageBuilder, self: *Wl_Subcompositor, new_id: u32, surface: *Wl_Surface, parent: *Wl_Surface) {
     args := Wl_Subcompositor_Get_Subsurface_Args.{ surface = surface.id, parent = parent.id };
-    marshal_constructor(self.conn, self.id, WL_SUBCOMPOSITOR_GET_SUBSURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, WL_SUBCOMPOSITOR_GET_SUBSURFACE, new_id, *args);
 }
 
 WL_SUBCOMPOSITOR_INTERFACE :: Interface_Descriptor.{

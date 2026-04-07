@@ -22,8 +22,7 @@
 //
 Ext_Workspace_Handle_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_WORKSPACE_HANDLE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -132,9 +131,9 @@ Ext_Workspace_Handle_V1_Remove_Args :: struct {
 // This request should be made either when the client does not want to
 // use the workspace object any more or after the remove event to finalize
 // the destruction of the object.
-ext_workspace_handle_v1_destroy :: (self: *Ext_Workspace_Handle_V1) {
+ext_workspace_handle_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Workspace_Handle_V1) {
     args := Ext_Workspace_Handle_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_WORKSPACE_HANDLE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -145,36 +144,36 @@ ext_workspace_handle_v1_destroy :: (self: *Ext_Workspace_Handle_V1) {
 // behaviour may be compositor-dependent. For example, activating a
 // workspace may or may not deactivate all other workspaces in the same
 // group.
-ext_workspace_handle_v1_activate :: (self: *Ext_Workspace_Handle_V1) {
+ext_workspace_handle_v1_activate :: (batch: *MessageBuilder, self: *Ext_Workspace_Handle_V1) {
     args := Ext_Workspace_Handle_V1_Activate_Args.{};
-    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_ACTIVATE, *args);
+    marshal(batch, self.id, EXT_WORKSPACE_HANDLE_V1_ACTIVATE, *args);
 }
 
 // deactivate the workspace
 // Request that this workspace be deactivated.
 //
 // There is no guarantee the workspace will be actually deactivated.
-ext_workspace_handle_v1_deactivate :: (self: *Ext_Workspace_Handle_V1) {
+ext_workspace_handle_v1_deactivate :: (batch: *MessageBuilder, self: *Ext_Workspace_Handle_V1) {
     args := Ext_Workspace_Handle_V1_Deactivate_Args.{};
-    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_DEACTIVATE, *args);
+    marshal(batch, self.id, EXT_WORKSPACE_HANDLE_V1_DEACTIVATE, *args);
 }
 
 // assign workspace to group
 // Requests that this workspace is assigned to the given workspace group.
 //
 // There is no guarantee the workspace will be assigned.
-ext_workspace_handle_v1_assign :: (self: *Ext_Workspace_Handle_V1, workspace_group: *Ext_Workspace_Group_Handle_V1) {
+ext_workspace_handle_v1_assign :: (batch: *MessageBuilder, self: *Ext_Workspace_Handle_V1, workspace_group: *Ext_Workspace_Group_Handle_V1) {
     args := Ext_Workspace_Handle_V1_Assign_Args.{ workspace_group = workspace_group.id };
-    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_ASSIGN, *args);
+    marshal(batch, self.id, EXT_WORKSPACE_HANDLE_V1_ASSIGN, *args);
 }
 
 // remove the workspace
 // Request that this workspace be removed.
 //
 // There is no guarantee the workspace will be actually removed.
-ext_workspace_handle_v1_remove :: (self: *Ext_Workspace_Handle_V1) {
+ext_workspace_handle_v1_remove :: (batch: *MessageBuilder, self: *Ext_Workspace_Handle_V1) {
     args := Ext_Workspace_Handle_V1_Remove_Args.{};
-    marshal(self.conn, self.id, EXT_WORKSPACE_HANDLE_V1_REMOVE, *args);
+    marshal(batch, self.id, EXT_WORKSPACE_HANDLE_V1_REMOVE, *args);
 }
 
 EXT_WORKSPACE_HANDLE_V1_INTERFACE :: Interface_Descriptor.{

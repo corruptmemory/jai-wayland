@@ -16,8 +16,7 @@
 //
 Wl_Data_Device_Manager :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_DATA_DEVICE_MANAGER_INTERFACE.version;
 }
 
 // Request opcodes
@@ -69,16 +68,16 @@ Wl_Data_Device_Manager_Get_Data_Device_Args :: struct {
 
 // create a new data source
 // Create a new data source.
-wl_data_device_manager_create_data_source :: (self: *Wl_Data_Device_Manager, new_id: u32) {
+wl_data_device_manager_create_data_source :: (batch: *MessageBuilder, self: *Wl_Data_Device_Manager, new_id: u32) {
     args := Wl_Data_Device_Manager_Create_Data_Source_Args.{};
-    marshal_constructor(self.conn, self.id, WL_DATA_DEVICE_MANAGER_CREATE_DATA_SOURCE, new_id, *args);
+    marshal_constructor(batch, self.id, WL_DATA_DEVICE_MANAGER_CREATE_DATA_SOURCE, new_id, *args);
 }
 
 // create a new data device
 // Create a new data device for a given seat.
-wl_data_device_manager_get_data_device :: (self: *Wl_Data_Device_Manager, new_id: u32, seat: *Wl_Seat) {
+wl_data_device_manager_get_data_device :: (batch: *MessageBuilder, self: *Wl_Data_Device_Manager, new_id: u32, seat: *Wl_Seat) {
     args := Wl_Data_Device_Manager_Get_Data_Device_Args.{ seat = seat.id };
-    marshal_constructor(self.conn, self.id, WL_DATA_DEVICE_MANAGER_GET_DATA_DEVICE, new_id, *args);
+    marshal_constructor(batch, self.id, WL_DATA_DEVICE_MANAGER_GET_DATA_DEVICE, new_id, *args);
 }
 
 WL_DATA_DEVICE_MANAGER_INTERFACE :: Interface_Descriptor.{

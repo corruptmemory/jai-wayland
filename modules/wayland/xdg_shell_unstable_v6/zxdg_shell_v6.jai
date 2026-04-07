@@ -10,8 +10,7 @@
 //
 Zxdg_Shell_V6 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_SHELL_V6_INTERFACE.version;
 }
 
 // Request opcodes
@@ -72,9 +71,9 @@ Zxdg_Shell_V6_Pong_Args :: struct {
 // Destroying a bound xdg_shell object while there are surfaces
 // still alive created by this xdg_shell object instance is illegal
 // and will result in a protocol error.
-zxdg_shell_v6_destroy :: (self: *Zxdg_Shell_V6) {
+zxdg_shell_v6_destroy :: (batch: *MessageBuilder, self: *Zxdg_Shell_V6) {
     args := Zxdg_Shell_V6_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_SHELL_V6_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_SHELL_V6_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -82,9 +81,9 @@ zxdg_shell_v6_destroy :: (self: *Zxdg_Shell_V6) {
 // Create a positioner object. A positioner object is used to position
 // surfaces relative to some parent surface. See the interface description
 // and xdg_surface.get_popup for details.
-zxdg_shell_v6_create_positioner :: (self: *Zxdg_Shell_V6, new_id: u32) {
+zxdg_shell_v6_create_positioner :: (batch: *MessageBuilder, self: *Zxdg_Shell_V6, new_id: u32) {
     args := Zxdg_Shell_V6_Create_Positioner_Args.{};
-    marshal_constructor(self.conn, self.id, ZXDG_SHELL_V6_CREATE_POSITIONER, new_id, *args);
+    marshal_constructor(batch, self.id, ZXDG_SHELL_V6_CREATE_POSITIONER, new_id, *args);
 }
 
 // create a shell surface from a surface
@@ -99,17 +98,17 @@ zxdg_shell_v6_create_positioner :: (self: *Zxdg_Shell_V6, new_id: u32) {
 //
 // See the documentation of xdg_surface for more details about what an
 // xdg_surface is and how it is used.
-zxdg_shell_v6_get_xdg_surface :: (self: *Zxdg_Shell_V6, new_id: u32, surface: *Wl_Surface) {
+zxdg_shell_v6_get_xdg_surface :: (batch: *MessageBuilder, self: *Zxdg_Shell_V6, new_id: u32, surface: *Wl_Surface) {
     args := Zxdg_Shell_V6_Get_Xdg_Surface_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, ZXDG_SHELL_V6_GET_XDG_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, ZXDG_SHELL_V6_GET_XDG_SURFACE, new_id, *args);
 }
 
 // respond to a ping event
 // A client must respond to a ping event with a pong request or
 // the client may be deemed unresponsive. See xdg_shell.ping.
-zxdg_shell_v6_pong :: (self: *Zxdg_Shell_V6, serial: u32) {
+zxdg_shell_v6_pong :: (batch: *MessageBuilder, self: *Zxdg_Shell_V6, serial: u32) {
     args := Zxdg_Shell_V6_Pong_Args.{ serial = serial };
-    marshal(self.conn, self.id, ZXDG_SHELL_V6_PONG, *args);
+    marshal(batch, self.id, ZXDG_SHELL_V6_PONG, *args);
 }
 
 ZXDG_SHELL_V6_INTERFACE :: Interface_Descriptor.{

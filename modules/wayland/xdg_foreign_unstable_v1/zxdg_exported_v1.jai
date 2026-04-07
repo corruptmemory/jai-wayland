@@ -10,8 +10,7 @@
 //
 Zxdg_Exported_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_EXPORTED_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -41,9 +40,9 @@ Zxdg_Exported_V1_Destroy_Args :: struct {
 // Revoke the previously exported surface. This invalidates any
 // relationship the importer may have set up using the xdg_imported created
 // given the handle sent via xdg_exported.handle.
-zxdg_exported_v1_destroy :: (self: *Zxdg_Exported_V1) {
+zxdg_exported_v1_destroy :: (batch: *MessageBuilder, self: *Zxdg_Exported_V1) {
     args := Zxdg_Exported_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_EXPORTED_V1_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_EXPORTED_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

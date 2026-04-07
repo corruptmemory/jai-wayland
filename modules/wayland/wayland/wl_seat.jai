@@ -10,8 +10,7 @@
 //
 Wl_Seat :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_SEAT_INTERFACE.version;
 }
 
 // Request opcodes
@@ -85,9 +84,9 @@ Wl_Seat_Release_Args :: struct {
 // It is a protocol violation to issue this request on a seat that has
 // never had the pointer capability. The missing_capability error will
 // be sent in this case.
-wl_seat_get_pointer :: (self: *Wl_Seat, new_id: u32) {
+wl_seat_get_pointer :: (batch: *MessageBuilder, self: *Wl_Seat, new_id: u32) {
     args := Wl_Seat_Get_Pointer_Args.{};
-    marshal_constructor(self.conn, self.id, WL_SEAT_GET_POINTER, new_id, *args);
+    marshal_constructor(batch, self.id, WL_SEAT_GET_POINTER, new_id, *args);
 }
 
 // return keyboard object
@@ -99,9 +98,9 @@ wl_seat_get_pointer :: (self: *Wl_Seat, new_id: u32) {
 // It is a protocol violation to issue this request on a seat that has
 // never had the keyboard capability. The missing_capability error will
 // be sent in this case.
-wl_seat_get_keyboard :: (self: *Wl_Seat, new_id: u32) {
+wl_seat_get_keyboard :: (batch: *MessageBuilder, self: *Wl_Seat, new_id: u32) {
     args := Wl_Seat_Get_Keyboard_Args.{};
-    marshal_constructor(self.conn, self.id, WL_SEAT_GET_KEYBOARD, new_id, *args);
+    marshal_constructor(batch, self.id, WL_SEAT_GET_KEYBOARD, new_id, *args);
 }
 
 // return touch object
@@ -113,17 +112,17 @@ wl_seat_get_keyboard :: (self: *Wl_Seat, new_id: u32) {
 // It is a protocol violation to issue this request on a seat that has
 // never had the touch capability. The missing_capability error will
 // be sent in this case.
-wl_seat_get_touch :: (self: *Wl_Seat, new_id: u32) {
+wl_seat_get_touch :: (batch: *MessageBuilder, self: *Wl_Seat, new_id: u32) {
     args := Wl_Seat_Get_Touch_Args.{};
-    marshal_constructor(self.conn, self.id, WL_SEAT_GET_TOUCH, new_id, *args);
+    marshal_constructor(batch, self.id, WL_SEAT_GET_TOUCH, new_id, *args);
 }
 
 // release the seat object (destructor)
 // Using this request a client can tell the server that it is not going to
 // use the seat object anymore.
-wl_seat_release :: (self: *Wl_Seat) {
+wl_seat_release :: (batch: *MessageBuilder, self: *Wl_Seat) {
     args := Wl_Seat_Release_Args.{};
-    marshal(self.conn, self.id, WL_SEAT_RELEASE, *args);
+    marshal(batch, self.id, WL_SEAT_RELEASE, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

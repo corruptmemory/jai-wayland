@@ -21,8 +21,7 @@
 //
 Xwayland_Shell_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XWAYLAND_SHELL_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -46,9 +45,9 @@ Xwayland_Shell_V1_Get_Xwayland_Surface_Args :: struct {
 // Destroy the xwayland_shell_v1 object.
 //
 // The child objects created via this interface are unaffected.
-xwayland_shell_v1_destroy :: (self: *Xwayland_Shell_V1) {
+xwayland_shell_v1_destroy :: (batch: *MessageBuilder, self: *Xwayland_Shell_V1) {
     args := Xwayland_Shell_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XWAYLAND_SHELL_V1_DESTROY, *args);
+    marshal(batch, self.id, XWAYLAND_SHELL_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -62,9 +61,9 @@ xwayland_shell_v1_destroy :: (self: *Xwayland_Shell_V1) {
 //
 // See the documentation of xwayland_surface_v1 for more details
 // about what an xwayland_surface_v1 is and how it is used.
-xwayland_shell_v1_get_xwayland_surface :: (self: *Xwayland_Shell_V1, new_id: u32, surface: *Wl_Surface) {
+xwayland_shell_v1_get_xwayland_surface :: (batch: *MessageBuilder, self: *Xwayland_Shell_V1, new_id: u32, surface: *Wl_Surface) {
     args := Xwayland_Shell_V1_Get_Xwayland_Surface_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, XWAYLAND_SHELL_V1_GET_XWAYLAND_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, XWAYLAND_SHELL_V1_GET_XWAYLAND_SURFACE, new_id, *args);
 }
 
 XWAYLAND_SHELL_V1_INTERFACE :: Interface_Descriptor.{

@@ -5,8 +5,7 @@
 //
 Zwp_Fullscreen_Shell_Mode_Feedback_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_FULLSCREEN_SHELL_MODE_FEEDBACK_V1_INTERFACE.version;
 }
 
 // Event opcodes

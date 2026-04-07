@@ -36,8 +36,7 @@
 //
 Zwp_Linux_Surface_Synchronization_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -80,9 +79,9 @@ Zwp_Linux_Surface_Synchronization_V1_Get_Release_Args :: struct {
 //
 // zwp_linux_buffer_release_v1 objects created by this object are not
 // affected by this request.
-zwp_linux_surface_synchronization_v1_destroy :: (self: *Zwp_Linux_Surface_Synchronization_V1) {
+zwp_linux_surface_synchronization_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Linux_Surface_Synchronization_V1) {
     args := Zwp_Linux_Surface_Synchronization_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -110,9 +109,9 @@ zwp_linux_surface_synchronization_v1_destroy :: (self: *Zwp_Linux_Surface_Synchr
 //
 // If at surface commit time there is no buffer attached, a NO_BUFFER
 // error is raised.
-zwp_linux_surface_synchronization_v1_set_acquire_fence :: (self: *Zwp_Linux_Surface_Synchronization_V1, fd: Fd) {
+zwp_linux_surface_synchronization_v1_set_acquire_fence :: (batch: *MessageBuilder, self: *Zwp_Linux_Surface_Synchronization_V1, fd: Fd) {
     args := Zwp_Linux_Surface_Synchronization_V1_Set_Acquire_Fence_Args.{ fd = fd };
-    marshal(self.conn, self.id, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_SET_ACQUIRE_FENCE, *args);
+    marshal(batch, self.id, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_SET_ACQUIRE_FENCE, *args);
 }
 
 // release fence for last-attached buffer
@@ -133,9 +132,9 @@ zwp_linux_surface_synchronization_v1_set_acquire_fence :: (self: *Zwp_Linux_Surf
 //
 // If at surface commit time there is no buffer attached, a NO_BUFFER
 // error is raised.
-zwp_linux_surface_synchronization_v1_get_release :: (self: *Zwp_Linux_Surface_Synchronization_V1, new_id: u32) {
+zwp_linux_surface_synchronization_v1_get_release :: (batch: *MessageBuilder, self: *Zwp_Linux_Surface_Synchronization_V1, new_id: u32) {
     args := Zwp_Linux_Surface_Synchronization_V1_Get_Release_Args.{};
-    marshal_constructor(self.conn, self.id, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_GET_RELEASE, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_GET_RELEASE, new_id, *args);
 }
 
 ZWP_LINUX_SURFACE_SYNCHRONIZATION_V1_INTERFACE :: Interface_Descriptor.{

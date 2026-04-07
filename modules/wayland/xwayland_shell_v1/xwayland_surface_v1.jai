@@ -14,8 +14,7 @@
 //
 Xwayland_Surface_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XWAYLAND_SURFACE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -60,18 +59,18 @@ Xwayland_Surface_V1_Destroy_Args :: struct {
 //
 // For each wl_surface, this state must not be committed more than once,
 // otherwise the `already_associated` protocol error will be raised.
-xwayland_surface_v1_set_serial :: (self: *Xwayland_Surface_V1, serial_lo: u32, serial_hi: u32) {
+xwayland_surface_v1_set_serial :: (batch: *MessageBuilder, self: *Xwayland_Surface_V1, serial_lo: u32, serial_hi: u32) {
     args := Xwayland_Surface_V1_Set_Serial_Args.{ serial_lo = serial_lo, serial_hi = serial_hi };
-    marshal(self.conn, self.id, XWAYLAND_SURFACE_V1_SET_SERIAL, *args);
+    marshal(batch, self.id, XWAYLAND_SURFACE_V1_SET_SERIAL, *args);
 }
 
 // destroy the Xwayland surface object (destructor)
 // Destroy the xwayland_surface_v1 object.
 //
 // Any already existing associations are unaffected by this action.
-xwayland_surface_v1_destroy :: (self: *Xwayland_Surface_V1) {
+xwayland_surface_v1_destroy :: (batch: *MessageBuilder, self: *Xwayland_Surface_V1) {
     args := Xwayland_Surface_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XWAYLAND_SURFACE_V1_DESTROY, *args);
+    marshal(batch, self.id, XWAYLAND_SURFACE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

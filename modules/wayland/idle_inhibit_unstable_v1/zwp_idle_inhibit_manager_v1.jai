@@ -18,8 +18,7 @@
 //
 Zwp_Idle_Inhibit_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_IDLE_INHIBIT_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -36,17 +35,17 @@ Zwp_Idle_Inhibit_Manager_V1_Create_Inhibitor_Args :: struct {
 
 // destroy the idle inhibitor object (destructor)
 // Destroy the inhibit manager.
-zwp_idle_inhibit_manager_v1_destroy :: (self: *Zwp_Idle_Inhibit_Manager_V1) {
+zwp_idle_inhibit_manager_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Idle_Inhibit_Manager_V1) {
     args := Zwp_Idle_Inhibit_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_IDLE_INHIBIT_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_IDLE_INHIBIT_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a new inhibitor object
 // Create a new inhibitor object associated with the given surface.
-zwp_idle_inhibit_manager_v1_create_inhibitor :: (self: *Zwp_Idle_Inhibit_Manager_V1, new_id: u32, surface: *Wl_Surface) {
+zwp_idle_inhibit_manager_v1_create_inhibitor :: (batch: *MessageBuilder, self: *Zwp_Idle_Inhibit_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Zwp_Idle_Inhibit_Manager_V1_Create_Inhibitor_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, ZWP_IDLE_INHIBIT_MANAGER_V1_CREATE_INHIBITOR, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_IDLE_INHIBIT_MANAGER_V1_CREATE_INHIBITOR, new_id, *args);
 }
 
 ZWP_IDLE_INHIBIT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

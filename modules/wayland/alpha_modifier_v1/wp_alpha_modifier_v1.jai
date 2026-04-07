@@ -14,8 +14,7 @@
 //
 Wp_Alpha_Modifier_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_ALPHA_MODIFIER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -38,9 +37,9 @@ Wp_Alpha_Modifier_V1_Get_Surface_Args :: struct {
 // destroy the alpha modifier manager object (destructor)
 // Destroy the alpha modifier manager. This doesn't destroy objects
 // created with the manager.
-wp_alpha_modifier_v1_destroy :: (self: *Wp_Alpha_Modifier_V1) {
+wp_alpha_modifier_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Alpha_Modifier_V1) {
     args := Wp_Alpha_Modifier_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_ALPHA_MODIFIER_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_ALPHA_MODIFIER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -48,9 +47,9 @@ wp_alpha_modifier_v1_destroy :: (self: *Wp_Alpha_Modifier_V1) {
 // Create a new alpha modifier surface object associated with the
 // given wl_surface. If there is already such an object associated with
 // the wl_surface, the already_constructed error will be raised.
-wp_alpha_modifier_v1_get_surface :: (self: *Wp_Alpha_Modifier_V1, new_id: u32, surface: *Wl_Surface) {
+wp_alpha_modifier_v1_get_surface :: (batch: *MessageBuilder, self: *Wp_Alpha_Modifier_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Alpha_Modifier_V1_Get_Surface_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_ALPHA_MODIFIER_V1_GET_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, WP_ALPHA_MODIFIER_V1_GET_SURFACE, new_id, *args);
 }
 
 WP_ALPHA_MODIFIER_V1_INTERFACE :: Interface_Descriptor.{

@@ -8,8 +8,7 @@
 //
 Ext_Data_Control_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_DATA_CONTROL_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -30,24 +29,24 @@ Ext_Data_Control_Manager_V1_Destroy_Args :: struct {
 
 // create a new data source
 // Create a new data source.
-ext_data_control_manager_v1_create_data_source :: (self: *Ext_Data_Control_Manager_V1, new_id: u32) {
+ext_data_control_manager_v1_create_data_source :: (batch: *MessageBuilder, self: *Ext_Data_Control_Manager_V1, new_id: u32) {
     args := Ext_Data_Control_Manager_V1_Create_Data_Source_Args.{};
-    marshal_constructor(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_CREATE_DATA_SOURCE, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_DATA_CONTROL_MANAGER_V1_CREATE_DATA_SOURCE, new_id, *args);
 }
 
 // get a data device for a seat
 // Create a data device that can be used to manage a seat's selection.
-ext_data_control_manager_v1_get_data_device :: (self: *Ext_Data_Control_Manager_V1, new_id: u32, seat: *Wl_Seat) {
+ext_data_control_manager_v1_get_data_device :: (batch: *MessageBuilder, self: *Ext_Data_Control_Manager_V1, new_id: u32, seat: *Wl_Seat) {
     args := Ext_Data_Control_Manager_V1_Get_Data_Device_Args.{ seat = seat.id };
-    marshal_constructor(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_GET_DATA_DEVICE, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_DATA_CONTROL_MANAGER_V1_GET_DATA_DEVICE, new_id, *args);
 }
 
 // destroy the manager (destructor)
 // All objects created by the manager will still remain valid, until their
 // appropriate destroy request has been called.
-ext_data_control_manager_v1_destroy :: (self: *Ext_Data_Control_Manager_V1) {
+ext_data_control_manager_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Data_Control_Manager_V1) {
     args := Ext_Data_Control_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_DATA_CONTROL_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_DATA_CONTROL_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

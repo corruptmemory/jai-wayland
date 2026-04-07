@@ -8,8 +8,7 @@
 //
 Xdg_Toplevel_Icon_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_TOPLEVEL_ICON_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -55,18 +54,18 @@ Xdg_Toplevel_Icon_Manager_V1_Set_Icon_Args :: struct {
 // destroy the toplevel icon manager (destructor)
 // Destroy the toplevel icon manager.
 // This does not destroy objects created with the manager.
-xdg_toplevel_icon_manager_v1_destroy :: (self: *Xdg_Toplevel_Icon_Manager_V1) {
+xdg_toplevel_icon_manager_v1_destroy :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Icon_Manager_V1) {
     args := Xdg_Toplevel_Icon_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_TOPLEVEL_ICON_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_ICON_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create a new icon instance
 // Creates a new icon object. This icon can then be attached to a
 // xdg_toplevel via the 'set_icon' request.
-xdg_toplevel_icon_manager_v1_create_icon :: (self: *Xdg_Toplevel_Icon_Manager_V1, new_id: u32) {
+xdg_toplevel_icon_manager_v1_create_icon :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Icon_Manager_V1, new_id: u32) {
     args := Xdg_Toplevel_Icon_Manager_V1_Create_Icon_Args.{};
-    marshal_constructor(self.conn, self.id, XDG_TOPLEVEL_ICON_MANAGER_V1_CREATE_ICON, new_id, *args);
+    marshal_constructor(batch, self.id, XDG_TOPLEVEL_ICON_MANAGER_V1_CREATE_ICON, new_id, *args);
 }
 
 // set an icon on a toplevel window
@@ -90,9 +89,9 @@ xdg_toplevel_icon_manager_v1_create_icon :: (self: *Xdg_Toplevel_Icon_Manager_V1
 // its desktop-entry file, or a placeholder icon).
 // If this request is passed an icon with no pixel buffers or icon name
 // assigned, the icon must be reset just like if 'icon' was null.
-xdg_toplevel_icon_manager_v1_set_icon :: (self: *Xdg_Toplevel_Icon_Manager_V1, toplevel: *Xdg_Toplevel, icon: *Xdg_Toplevel_Icon_V1) {
+xdg_toplevel_icon_manager_v1_set_icon :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Icon_Manager_V1, toplevel: *Xdg_Toplevel, icon: *Xdg_Toplevel_Icon_V1) {
     args := Xdg_Toplevel_Icon_Manager_V1_Set_Icon_Args.{ toplevel = toplevel.id, icon = icon.id };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_ICON_MANAGER_V1_SET_ICON, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_ICON_MANAGER_V1_SET_ICON, *args);
 }
 
 XDG_TOPLEVEL_ICON_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

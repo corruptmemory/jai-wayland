@@ -15,8 +15,7 @@
 //
 Wl_Shell :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_SHELL_INTERFACE.version;
 }
 
 // Request opcodes
@@ -38,9 +37,9 @@ Wl_Shell_Get_Shell_Surface_Args :: struct {
 // already has another role, it raises a protocol error.
 //
 // Only one shell surface can be associated with a given surface.
-wl_shell_get_shell_surface :: (self: *Wl_Shell, new_id: u32, surface: *Wl_Surface) {
+wl_shell_get_shell_surface :: (batch: *MessageBuilder, self: *Wl_Shell, new_id: u32, surface: *Wl_Surface) {
     args := Wl_Shell_Get_Shell_Surface_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WL_SHELL_GET_SHELL_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, WL_SHELL_GET_SHELL_SURFACE, new_id, *args);
 }
 
 WL_SHELL_INTERFACE :: Interface_Descriptor.{

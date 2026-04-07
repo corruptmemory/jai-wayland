@@ -14,8 +14,7 @@
 //
 Wl_Touch :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_TOUCH_INTERFACE.version;
 }
 
 // Request opcodes
@@ -101,9 +100,9 @@ Wl_Touch_Release_Args :: struct {
 
 
 // release the touch object (destructor)
-wl_touch_release :: (self: *Wl_Touch) {
+wl_touch_release :: (batch: *MessageBuilder, self: *Wl_Touch) {
     args := Wl_Touch_Release_Args.{};
-    marshal(self.conn, self.id, WL_TOUCH_RELEASE, *args);
+    marshal(batch, self.id, WL_TOUCH_RELEASE, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

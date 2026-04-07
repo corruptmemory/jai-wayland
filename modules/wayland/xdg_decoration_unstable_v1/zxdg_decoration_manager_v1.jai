@@ -28,8 +28,7 @@
 //
 Zxdg_Decoration_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_DECORATION_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -47,9 +46,9 @@ Zxdg_Decoration_Manager_V1_Get_Toplevel_Decoration_Args :: struct {
 // destroy the decoration manager object (destructor)
 // Destroy the decoration manager. This doesn't destroy objects created
 // with the manager.
-zxdg_decoration_manager_v1_destroy :: (self: *Zxdg_Decoration_Manager_V1) {
+zxdg_decoration_manager_v1_destroy :: (batch: *MessageBuilder, self: *Zxdg_Decoration_Manager_V1) {
     args := Zxdg_Decoration_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_DECORATION_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_DECORATION_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -76,9 +75,9 @@ zxdg_decoration_manager_v1_destroy :: (self: *Zxdg_Decoration_Manager_V1) {
 // this request, or if a surface commit has been performed after a previous
 // xdg_toplevel_decoration object associated with the surface was
 // destroyed, the decoration mode is assumed to be client-side.
-zxdg_decoration_manager_v1_get_toplevel_decoration :: (self: *Zxdg_Decoration_Manager_V1, new_id: u32, toplevel: *Xdg_Toplevel) {
+zxdg_decoration_manager_v1_get_toplevel_decoration :: (batch: *MessageBuilder, self: *Zxdg_Decoration_Manager_V1, new_id: u32, toplevel: *Xdg_Toplevel) {
     args := Zxdg_Decoration_Manager_V1_Get_Toplevel_Decoration_Args.{ toplevel = toplevel.id };
-    marshal_constructor(self.conn, self.id, ZXDG_DECORATION_MANAGER_V1_GET_TOPLEVEL_DECORATION, new_id, *args);
+    marshal_constructor(batch, self.id, ZXDG_DECORATION_MANAGER_V1_GET_TOPLEVEL_DECORATION, new_id, *args);
 }
 
 ZXDG_DECORATION_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

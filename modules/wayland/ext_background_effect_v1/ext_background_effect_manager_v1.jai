@@ -17,8 +17,7 @@
 //
 Ext_Background_Effect_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_BACKGROUND_EFFECT_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -63,9 +62,9 @@ Ext_Background_Effect_Manager_V1_Get_Background_Effect_Args :: struct {
 // Informs the server that the client will no longer be using this
 // protocol object. Existing objects created by this object are not
 // affected.
-ext_background_effect_manager_v1_destroy :: (self: *Ext_Background_Effect_Manager_V1) {
+ext_background_effect_manager_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Background_Effect_Manager_V1) {
     args := Ext_Background_Effect_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_BACKGROUND_EFFECT_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_BACKGROUND_EFFECT_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -76,9 +75,9 @@ ext_background_effect_manager_v1_destroy :: (self: *Ext_Background_Effect_Manage
 // If the given wl_surface already has a ext_background_effect_surface_v1
 // object associated, the background_effect_exists protocol error will be
 // raised.
-ext_background_effect_manager_v1_get_background_effect :: (self: *Ext_Background_Effect_Manager_V1, new_id: u32, surface: *Wl_Surface) {
+ext_background_effect_manager_v1_get_background_effect :: (batch: *MessageBuilder, self: *Ext_Background_Effect_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Ext_Background_Effect_Manager_V1_Get_Background_Effect_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, EXT_BACKGROUND_EFFECT_MANAGER_V1_GET_BACKGROUND_EFFECT, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_BACKGROUND_EFFECT_MANAGER_V1_GET_BACKGROUND_EFFECT, new_id, *args);
 }
 
 EXT_BACKGROUND_EFFECT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

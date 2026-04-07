@@ -39,8 +39,7 @@
 //
 Zwp_Fullscreen_Shell_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_FULLSCREEN_SHELL_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -141,9 +140,9 @@ Zwp_Fullscreen_Shell_V1_Present_Surface_For_Mode_Args :: struct {
 // This destroys the server-side object and frees this binding.  If
 // the client binds to wl_fullscreen_shell multiple times, it may wish
 // to free some of those bindings.
-zwp_fullscreen_shell_v1_release :: (self: *Zwp_Fullscreen_Shell_V1) {
+zwp_fullscreen_shell_v1_release :: (batch: *MessageBuilder, self: *Zwp_Fullscreen_Shell_V1) {
     args := Zwp_Fullscreen_Shell_V1_Release_Args.{};
-    marshal(self.conn, self.id, ZWP_FULLSCREEN_SHELL_V1_RELEASE, *args);
+    marshal(batch, self.id, ZWP_FULLSCREEN_SHELL_V1_RELEASE, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -169,9 +168,9 @@ zwp_fullscreen_shell_v1_release :: (self: *Zwp_Fullscreen_Shell_V1) {
 // This request gives the surface the role of a fullscreen shell surface.
 // If the surface already has another role, it raises a role protocol
 // error.
-zwp_fullscreen_shell_v1_present_surface :: (self: *Zwp_Fullscreen_Shell_V1, surface: *Wl_Surface, method: u32, output: *Wl_Output) {
+zwp_fullscreen_shell_v1_present_surface :: (batch: *MessageBuilder, self: *Zwp_Fullscreen_Shell_V1, surface: *Wl_Surface, method: u32, output: *Wl_Output) {
     args := Zwp_Fullscreen_Shell_V1_Present_Surface_Args.{ surface = surface.id, method = method, output = output.id };
-    marshal(self.conn, self.id, ZWP_FULLSCREEN_SHELL_V1_PRESENT_SURFACE, *args);
+    marshal(batch, self.id, ZWP_FULLSCREEN_SHELL_V1_PRESENT_SURFACE, *args);
 }
 
 // present surface for display at a particular mode
@@ -216,9 +215,9 @@ zwp_fullscreen_shell_v1_present_surface :: (self: *Zwp_Fullscreen_Shell_V1, surf
 // This request gives the surface the role of a fullscreen shell surface.
 // If the surface already has another role, it raises a role protocol
 // error.
-zwp_fullscreen_shell_v1_present_surface_for_mode :: (self: *Zwp_Fullscreen_Shell_V1, new_id: u32, surface: *Wl_Surface, output: *Wl_Output, framerate: s32) {
+zwp_fullscreen_shell_v1_present_surface_for_mode :: (batch: *MessageBuilder, self: *Zwp_Fullscreen_Shell_V1, new_id: u32, surface: *Wl_Surface, output: *Wl_Output, framerate: s32) {
     args := Zwp_Fullscreen_Shell_V1_Present_Surface_For_Mode_Args.{ surface = surface.id, output = output.id, framerate = framerate };
-    marshal_constructor(self.conn, self.id, ZWP_FULLSCREEN_SHELL_V1_PRESENT_SURFACE_FOR_MODE, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_FULLSCREEN_SHELL_V1_PRESENT_SURFACE_FOR_MODE, new_id, *args);
 }
 
 ZWP_FULLSCREEN_SHELL_V1_INTERFACE :: Interface_Descriptor.{

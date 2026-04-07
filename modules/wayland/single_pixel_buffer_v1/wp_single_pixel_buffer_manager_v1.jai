@@ -8,8 +8,7 @@
 //
 Wp_Single_Pixel_Buffer_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_SINGLE_PIXEL_BUFFER_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -31,9 +30,9 @@ Wp_Single_Pixel_Buffer_Manager_V1_Create_U32_Rgba_Buffer_Args :: struct {
 // Destroy the wp_single_pixel_buffer_manager_v1 object.
 //
 // The child objects created via this interface are unaffected.
-wp_single_pixel_buffer_manager_v1_destroy :: (self: *Wp_Single_Pixel_Buffer_Manager_V1) {
+wp_single_pixel_buffer_manager_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Single_Pixel_Buffer_Manager_V1) {
     args := Wp_Single_Pixel_Buffer_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_SINGLE_PIXEL_BUFFER_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_SINGLE_PIXEL_BUFFER_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -51,9 +50,9 @@ wp_single_pixel_buffer_manager_v1_destroy :: (self: *Wp_Single_Pixel_Buffer_Mana
 // These arguments should be interpreted as a percentage, i.e.
 // - UINT32_MIN = 0% of the given color component
 // - UINT32_MAX = 100% of the given color component
-wp_single_pixel_buffer_manager_v1_create_u32_rgba_buffer :: (self: *Wp_Single_Pixel_Buffer_Manager_V1, new_id: u32, r: u32, g: u32, b: u32, a: u32) {
+wp_single_pixel_buffer_manager_v1_create_u32_rgba_buffer :: (batch: *MessageBuilder, self: *Wp_Single_Pixel_Buffer_Manager_V1, new_id: u32, r: u32, g: u32, b: u32, a: u32) {
     args := Wp_Single_Pixel_Buffer_Manager_V1_Create_U32_Rgba_Buffer_Args.{ r = r, g = g, b = b, a = a };
-    marshal_constructor(self.conn, self.id, WP_SINGLE_PIXEL_BUFFER_MANAGER_V1_CREATE_U32_RGBA_BUFFER, new_id, *args);
+    marshal_constructor(batch, self.id, WP_SINGLE_PIXEL_BUFFER_MANAGER_V1_CREATE_U32_RGBA_BUFFER, new_id, *args);
 }
 
 WP_SINGLE_PIXEL_BUFFER_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

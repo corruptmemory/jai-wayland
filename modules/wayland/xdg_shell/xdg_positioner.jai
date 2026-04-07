@@ -25,8 +25,7 @@
 //
 Xdg_Positioner :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_POSITIONER_INTERFACE.version;
 }
 
 // Request opcodes
@@ -139,9 +138,9 @@ Xdg_Positioner_Set_Parent_Configure_Args :: struct {
 
 // destroy the xdg_positioner object (destructor)
 // Notify the compositor that the xdg_positioner will no longer be used.
-xdg_positioner_destroy :: (self: *Xdg_Positioner) {
+xdg_positioner_destroy :: (batch: *MessageBuilder, self: *Xdg_Positioner) {
     args := Xdg_Positioner_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_POSITIONER_DESTROY, *args);
+    marshal(batch, self.id, XDG_POSITIONER_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -151,9 +150,9 @@ xdg_positioner_destroy :: (self: *Xdg_Positioner) {
 // window geometry. See xdg_surface.set_window_geometry.
 //
 // If a zero or negative size is set the invalid_input error is raised.
-xdg_positioner_set_size :: (self: *Xdg_Positioner, width: s32, height: s32) {
+xdg_positioner_set_size :: (batch: *MessageBuilder, self: *Xdg_Positioner, width: s32, height: s32) {
     args := Xdg_Positioner_Set_Size_Args.{ width = width, height = height };
-    marshal(self.conn, self.id, XDG_POSITIONER_SET_SIZE, *args);
+    marshal(batch, self.id, XDG_POSITIONER_SET_SIZE, *args);
 }
 
 // set the anchor rectangle within the parent surface
@@ -167,9 +166,9 @@ xdg_positioner_set_size :: (self: *Xdg_Positioner, width: s32, height: s32) {
 // positioned child's parent surface.
 //
 // If a negative size is set the invalid_input error is raised.
-xdg_positioner_set_anchor_rect :: (self: *Xdg_Positioner, x: s32, y: s32, width: s32, height: s32) {
+xdg_positioner_set_anchor_rect :: (batch: *MessageBuilder, self: *Xdg_Positioner, x: s32, y: s32, width: s32, height: s32) {
     args := Xdg_Positioner_Set_Anchor_Rect_Args.{ x = x, y = y, width = width, height = height };
-    marshal(self.conn, self.id, XDG_POSITIONER_SET_ANCHOR_RECT, *args);
+    marshal(batch, self.id, XDG_POSITIONER_SET_ANCHOR_RECT, *args);
 }
 
 // set anchor rectangle anchor
@@ -179,9 +178,9 @@ xdg_positioner_set_anchor_rect :: (self: *Xdg_Positioner, x: s32, y: s32, width:
 // 'bottom_right'), the anchor point will be at the specified corner;
 // otherwise, the derived anchor point will be centered on the specified
 // edge, or in the center of the anchor rectangle if no edge is specified.
-xdg_positioner_set_anchor :: (self: *Xdg_Positioner, anchor: u32) {
+xdg_positioner_set_anchor :: (batch: *MessageBuilder, self: *Xdg_Positioner, anchor: u32) {
     args := Xdg_Positioner_Set_Anchor_Args.{ anchor = anchor };
-    marshal(self.conn, self.id, XDG_POSITIONER_SET_ANCHOR, *args);
+    marshal(batch, self.id, XDG_POSITIONER_SET_ANCHOR, *args);
 }
 
 // set child surface gravity
@@ -192,9 +191,9 @@ xdg_positioner_set_anchor :: (self: *Xdg_Positioner, anchor: u32) {
 // surface will be centered over the anchor point on any axis that had no
 // gravity specified. If the gravity is not in the ‘gravity’ enum, an
 // invalid_input error is raised.
-xdg_positioner_set_gravity :: (self: *Xdg_Positioner, gravity: u32) {
+xdg_positioner_set_gravity :: (batch: *MessageBuilder, self: *Xdg_Positioner, gravity: u32) {
     args := Xdg_Positioner_Set_Gravity_Args.{ gravity = gravity };
-    marshal(self.conn, self.id, XDG_POSITIONER_SET_GRAVITY, *args);
+    marshal(batch, self.id, XDG_POSITIONER_SET_GRAVITY, *args);
 }
 
 // set the adjustment to be done when constrained
@@ -211,9 +210,9 @@ xdg_positioner_set_gravity :: (self: *Xdg_Positioner, gravity: u32) {
 // are applied is specified in the corresponding adjustment descriptions.
 //
 // The default adjustment is none.
-xdg_positioner_set_constraint_adjustment :: (self: *Xdg_Positioner, constraint_adjustment: u32) {
+xdg_positioner_set_constraint_adjustment :: (batch: *MessageBuilder, self: *Xdg_Positioner, constraint_adjustment: u32) {
     args := Xdg_Positioner_Set_Constraint_Adjustment_Args.{ constraint_adjustment = constraint_adjustment };
-    marshal(self.conn, self.id, XDG_POSITIONER_SET_CONSTRAINT_ADJUSTMENT, *args);
+    marshal(batch, self.id, XDG_POSITIONER_SET_CONSTRAINT_ADJUSTMENT, *args);
 }
 
 // set surface position offset
@@ -228,9 +227,9 @@ xdg_positioner_set_constraint_adjustment :: (self: *Xdg_Positioner, constraint_a
 // An example use case is placing a popup menu on top of a user interface
 // element, while aligning the user interface element of the parent surface
 // with some user interface element placed somewhere in the popup surface.
-xdg_positioner_set_offset :: (self: *Xdg_Positioner, x: s32, y: s32) {
+xdg_positioner_set_offset :: (batch: *MessageBuilder, self: *Xdg_Positioner, x: s32, y: s32) {
     args := Xdg_Positioner_Set_Offset_Args.{ x = x, y = y };
-    marshal(self.conn, self.id, XDG_POSITIONER_SET_OFFSET, *args);
+    marshal(batch, self.id, XDG_POSITIONER_SET_OFFSET, *args);
 }
 
 // continuously reconstrain the surface
@@ -240,9 +239,9 @@ xdg_positioner_set_offset :: (self: *Xdg_Positioner, x: s32, y: s32) {
 // If the conditions changed and the popup was reconstrained, an
 // xdg_popup.configure event is sent with updated geometry, followed by an
 // xdg_surface.configure event.
-xdg_positioner_set_reactive :: (self: *Xdg_Positioner) {
+xdg_positioner_set_reactive :: (batch: *MessageBuilder, self: *Xdg_Positioner) {
     args := Xdg_Positioner_Set_Reactive_Args.{};
-    marshal(self.conn, self.id, XDG_POSITIONER_SET_REACTIVE, *args);
+    marshal(batch, self.id, XDG_POSITIONER_SET_REACTIVE, *args);
 }
 
 // Set the parent window geometry the compositor should use when
@@ -252,9 +251,9 @@ xdg_positioner_set_reactive :: (self: *Xdg_Positioner) {
 // positioned against, the behavior is undefined.
 //
 // The arguments are given in the surface-local coordinate space.
-xdg_positioner_set_parent_size :: (self: *Xdg_Positioner, parent_width: s32, parent_height: s32) {
+xdg_positioner_set_parent_size :: (batch: *MessageBuilder, self: *Xdg_Positioner, parent_width: s32, parent_height: s32) {
     args := Xdg_Positioner_Set_Parent_Size_Args.{ parent_width = parent_width, parent_height = parent_height };
-    marshal(self.conn, self.id, XDG_POSITIONER_SET_PARENT_SIZE, *args);
+    marshal(batch, self.id, XDG_POSITIONER_SET_PARENT_SIZE, *args);
 }
 
 // set parent configure this is a response to
@@ -262,9 +261,9 @@ xdg_positioner_set_parent_size :: (self: *Xdg_Positioner, parent_width: s32, par
 // used in response to. The compositor may use this information together
 // with set_parent_size to determine what future state the popup should be
 // constrained using.
-xdg_positioner_set_parent_configure :: (self: *Xdg_Positioner, serial: u32) {
+xdg_positioner_set_parent_configure :: (batch: *MessageBuilder, self: *Xdg_Positioner, serial: u32) {
     args := Xdg_Positioner_Set_Parent_Configure_Args.{ serial = serial };
-    marshal(self.conn, self.id, XDG_POSITIONER_SET_PARENT_CONFIGURE, *args);
+    marshal(batch, self.id, XDG_POSITIONER_SET_PARENT_CONFIGURE, *args);
 }
 
 XDG_POSITIONER_INTERFACE :: Interface_Descriptor.{

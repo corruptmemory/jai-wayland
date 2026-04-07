@@ -27,8 +27,7 @@
 //
 Zwp_Tablet_Pad_Group_V2 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_TABLET_PAD_GROUP_V2_INTERFACE.version;
 }
 
 // Request opcodes
@@ -106,9 +105,9 @@ Zwp_Tablet_Pad_Group_V2_Destroy_Args :: struct {
 // destroy the pad object (destructor)
 // Destroy the zwp_tablet_pad_group_v2 object. Objects created from this object
 // are unaffected and should be destroyed separately.
-zwp_tablet_pad_group_v2_destroy :: (self: *Zwp_Tablet_Pad_Group_V2) {
+zwp_tablet_pad_group_v2_destroy :: (batch: *MessageBuilder, self: *Zwp_Tablet_Pad_Group_V2) {
     args := Zwp_Tablet_Pad_Group_V2_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_TABLET_PAD_GROUP_V2_DESTROY, *args);
+    marshal(batch, self.id, ZWP_TABLET_PAD_GROUP_V2_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

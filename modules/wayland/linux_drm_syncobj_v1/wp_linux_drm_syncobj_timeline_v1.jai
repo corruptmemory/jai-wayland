@@ -8,8 +8,7 @@
 //
 Wp_Linux_Drm_Syncobj_Timeline_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_LINUX_DRM_SYNCOBJ_TIMELINE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -23,9 +22,9 @@ Wp_Linux_Drm_Syncobj_Timeline_V1_Destroy_Args :: struct {
 // Destroy the synchronization object timeline. Other objects are not
 // affected by this request, in particular timeline points set by
 // set_acquire_point and set_release_point are not unset.
-wp_linux_drm_syncobj_timeline_v1_destroy :: (self: *Wp_Linux_Drm_Syncobj_Timeline_V1) {
+wp_linux_drm_syncobj_timeline_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Linux_Drm_Syncobj_Timeline_V1) {
     args := Wp_Linux_Drm_Syncobj_Timeline_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_LINUX_DRM_SYNCOBJ_TIMELINE_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_LINUX_DRM_SYNCOBJ_TIMELINE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

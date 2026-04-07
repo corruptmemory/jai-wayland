@@ -12,8 +12,7 @@
 //
 Wp_Image_Description_Reference_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_IMAGE_DESCRIPTION_REFERENCE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -26,9 +25,9 @@ Wp_Image_Description_Reference_V1_Destroy_Args :: struct {
 // destroy the reference (destructor)
 // Destroy this object. This has no effect on the referenced image
 // description.
-wp_image_description_reference_v1_destroy :: (self: *Wp_Image_Description_Reference_V1) {
+wp_image_description_reference_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Image_Description_Reference_V1) {
     args := Wp_Image_Description_Reference_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_REFERENCE_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_REFERENCE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

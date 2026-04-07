@@ -14,8 +14,7 @@
 //
 Wp_Cursor_Shape_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_CURSOR_SHAPE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -37,9 +36,9 @@ Wp_Cursor_Shape_Manager_V1_Get_Tablet_Tool_V2_Args :: struct {
 
 // destroy the manager (destructor)
 // Destroy the cursor shape manager.
-wp_cursor_shape_manager_v1_destroy :: (self: *Wp_Cursor_Shape_Manager_V1) {
+wp_cursor_shape_manager_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Cursor_Shape_Manager_V1) {
     args := Wp_Cursor_Shape_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_CURSOR_SHAPE_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -48,9 +47,9 @@ wp_cursor_shape_manager_v1_destroy :: (self: *Wp_Cursor_Shape_Manager_V1) {
 //
 // When the pointer capability is removed from the wl_seat, the
 // wp_cursor_shape_device_v1 object becomes inert.
-wp_cursor_shape_manager_v1_get_pointer :: (self: *Wp_Cursor_Shape_Manager_V1, new_id: u32, pointer: *Wl_Pointer) {
+wp_cursor_shape_manager_v1_get_pointer :: (batch: *MessageBuilder, self: *Wp_Cursor_Shape_Manager_V1, new_id: u32, pointer: *Wl_Pointer) {
     args := Wp_Cursor_Shape_Manager_V1_Get_Pointer_Args.{ pointer = pointer.id };
-    marshal_constructor(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_POINTER, new_id, *args);
+    marshal_constructor(batch, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_POINTER, new_id, *args);
 }
 
 // manage the cursor shape of a tablet tool device
@@ -58,9 +57,9 @@ wp_cursor_shape_manager_v1_get_pointer :: (self: *Wp_Cursor_Shape_Manager_V1, ne
 //
 // When the zwp_tablet_tool_v2 is removed, the wp_cursor_shape_device_v1
 // object becomes inert.
-wp_cursor_shape_manager_v1_get_tablet_tool_v2 :: (self: *Wp_Cursor_Shape_Manager_V1, new_id: u32, tablet_tool: *Zwp_Tablet_Tool_V2) {
+wp_cursor_shape_manager_v1_get_tablet_tool_v2 :: (batch: *MessageBuilder, self: *Wp_Cursor_Shape_Manager_V1, new_id: u32, tablet_tool: *Zwp_Tablet_Tool_V2) {
     args := Wp_Cursor_Shape_Manager_V1_Get_Tablet_Tool_V2_Args.{ tablet_tool = tablet_tool.id };
-    marshal_constructor(self.conn, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_TABLET_TOOL_V2, new_id, *args);
+    marshal_constructor(batch, self.id, WP_CURSOR_SHAPE_MANAGER_V1_GET_TABLET_TOOL_V2, new_id, *args);
 }
 
 WP_CURSOR_SHAPE_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

@@ -12,8 +12,7 @@
 //
 Wp_Viewporter :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_VIEWPORTER_INTERFACE.version;
 }
 
 // Request opcodes
@@ -37,9 +36,9 @@ Wp_Viewporter_Get_Viewport_Args :: struct {
 // Informs the server that the client will not be using this
 // protocol object anymore. This does not affect any other objects,
 // wp_viewport objects included.
-wp_viewporter_destroy :: (self: *Wp_Viewporter) {
+wp_viewporter_destroy :: (batch: *MessageBuilder, self: *Wp_Viewporter) {
     args := Wp_Viewporter_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_VIEWPORTER_DESTROY, *args);
+    marshal(batch, self.id, WP_VIEWPORTER_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -48,9 +47,9 @@ wp_viewporter_destroy :: (self: *Wp_Viewporter) {
 // crop and scale its content. If the given wl_surface already has
 // a wp_viewport object associated, the viewport_exists
 // protocol error is raised.
-wp_viewporter_get_viewport :: (self: *Wp_Viewporter, new_id: u32, surface: *Wl_Surface) {
+wp_viewporter_get_viewport :: (batch: *MessageBuilder, self: *Wp_Viewporter, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Viewporter_Get_Viewport_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_VIEWPORTER_GET_VIEWPORT, new_id, *args);
+    marshal_constructor(batch, self.id, WP_VIEWPORTER_GET_VIEWPORT, new_id, *args);
 }
 
 WP_VIEWPORTER_INTERFACE :: Interface_Descriptor.{

@@ -18,8 +18,7 @@
 //
 Wl_Keyboard :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_KEYBOARD_INTERFACE.version;
 }
 
 // Request opcodes
@@ -128,9 +127,9 @@ Wl_Keyboard_Release_Args :: struct {
 
 
 // release the keyboard object (destructor)
-wl_keyboard_release :: (self: *Wl_Keyboard) {
+wl_keyboard_release :: (batch: *MessageBuilder, self: *Wl_Keyboard) {
     args := Wl_Keyboard_Release_Args.{};
-    marshal(self.conn, self.id, WL_KEYBOARD_RELEASE, *args);
+    marshal(batch, self.id, WL_KEYBOARD_RELEASE, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

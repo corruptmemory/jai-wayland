@@ -17,8 +17,7 @@
 //
 Wl_Shell_Surface :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_SHELL_SURFACE_INTERFACE.version;
 }
 
 // Request opcodes
@@ -171,9 +170,9 @@ Wl_Shell_Surface_Set_Class_Args :: struct {
 // respond to a ping event
 // A client must respond to a ping event with a pong request or
 // the client may be deemed unresponsive.
-wl_shell_surface_pong :: (self: *Wl_Shell_Surface, serial: u32) {
+wl_shell_surface_pong :: (batch: *MessageBuilder, self: *Wl_Shell_Surface, serial: u32) {
     args := Wl_Shell_Surface_Pong_Args.{ serial = serial };
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_PONG, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_PONG, *args);
 }
 
 // start an interactive move
@@ -182,9 +181,9 @@ wl_shell_surface_pong :: (self: *Wl_Shell_Surface, serial: u32) {
 // This request must be used in response to a button press event.
 // The server may ignore move requests depending on the state of
 // the surface (e.g. fullscreen or maximized).
-wl_shell_surface_move :: (self: *Wl_Shell_Surface, seat: *Wl_Seat, serial: u32) {
+wl_shell_surface_move :: (batch: *MessageBuilder, self: *Wl_Shell_Surface, seat: *Wl_Seat, serial: u32) {
     args := Wl_Shell_Surface_Move_Args.{ seat = seat.id, serial = serial };
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_MOVE, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_MOVE, *args);
 }
 
 // start an interactive resize
@@ -193,18 +192,18 @@ wl_shell_surface_move :: (self: *Wl_Shell_Surface, seat: *Wl_Seat, serial: u32) 
 // This request must be used in response to a button press event.
 // The server may ignore resize requests depending on the state of
 // the surface (e.g. fullscreen or maximized).
-wl_shell_surface_resize :: (self: *Wl_Shell_Surface, seat: *Wl_Seat, serial: u32, edges: u32) {
+wl_shell_surface_resize :: (batch: *MessageBuilder, self: *Wl_Shell_Surface, seat: *Wl_Seat, serial: u32, edges: u32) {
     args := Wl_Shell_Surface_Resize_Args.{ seat = seat.id, serial = serial, edges = edges };
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_RESIZE, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_RESIZE, *args);
 }
 
 // make the surface a toplevel surface
 // Map the surface as a toplevel surface.
 //
 // A toplevel surface is not fullscreen, maximized or transient.
-wl_shell_surface_set_toplevel :: (self: *Wl_Shell_Surface) {
+wl_shell_surface_set_toplevel :: (batch: *MessageBuilder, self: *Wl_Shell_Surface) {
     args := Wl_Shell_Surface_Set_Toplevel_Args.{};
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_SET_TOPLEVEL, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_SET_TOPLEVEL, *args);
 }
 
 // make the surface a transient surface
@@ -215,9 +214,9 @@ wl_shell_surface_set_toplevel :: (self: *Wl_Shell_Surface) {
 // parent surface, in surface-local coordinates.
 //
 // The flags argument controls details of the transient behaviour.
-wl_shell_surface_set_transient :: (self: *Wl_Shell_Surface, parent: *Wl_Surface, x: s32, y: s32, flags: u32) {
+wl_shell_surface_set_transient :: (batch: *MessageBuilder, self: *Wl_Shell_Surface, parent: *Wl_Surface, x: s32, y: s32, flags: u32) {
     args := Wl_Shell_Surface_Set_Transient_Args.{ parent = parent.id, x = x, y = y, flags = flags };
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_SET_TRANSIENT, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_SET_TRANSIENT, *args);
 }
 
 // make the surface a fullscreen surface
@@ -254,9 +253,9 @@ wl_shell_surface_set_transient :: (self: *Wl_Shell_Surface, parent: *Wl_Surface,
 // The compositor must reply to this request with a configure event
 // with the dimensions for the output on which the surface will
 // be made fullscreen.
-wl_shell_surface_set_fullscreen :: (self: *Wl_Shell_Surface, method: u32, framerate: u32, output: *Wl_Output) {
+wl_shell_surface_set_fullscreen :: (batch: *MessageBuilder, self: *Wl_Shell_Surface, method: u32, framerate: u32, output: *Wl_Output) {
     args := Wl_Shell_Surface_Set_Fullscreen_Args.{ method = method, framerate = framerate, output = output.id };
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_SET_FULLSCREEN, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_SET_FULLSCREEN, *args);
 }
 
 // make the surface a popup surface
@@ -279,9 +278,9 @@ wl_shell_surface_set_fullscreen :: (self: *Wl_Shell_Surface, method: u32, framer
 // The x and y arguments specify the location of the upper left
 // corner of the surface relative to the upper left corner of the
 // parent surface, in surface-local coordinates.
-wl_shell_surface_set_popup :: (self: *Wl_Shell_Surface, seat: *Wl_Seat, serial: u32, parent: *Wl_Surface, x: s32, y: s32, flags: u32) {
+wl_shell_surface_set_popup :: (batch: *MessageBuilder, self: *Wl_Shell_Surface, seat: *Wl_Seat, serial: u32, parent: *Wl_Surface, x: s32, y: s32, flags: u32) {
     args := Wl_Shell_Surface_Set_Popup_Args.{ seat = seat.id, serial = serial, parent = parent.id, x = x, y = y, flags = flags };
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_SET_POPUP, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_SET_POPUP, *args);
 }
 
 // make the surface a maximized surface
@@ -303,9 +302,9 @@ wl_shell_surface_set_popup :: (self: *Wl_Shell_Surface, seat: *Wl_Seat, serial: 
 // fullscreen shell surface.
 //
 // The details depend on the compositor implementation.
-wl_shell_surface_set_maximized :: (self: *Wl_Shell_Surface, output: *Wl_Output) {
+wl_shell_surface_set_maximized :: (batch: *MessageBuilder, self: *Wl_Shell_Surface, output: *Wl_Output) {
     args := Wl_Shell_Surface_Set_Maximized_Args.{ output = output.id };
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_SET_MAXIMIZED, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_SET_MAXIMIZED, *args);
 }
 
 // set surface title
@@ -316,9 +315,9 @@ wl_shell_surface_set_maximized :: (self: *Wl_Shell_Surface, output: *Wl_Output) 
 // compositor.
 //
 // The string must be encoded in UTF-8.
-wl_shell_surface_set_title :: (self: *Wl_Shell_Surface, title: string) {
+wl_shell_surface_set_title :: (batch: *MessageBuilder, self: *Wl_Shell_Surface, title: string) {
     args := Wl_Shell_Surface_Set_Title_Args.{ title = title };
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_SET_TITLE, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_SET_TITLE, *args);
 }
 
 // set surface class
@@ -328,9 +327,9 @@ wl_shell_surface_set_title :: (self: *Wl_Shell_Surface, title: string) {
 // to which the surface belongs. A common convention is to use the
 // file name (or the full path if it is a non-standard location) of
 // the application's .desktop file as the class.
-wl_shell_surface_set_class :: (self: *Wl_Shell_Surface, class_: string) {
+wl_shell_surface_set_class :: (batch: *MessageBuilder, self: *Wl_Shell_Surface, class_: string) {
     args := Wl_Shell_Surface_Set_Class_Args.{ class_ = class_ };
-    marshal(self.conn, self.id, WL_SHELL_SURFACE_SET_CLASS, *args);
+    marshal(batch, self.id, WL_SHELL_SURFACE_SET_CLASS, *args);
 }
 
 WL_SHELL_SURFACE_INTERFACE :: Interface_Descriptor.{

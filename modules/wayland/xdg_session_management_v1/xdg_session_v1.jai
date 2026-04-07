@@ -13,8 +13,7 @@
 //
 Xdg_Session_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_SESSION_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -90,9 +89,9 @@ Xdg_Session_V1_Remove_Toplevel_Args :: struct {
 // Destroy a session object, preserving the current state but not continuing
 // to make further updates if state changes occur. This makes the associated
 // xdg_toplevel_session_v1 objects inert.
-xdg_session_v1_destroy :: (self: *Xdg_Session_V1) {
+xdg_session_v1_destroy :: (batch: *MessageBuilder, self: *Xdg_Session_V1) {
     args := Xdg_Session_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_SESSION_V1_DESTROY, *args);
+    marshal(batch, self.id, XDG_SESSION_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -100,9 +99,9 @@ xdg_session_v1_destroy :: (self: *Xdg_Session_V1) {
 // Remove the session, making it no longer available for restoration. A
 // compositor should in response to this request remove the data related to
 // this session from its storage.
-xdg_session_v1_remove :: (self: *Xdg_Session_V1) {
+xdg_session_v1_remove :: (batch: *MessageBuilder, self: *Xdg_Session_V1) {
     args := Xdg_Session_V1_Remove_Args.{};
-    marshal(self.conn, self.id, XDG_SESSION_V1_REMOVE, *args);
+    marshal(batch, self.id, XDG_SESSION_V1_REMOVE, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -128,9 +127,9 @@ xdg_session_v1_remove :: (self: *Xdg_Session_V1) {
 // The name string must be UTF-8 encoded. It is also limited by the maximum
 // length of wayland messages (around 4KB). The 'invalid_name' protocol
 // error will be raised if an invalid string is provided.
-xdg_session_v1_add_toplevel :: (self: *Xdg_Session_V1, new_id: u32, toplevel: *Xdg_Toplevel, name: string) {
+xdg_session_v1_add_toplevel :: (batch: *MessageBuilder, self: *Xdg_Session_V1, new_id: u32, toplevel: *Xdg_Toplevel, name: string) {
     args := Xdg_Session_V1_Add_Toplevel_Args.{ toplevel = toplevel.id, name = name };
-    marshal_constructor(self.conn, self.id, XDG_SESSION_V1_ADD_TOPLEVEL, new_id, *args);
+    marshal_constructor(batch, self.id, XDG_SESSION_V1_ADD_TOPLEVEL, new_id, *args);
 }
 
 // restore a surface state
@@ -158,9 +157,9 @@ xdg_session_v1_add_toplevel :: (self: *Xdg_Session_V1, new_id: u32, toplevel: *X
 // The name string must be UTF-8 encoded. It is also limited by the maximum
 // length of wayland messages (around 4KB). The 'invalid_name' protocol
 // error will be raised if an invalid string is provided.
-xdg_session_v1_restore_toplevel :: (self: *Xdg_Session_V1, new_id: u32, toplevel: *Xdg_Toplevel, name: string) {
+xdg_session_v1_restore_toplevel :: (batch: *MessageBuilder, self: *Xdg_Session_V1, new_id: u32, toplevel: *Xdg_Toplevel, name: string) {
     args := Xdg_Session_V1_Restore_Toplevel_Args.{ toplevel = toplevel.id, name = name };
-    marshal_constructor(self.conn, self.id, XDG_SESSION_V1_RESTORE_TOPLEVEL, new_id, *args);
+    marshal_constructor(batch, self.id, XDG_SESSION_V1_RESTORE_TOPLEVEL, new_id, *args);
 }
 
 // remove a surface from the session
@@ -172,9 +171,9 @@ xdg_session_v1_restore_toplevel :: (self: *Xdg_Session_V1, new_id: u32, toplevel
 // The window is specified by its name in the session. The name string
 // must be encoded in UTF-8, and it is limited in size by the maximum
 // length of wayland messages (around 4KB).
-xdg_session_v1_remove_toplevel :: (self: *Xdg_Session_V1, name: string) {
+xdg_session_v1_remove_toplevel :: (batch: *MessageBuilder, self: *Xdg_Session_V1, name: string) {
     args := Xdg_Session_V1_Remove_Toplevel_Args.{ name = name };
-    marshal(self.conn, self.id, XDG_SESSION_V1_REMOVE_TOPLEVEL, *args);
+    marshal(batch, self.id, XDG_SESSION_V1_REMOVE_TOPLEVEL, *args);
 }
 
 XDG_SESSION_V1_INTERFACE :: Interface_Descriptor.{

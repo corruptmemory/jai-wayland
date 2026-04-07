@@ -36,8 +36,7 @@
 //
 Wp_Drm_Lease_Device_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_DRM_LEASE_DEVICE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -93,9 +92,9 @@ Wp_Drm_Lease_Device_V1_Release_Args :: struct {
 // Creates a lease request object.
 //
 // See the documentation for wp_drm_lease_request_v1 for details.
-wp_drm_lease_device_v1_create_lease_request :: (self: *Wp_Drm_Lease_Device_V1, new_id: u32) {
+wp_drm_lease_device_v1_create_lease_request :: (batch: *MessageBuilder, self: *Wp_Drm_Lease_Device_V1, new_id: u32) {
     args := Wp_Drm_Lease_Device_V1_Create_Lease_Request_Args.{};
-    marshal_constructor(self.conn, self.id, WP_DRM_LEASE_DEVICE_V1_CREATE_LEASE_REQUEST, new_id, *args);
+    marshal_constructor(batch, self.id, WP_DRM_LEASE_DEVICE_V1_CREATE_LEASE_REQUEST, new_id, *args);
 }
 
 // release this object
@@ -105,9 +104,9 @@ wp_drm_lease_device_v1_create_lease_request :: (self: *Wp_Drm_Lease_Device_V1, n
 // connector events before the released event. The client must not send any
 // requests after this one, doing so will raise a wl_display error.
 // Existing connectors, lease request and leases will not be affected.
-wp_drm_lease_device_v1_release :: (self: *Wp_Drm_Lease_Device_V1) {
+wp_drm_lease_device_v1_release :: (batch: *MessageBuilder, self: *Wp_Drm_Lease_Device_V1) {
     args := Wp_Drm_Lease_Device_V1_Release_Args.{};
-    marshal(self.conn, self.id, WP_DRM_LEASE_DEVICE_V1_RELEASE, *args);
+    marshal(batch, self.id, WP_DRM_LEASE_DEVICE_V1_RELEASE, *args);
 }
 
 WP_DRM_LEASE_DEVICE_V1_INTERFACE :: Interface_Descriptor.{

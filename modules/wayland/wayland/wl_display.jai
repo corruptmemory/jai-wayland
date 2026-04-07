@@ -8,8 +8,7 @@
 //
 Wl_Display :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_DISPLAY_INTERFACE.version;
 }
 
 // Request opcodes
@@ -75,9 +74,9 @@ Wl_Display_Get_Registry_Args :: struct {
 // attempt to use it after that point.
 //
 // The callback_data passed in the callback is undefined and should be ignored.
-wl_display_sync :: (self: *Wl_Display, new_id: u32) {
+wl_display_sync :: (batch: *MessageBuilder, self: *Wl_Display, new_id: u32) {
     args := Wl_Display_Sync_Args.{};
-    marshal_constructor(self.conn, self.id, WL_DISPLAY_SYNC, new_id, *args);
+    marshal_constructor(batch, self.id, WL_DISPLAY_SYNC, new_id, *args);
 }
 
 // get global registry object
@@ -90,9 +89,9 @@ wl_display_sync :: (self: *Wl_Display, new_id: u32) {
 // client disconnects, not when the client side proxy is destroyed.
 // Therefore, clients should invoke get_registry as infrequently as
 // possible to avoid wasting memory.
-wl_display_get_registry :: (self: *Wl_Display, new_id: u32) {
+wl_display_get_registry :: (batch: *MessageBuilder, self: *Wl_Display, new_id: u32) {
     args := Wl_Display_Get_Registry_Args.{};
-    marshal_constructor(self.conn, self.id, WL_DISPLAY_GET_REGISTRY, new_id, *args);
+    marshal_constructor(batch, self.id, WL_DISPLAY_GET_REGISTRY, new_id, *args);
 }
 
 WL_DISPLAY_INTERFACE :: Interface_Descriptor.{

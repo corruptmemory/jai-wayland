@@ -60,8 +60,7 @@
 //
 Wp_Viewport :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_VIEWPORT_INTERFACE.version;
 }
 
 // Request opcodes
@@ -99,9 +98,9 @@ Wp_Viewport_Set_Destination_Args :: struct {
 // remove scaling and cropping from the surface (destructor)
 // The associated wl_surface's crop and scale state is removed.
 // The change is applied on the next wl_surface.commit.
-wp_viewport_destroy :: (self: *Wp_Viewport) {
+wp_viewport_destroy :: (batch: *MessageBuilder, self: *Wp_Viewport) {
     args := Wp_Viewport_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_VIEWPORT_DESTROY, *args);
+    marshal(batch, self.id, WP_VIEWPORT_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -116,9 +115,9 @@ wp_viewport_destroy :: (self: *Wp_Viewport) {
 // error.
 //
 // The crop and scale state is double-buffered, see wl_surface.commit.
-wp_viewport_set_source :: (self: *Wp_Viewport, x: Fixed, y: Fixed, width: Fixed, height: Fixed) {
+wp_viewport_set_source :: (batch: *MessageBuilder, self: *Wp_Viewport, x: Fixed, y: Fixed, width: Fixed, height: Fixed) {
     args := Wp_Viewport_Set_Source_Args.{ x = x, y = y, width = width, height = height };
-    marshal(self.conn, self.id, WP_VIEWPORT_SET_SOURCE, *args);
+    marshal(batch, self.id, WP_VIEWPORT_SET_SOURCE, *args);
 }
 
 // set the surface size for scaling
@@ -132,9 +131,9 @@ wp_viewport_set_source :: (self: *Wp_Viewport, x: Fixed, y: Fixed, width: Fixed,
 // error.
 //
 // The crop and scale state is double-buffered, see wl_surface.commit.
-wp_viewport_set_destination :: (self: *Wp_Viewport, width: s32, height: s32) {
+wp_viewport_set_destination :: (batch: *MessageBuilder, self: *Wp_Viewport, width: s32, height: s32) {
     args := Wp_Viewport_Set_Destination_Args.{ width = width, height = height };
-    marshal(self.conn, self.id, WP_VIEWPORT_SET_DESTINATION, *args);
+    marshal(batch, self.id, WP_VIEWPORT_SET_DESTINATION, *args);
 }
 
 WP_VIEWPORT_INTERFACE :: Interface_Descriptor.{

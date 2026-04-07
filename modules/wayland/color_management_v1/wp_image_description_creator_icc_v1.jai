@@ -24,8 +24,7 @@
 //
 Wp_Image_Description_Creator_Icc_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -76,9 +75,9 @@ Wp_Image_Description_Creator_Icc_V1_Set_Icc_File_Args :: struct {
 //
 // The resulting image description object does not allow get_information
 // request.
-wp_image_description_creator_icc_v1_create :: (self: *Wp_Image_Description_Creator_Icc_V1, new_id: u32) {
+wp_image_description_creator_icc_v1_create :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Icc_V1, new_id: u32) {
     args := Wp_Image_Description_Creator_Icc_V1_Create_Args.{};
-    marshal_constructor(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_CREATE, new_id, *args);
+    marshal_constructor(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_CREATE, new_id, *args);
 }
 
 // set the ICC profile file
@@ -121,9 +120,9 @@ wp_image_description_creator_icc_v1_create :: (self: *Wp_Image_Description_Creat
 //
 // If ICC file has already been set on this object, the protocol error
 // already_set is raised.
-wp_image_description_creator_icc_v1_set_icc_file :: (self: *Wp_Image_Description_Creator_Icc_V1, icc_profile: Fd, offset: u32, length: u32) {
+wp_image_description_creator_icc_v1_set_icc_file :: (batch: *MessageBuilder, self: *Wp_Image_Description_Creator_Icc_V1, icc_profile: Fd, offset: u32, length: u32) {
     args := Wp_Image_Description_Creator_Icc_V1_Set_Icc_File_Args.{ icc_profile = icc_profile, offset = offset, length = length };
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_SET_ICC_FILE, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_SET_ICC_FILE, *args);
 }
 
 WP_IMAGE_DESCRIPTION_CREATOR_ICC_V1_INTERFACE :: Interface_Descriptor.{

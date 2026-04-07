@@ -11,8 +11,7 @@
 //
 Xdg_Wm_Base :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_WM_BASE_INTERFACE.version;
 }
 
 // Request opcodes
@@ -75,9 +74,9 @@ Xdg_Wm_Base_Pong_Args :: struct {
 // Destroying a bound xdg_wm_base object while there are surfaces
 // still alive created by this xdg_wm_base object instance is illegal
 // and will result in a defunct_surfaces error.
-xdg_wm_base_destroy :: (self: *Xdg_Wm_Base) {
+xdg_wm_base_destroy :: (batch: *MessageBuilder, self: *Xdg_Wm_Base) {
     args := Xdg_Wm_Base_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_WM_BASE_DESTROY, *args);
+    marshal(batch, self.id, XDG_WM_BASE_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -85,9 +84,9 @@ xdg_wm_base_destroy :: (self: *Xdg_Wm_Base) {
 // Create a positioner object. A positioner object is used to position
 // surfaces relative to some parent surface. See the interface description
 // and xdg_surface.get_popup for details.
-xdg_wm_base_create_positioner :: (self: *Xdg_Wm_Base, new_id: u32) {
+xdg_wm_base_create_positioner :: (batch: *MessageBuilder, self: *Xdg_Wm_Base, new_id: u32) {
     args := Xdg_Wm_Base_Create_Positioner_Args.{};
-    marshal_constructor(self.conn, self.id, XDG_WM_BASE_CREATE_POSITIONER, new_id, *args);
+    marshal_constructor(batch, self.id, XDG_WM_BASE_CREATE_POSITIONER, new_id, *args);
 }
 
 // create a shell surface from a surface
@@ -104,18 +103,18 @@ xdg_wm_base_create_positioner :: (self: *Xdg_Wm_Base, new_id: u32) {
 //
 // See the documentation of xdg_surface for more details about what an
 // xdg_surface is and how it is used.
-xdg_wm_base_get_xdg_surface :: (self: *Xdg_Wm_Base, new_id: u32, surface: *Wl_Surface) {
+xdg_wm_base_get_xdg_surface :: (batch: *MessageBuilder, self: *Xdg_Wm_Base, new_id: u32, surface: *Wl_Surface) {
     args := Xdg_Wm_Base_Get_Xdg_Surface_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, XDG_WM_BASE_GET_XDG_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, XDG_WM_BASE_GET_XDG_SURFACE, new_id, *args);
 }
 
 // respond to a ping event
 // A client must respond to a ping event with a pong request or
 // the client may be deemed unresponsive. See xdg_wm_base.ping
 // and xdg_wm_base.error.unresponsive.
-xdg_wm_base_pong :: (self: *Xdg_Wm_Base, serial: u32) {
+xdg_wm_base_pong :: (batch: *MessageBuilder, self: *Xdg_Wm_Base, serial: u32) {
     args := Xdg_Wm_Base_Pong_Args.{ serial = serial };
-    marshal(self.conn, self.id, XDG_WM_BASE_PONG, *args);
+    marshal(batch, self.id, XDG_WM_BASE_PONG, *args);
 }
 
 XDG_WM_BASE_INTERFACE :: Interface_Descriptor.{

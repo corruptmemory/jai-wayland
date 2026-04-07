@@ -8,8 +8,7 @@
 //
 Wp_Fractional_Scale_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_FRACTIONAL_SCALE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -38,9 +37,9 @@ Wp_Fractional_Scale_V1_Destroy_Args :: struct {
 // remove surface scale information for surface (destructor)
 // Destroy the fractional scale object. When this object is destroyed,
 // preferred_scale events will no longer be sent.
-wp_fractional_scale_v1_destroy :: (self: *Wp_Fractional_Scale_V1) {
+wp_fractional_scale_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Fractional_Scale_V1) {
     args := Wp_Fractional_Scale_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_FRACTIONAL_SCALE_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_FRACTIONAL_SCALE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

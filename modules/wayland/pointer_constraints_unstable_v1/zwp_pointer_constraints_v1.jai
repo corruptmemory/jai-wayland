@@ -19,8 +19,7 @@
 //
 Zwp_Pointer_Constraints_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_POINTER_CONSTRAINTS_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -66,9 +65,9 @@ Zwp_Pointer_Constraints_V1_Confine_Pointer_Args :: struct {
 // destroy the pointer constraints manager object (destructor)
 // Used by the client to notify the server that it will no longer use this
 // pointer constraints object.
-zwp_pointer_constraints_v1_destroy :: (self: *Zwp_Pointer_Constraints_V1) {
+zwp_pointer_constraints_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Pointer_Constraints_V1) {
     args := Zwp_Pointer_Constraints_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_POINTER_CONSTRAINTS_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -107,9 +106,9 @@ zwp_pointer_constraints_v1_destroy :: (self: *Zwp_Pointer_Constraints_V1) {
 // relative motion events will still be emitted via wp_relative_pointer
 // objects of the same seat. wl_pointer.axis and wl_pointer.button events
 // are unaffected.
-zwp_pointer_constraints_v1_lock_pointer :: (self: *Zwp_Pointer_Constraints_V1, new_id: u32, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) {
+zwp_pointer_constraints_v1_lock_pointer :: (batch: *MessageBuilder, self: *Zwp_Pointer_Constraints_V1, new_id: u32, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) {
     args := Zwp_Pointer_Constraints_V1_Lock_Pointer_Args.{ surface = surface.id, pointer = pointer.id, region = region.id, lifetime = lifetime };
-    marshal_constructor(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_LOCK_POINTER, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_POINTER_CONSTRAINTS_V1_LOCK_POINTER, new_id, *args);
 }
 
 // confine pointer to a region
@@ -130,9 +129,9 @@ zwp_pointer_constraints_v1_lock_pointer :: (self: *Zwp_Pointer_Constraints_V1, n
 // to interact with the confinement as well as receive updates about its
 // state. See the the description of wp_confined_pointer for further
 // information.
-zwp_pointer_constraints_v1_confine_pointer :: (self: *Zwp_Pointer_Constraints_V1, new_id: u32, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) {
+zwp_pointer_constraints_v1_confine_pointer :: (batch: *MessageBuilder, self: *Zwp_Pointer_Constraints_V1, new_id: u32, surface: *Wl_Surface, pointer: *Wl_Pointer, region: *Wl_Region, lifetime: u32) {
     args := Zwp_Pointer_Constraints_V1_Confine_Pointer_Args.{ surface = surface.id, pointer = pointer.id, region = region.id, lifetime = lifetime };
-    marshal_constructor(self.conn, self.id, ZWP_POINTER_CONSTRAINTS_V1_CONFINE_POINTER, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_POINTER_CONSTRAINTS_V1_CONFINE_POINTER, new_id, *args);
 }
 
 ZWP_POINTER_CONSTRAINTS_V1_INTERFACE :: Interface_Descriptor.{

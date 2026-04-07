@@ -9,8 +9,7 @@
 //
 Wl_Compositor :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_COMPOSITOR_INTERFACE.version;
 }
 
 // Request opcodes
@@ -26,16 +25,16 @@ Wl_Compositor_Create_Region_Args :: struct {
 
 // create new surface
 // Ask the compositor to create a new surface.
-wl_compositor_create_surface :: (self: *Wl_Compositor, new_id: u32) {
+wl_compositor_create_surface :: (batch: *MessageBuilder, self: *Wl_Compositor, new_id: u32) {
     args := Wl_Compositor_Create_Surface_Args.{};
-    marshal_constructor(self.conn, self.id, WL_COMPOSITOR_CREATE_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, WL_COMPOSITOR_CREATE_SURFACE, new_id, *args);
 }
 
 // create new region
 // Ask the compositor to create a new region.
-wl_compositor_create_region :: (self: *Wl_Compositor, new_id: u32) {
+wl_compositor_create_region :: (batch: *MessageBuilder, self: *Wl_Compositor, new_id: u32) {
     args := Wl_Compositor_Create_Region_Args.{};
-    marshal_constructor(self.conn, self.id, WL_COMPOSITOR_CREATE_REGION, new_id, *args);
+    marshal_constructor(batch, self.id, WL_COMPOSITOR_CREATE_REGION, new_id, *args);
 }
 
 WL_COMPOSITOR_INTERFACE :: Interface_Descriptor.{

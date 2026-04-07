@@ -24,8 +24,7 @@
 //
 Zwp_Linux_Explicit_Synchronization_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -49,9 +48,9 @@ Zwp_Linux_Explicit_Synchronization_V1_Get_Synchronization_Args :: struct {
 // Destroy this explicit synchronization factory object. Other objects,
 // including zwp_linux_surface_synchronization_v1 objects created by this
 // factory, shall not be affected by this request.
-zwp_linux_explicit_synchronization_v1_destroy :: (self: *Zwp_Linux_Explicit_Synchronization_V1) {
+zwp_linux_explicit_synchronization_v1_destroy :: (batch: *MessageBuilder, self: *Zwp_Linux_Explicit_Synchronization_V1) {
     args := Zwp_Linux_Explicit_Synchronization_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_DESTROY, *args);
+    marshal(batch, self.id, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -67,9 +66,9 @@ zwp_linux_explicit_synchronization_v1_destroy :: (self: *Zwp_Linux_Explicit_Sync
 // extension internally. If a client is using such an API for a
 // wl_surface, it should not directly use this extension on that surface,
 // to avoid raising a synchronization_exists protocol error.
-zwp_linux_explicit_synchronization_v1_get_synchronization :: (self: *Zwp_Linux_Explicit_Synchronization_V1, new_id: u32, surface: *Wl_Surface) {
+zwp_linux_explicit_synchronization_v1_get_synchronization :: (batch: *MessageBuilder, self: *Zwp_Linux_Explicit_Synchronization_V1, new_id: u32, surface: *Wl_Surface) {
     args := Zwp_Linux_Explicit_Synchronization_V1_Get_Synchronization_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_GET_SYNCHRONIZATION, new_id, *args);
+    marshal_constructor(batch, self.id, ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_GET_SYNCHRONIZATION, new_id, *args);
 }
 
 ZWP_LINUX_EXPLICIT_SYNCHRONIZATION_V1_INTERFACE :: Interface_Descriptor.{

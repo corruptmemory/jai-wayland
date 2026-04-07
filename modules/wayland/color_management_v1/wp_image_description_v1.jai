@@ -27,8 +27,7 @@
 //
 Wp_Image_Description_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_IMAGE_DESCRIPTION_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -102,9 +101,9 @@ Wp_Image_Description_V1_Get_Information_Args :: struct {
 // Destroying a wp_image_description_v1 object has no side-effects, not
 // even if a wp_color_management_surface_v1.set_image_description has not
 // yet been followed by a wl_surface.commit.
-wp_image_description_v1_destroy :: (self: *Wp_Image_Description_V1) {
+wp_image_description_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Image_Description_V1) {
     args := Wp_Image_Description_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_IMAGE_DESCRIPTION_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_IMAGE_DESCRIPTION_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -116,9 +115,9 @@ wp_image_description_v1_destroy :: (self: *Wp_Image_Description_V1) {
 // request. Whether it is allowed or not is defined by the request that
 // created the object. If get_information is not allowed, the protocol
 // error no_information is raised.
-wp_image_description_v1_get_information :: (self: *Wp_Image_Description_V1, new_id: u32) {
+wp_image_description_v1_get_information :: (batch: *MessageBuilder, self: *Wp_Image_Description_V1, new_id: u32) {
     args := Wp_Image_Description_V1_Get_Information_Args.{};
-    marshal_constructor(self.conn, self.id, WP_IMAGE_DESCRIPTION_V1_GET_INFORMATION, new_id, *args);
+    marshal_constructor(batch, self.id, WP_IMAGE_DESCRIPTION_V1_GET_INFORMATION, new_id, *args);
 }
 
 WP_IMAGE_DESCRIPTION_V1_INTERFACE :: Interface_Descriptor.{

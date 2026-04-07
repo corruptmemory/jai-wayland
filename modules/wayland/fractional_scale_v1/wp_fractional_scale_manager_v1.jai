@@ -7,8 +7,7 @@
 //
 Wp_Fractional_Scale_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_FRACTIONAL_SCALE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -32,9 +31,9 @@ Wp_Fractional_Scale_Manager_V1_Get_Fractional_Scale_Args :: struct {
 // Informs the server that the client will not be using this protocol
 // object anymore. This does not affect any other objects,
 // wp_fractional_scale_v1 objects included.
-wp_fractional_scale_manager_v1_destroy :: (self: *Wp_Fractional_Scale_Manager_V1) {
+wp_fractional_scale_manager_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Fractional_Scale_Manager_V1) {
     args := Wp_Fractional_Scale_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_FRACTIONAL_SCALE_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_FRACTIONAL_SCALE_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -43,9 +42,9 @@ wp_fractional_scale_manager_v1_destroy :: (self: *Wp_Fractional_Scale_Manager_V1
 // request fractional scales. If the given wl_surface already has a
 // wp_fractional_scale_v1 object associated, the fractional_scale_exists
 // protocol error is raised.
-wp_fractional_scale_manager_v1_get_fractional_scale :: (self: *Wp_Fractional_Scale_Manager_V1, new_id: u32, surface: *Wl_Surface) {
+wp_fractional_scale_manager_v1_get_fractional_scale :: (batch: *MessageBuilder, self: *Wp_Fractional_Scale_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Fractional_Scale_Manager_V1_Get_Fractional_Scale_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_FRACTIONAL_SCALE_MANAGER_V1_GET_FRACTIONAL_SCALE, new_id, *args);
+    marshal_constructor(batch, self.id, WP_FRACTIONAL_SCALE_MANAGER_V1_GET_FRACTIONAL_SCALE, new_id, *args);
 }
 
 WP_FRACTIONAL_SCALE_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

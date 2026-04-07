@@ -8,8 +8,7 @@
 //
 Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -27,18 +26,18 @@ Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1_Destroy_Args :: struct {
 // create source object for foreign toplevel
 // Creates a source object for a foreign toplevel handle. Images captured
 // from this source will show the same content as the toplevel.
-ext_foreign_toplevel_image_capture_source_manager_v1_create_source :: (self: *Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1, new_id: u32, toplevel_handle: *Ext_Foreign_Toplevel_Handle_V1) {
+ext_foreign_toplevel_image_capture_source_manager_v1_create_source :: (batch: *MessageBuilder, self: *Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1, new_id: u32, toplevel_handle: *Ext_Foreign_Toplevel_Handle_V1) {
     args := Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1_Create_Source_Args.{ toplevel_handle = toplevel_handle.id };
-    marshal_constructor(self.conn, self.id, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_CREATE_SOURCE, new_id, *args);
 }
 
 // delete this object (destructor)
 // Destroys the manager. This request may be sent at any time by the client
 // and objects created by the manager will remain valid after its
 // destruction.
-ext_foreign_toplevel_image_capture_source_manager_v1_destroy :: (self: *Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1) {
+ext_foreign_toplevel_image_capture_source_manager_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1) {
     args := Ext_Foreign_Toplevel_Image_Capture_Source_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

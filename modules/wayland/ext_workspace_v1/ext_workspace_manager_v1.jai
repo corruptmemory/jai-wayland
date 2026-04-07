@@ -25,8 +25,7 @@
 //
 Ext_Workspace_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_WORKSPACE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -87,9 +86,9 @@ Ext_Workspace_Manager_V1_Stop_Args :: struct {
 // even if they happen via multiple events, and even if they involve
 // multiple ext_workspace_handle_v1 objects, for example, deactivating one
 // workspace and activating another.
-ext_workspace_manager_v1_commit :: (self: *Ext_Workspace_Manager_V1) {
+ext_workspace_manager_v1_commit :: (batch: *MessageBuilder, self: *Ext_Workspace_Manager_V1) {
     args := Ext_Workspace_Manager_V1_Commit_Args.{};
-    marshal(self.conn, self.id, EXT_WORKSPACE_MANAGER_V1_COMMIT, *args);
+    marshal(batch, self.id, EXT_WORKSPACE_MANAGER_V1_COMMIT, *args);
 }
 
 // stop sending events
@@ -100,9 +99,9 @@ ext_workspace_manager_v1_commit :: (self: *Ext_Workspace_Manager_V1) {
 //
 // The client must not send any requests after this one, doing so will raise a wl_display
 // invalid_object error.
-ext_workspace_manager_v1_stop :: (self: *Ext_Workspace_Manager_V1) {
+ext_workspace_manager_v1_stop :: (batch: *MessageBuilder, self: *Ext_Workspace_Manager_V1) {
     args := Ext_Workspace_Manager_V1_Stop_Args.{};
-    marshal(self.conn, self.id, EXT_WORKSPACE_MANAGER_V1_STOP, *args);
+    marshal(batch, self.id, EXT_WORKSPACE_MANAGER_V1_STOP, *args);
 }
 
 EXT_WORKSPACE_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

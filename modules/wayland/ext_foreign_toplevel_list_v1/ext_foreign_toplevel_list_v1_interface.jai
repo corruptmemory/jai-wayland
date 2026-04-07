@@ -22,8 +22,7 @@
 //
 Ext_Foreign_Toplevel_List_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_FOREIGN_TOPLEVEL_LIST_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -68,9 +67,9 @@ Ext_Foreign_Toplevel_List_V1_Destroy_Args :: struct {
 // further toplevel events until the stop request is processed.
 // The client should wait for a ext_foreign_toplevel_list_v1.finished
 // event before destroying this object.
-ext_foreign_toplevel_list_v1_stop :: (self: *Ext_Foreign_Toplevel_List_V1) {
+ext_foreign_toplevel_list_v1_stop :: (batch: *MessageBuilder, self: *Ext_Foreign_Toplevel_List_V1) {
     args := Ext_Foreign_Toplevel_List_V1_Stop_Args.{};
-    marshal(self.conn, self.id, EXT_FOREIGN_TOPLEVEL_LIST_V1_STOP, *args);
+    marshal(batch, self.id, EXT_FOREIGN_TOPLEVEL_LIST_V1_STOP, *args);
 }
 
 // destroy the ext_foreign_toplevel_list_v1 object (destructor)
@@ -81,9 +80,9 @@ ext_foreign_toplevel_list_v1_stop :: (self: *Ext_Foreign_Toplevel_List_V1) {
 // If a client wishes to destroy this object it should send a
 // ext_foreign_toplevel_list_v1.stop request and wait for a ext_foreign_toplevel_list_v1.finished
 // event, then destroy the handles and then this object.
-ext_foreign_toplevel_list_v1_destroy :: (self: *Ext_Foreign_Toplevel_List_V1) {
+ext_foreign_toplevel_list_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Foreign_Toplevel_List_V1) {
     args := Ext_Foreign_Toplevel_List_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_FOREIGN_TOPLEVEL_LIST_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_FOREIGN_TOPLEVEL_LIST_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

@@ -17,8 +17,7 @@
 //
 Ext_Workspace_Group_Handle_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_WORKSPACE_GROUP_HANDLE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -99,9 +98,9 @@ Ext_Workspace_Group_Handle_V1_Destroy_Args :: struct {
 //
 // There is no guarantee that the compositor will create a new workspace,
 // or that the created workspace will have the provided name.
-ext_workspace_group_handle_v1_create_workspace :: (self: *Ext_Workspace_Group_Handle_V1, workspace: string) {
+ext_workspace_group_handle_v1_create_workspace :: (batch: *MessageBuilder, self: *Ext_Workspace_Group_Handle_V1, workspace: string) {
     args := Ext_Workspace_Group_Handle_V1_Create_Workspace_Args.{ workspace = workspace };
-    marshal(self.conn, self.id, EXT_WORKSPACE_GROUP_HANDLE_V1_CREATE_WORKSPACE, *args);
+    marshal(batch, self.id, EXT_WORKSPACE_GROUP_HANDLE_V1_CREATE_WORKSPACE, *args);
 }
 
 // destroy the ext_workspace_group_handle_v1 object (destructor)
@@ -110,9 +109,9 @@ ext_workspace_group_handle_v1_create_workspace :: (self: *Ext_Workspace_Group_Ha
 // This request should be send either when the client does not want to
 // use the workspace group object any more or after the removed event to finalize
 // the destruction of the object.
-ext_workspace_group_handle_v1_destroy :: (self: *Ext_Workspace_Group_Handle_V1) {
+ext_workspace_group_handle_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Workspace_Group_Handle_V1) {
     args := Ext_Workspace_Group_Handle_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_WORKSPACE_GROUP_HANDLE_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_WORKSPACE_GROUP_HANDLE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

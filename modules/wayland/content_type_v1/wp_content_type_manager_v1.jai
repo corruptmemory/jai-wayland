@@ -13,8 +13,7 @@
 //
 Wp_Content_Type_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_CONTENT_TYPE_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -37,9 +36,9 @@ Wp_Content_Type_Manager_V1_Get_Surface_Content_Type_Args :: struct {
 // destroy the content type manager object (destructor)
 // Destroy the content type manager. This doesn't destroy objects created
 // with the manager.
-wp_content_type_manager_v1_destroy :: (self: *Wp_Content_Type_Manager_V1) {
+wp_content_type_manager_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Content_Type_Manager_V1) {
     args := Wp_Content_Type_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_CONTENT_TYPE_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_CONTENT_TYPE_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -48,9 +47,9 @@ wp_content_type_manager_v1_destroy :: (self: *Wp_Content_Type_Manager_V1) {
 //
 // Creating a wp_content_type_v1 from a wl_surface which already has one
 // attached is a client error: already_constructed.
-wp_content_type_manager_v1_get_surface_content_type :: (self: *Wp_Content_Type_Manager_V1, new_id: u32, surface: *Wl_Surface) {
+wp_content_type_manager_v1_get_surface_content_type :: (batch: *MessageBuilder, self: *Wp_Content_Type_Manager_V1, new_id: u32, surface: *Wl_Surface) {
     args := Wp_Content_Type_Manager_V1_Get_Surface_Content_Type_Args.{ surface = surface.id };
-    marshal_constructor(self.conn, self.id, WP_CONTENT_TYPE_MANAGER_V1_GET_SURFACE_CONTENT_TYPE, new_id, *args);
+    marshal_constructor(batch, self.id, WP_CONTENT_TYPE_MANAGER_V1_GET_SURFACE_CONTENT_TYPE, new_id, *args);
 }
 
 WP_CONTENT_TYPE_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

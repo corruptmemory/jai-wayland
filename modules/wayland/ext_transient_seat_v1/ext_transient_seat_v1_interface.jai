@@ -8,8 +8,7 @@
 //
 Ext_Transient_Seat_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_TRANSIENT_SEAT_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -45,9 +44,9 @@ Ext_Transient_Seat_V1_Destroy_Args :: struct {
 // destroy transient seat (destructor)
 // When the transient seat object is destroyed by the client, the
 // associated seat created by the compositor is also destroyed.
-ext_transient_seat_v1_destroy :: (self: *Ext_Transient_Seat_V1) {
+ext_transient_seat_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Transient_Seat_V1) {
     args := Ext_Transient_Seat_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_TRANSIENT_SEAT_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_TRANSIENT_SEAT_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

@@ -7,8 +7,7 @@
 //
 Zxdg_Output_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_OUTPUT_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -28,17 +27,17 @@ Zxdg_Output_Manager_V1_Get_Xdg_Output_Args :: struct {
 // going to use the xdg_output_manager object anymore.
 //
 // Any objects already created through this instance are not affected.
-zxdg_output_manager_v1_destroy :: (self: *Zxdg_Output_Manager_V1) {
+zxdg_output_manager_v1_destroy :: (batch: *MessageBuilder, self: *Zxdg_Output_Manager_V1) {
     args := Zxdg_Output_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_OUTPUT_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_OUTPUT_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
 // create an xdg output from a wl_output
 // This creates a new xdg_output object for the given wl_output.
-zxdg_output_manager_v1_get_xdg_output :: (self: *Zxdg_Output_Manager_V1, new_id: u32, output: *Wl_Output) {
+zxdg_output_manager_v1_get_xdg_output :: (batch: *MessageBuilder, self: *Zxdg_Output_Manager_V1, new_id: u32, output: *Wl_Output) {
     args := Zxdg_Output_Manager_V1_Get_Xdg_Output_Args.{ output = output.id };
-    marshal_constructor(self.conn, self.id, ZXDG_OUTPUT_MANAGER_V1_GET_XDG_OUTPUT, new_id, *args);
+    marshal_constructor(batch, self.id, ZXDG_OUTPUT_MANAGER_V1_GET_XDG_OUTPUT, new_id, *args);
 }
 
 ZXDG_OUTPUT_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

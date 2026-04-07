@@ -12,8 +12,7 @@
 //
 Zxdg_Toplevel_Decoration_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_TOPLEVEL_DECORATION_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -72,9 +71,9 @@ Zxdg_Toplevel_Decoration_V1_Unset_Mode_Args :: struct {
 // Switch back to a mode without any server-side decorations at the next
 // commit, unless a new xdg_toplevel_decoration is created for the surface
 // first.
-zxdg_toplevel_decoration_v1_destroy :: (self: *Zxdg_Toplevel_Decoration_V1) {
+zxdg_toplevel_decoration_v1_destroy :: (batch: *MessageBuilder, self: *Zxdg_Toplevel_Decoration_V1) {
     args := Zxdg_Toplevel_Decoration_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_TOPLEVEL_DECORATION_V1_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_TOPLEVEL_DECORATION_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -100,9 +99,9 @@ zxdg_toplevel_decoration_v1_destroy :: (self: *Zxdg_Toplevel_Decoration_V1) {
 //
 // If an invalid mode is supplied by the client, the invalid_mode protocol
 // error is raised by the compositor.
-zxdg_toplevel_decoration_v1_set_mode :: (self: *Zxdg_Toplevel_Decoration_V1, mode: u32) {
+zxdg_toplevel_decoration_v1_set_mode :: (batch: *MessageBuilder, self: *Zxdg_Toplevel_Decoration_V1, mode: u32) {
     args := Zxdg_Toplevel_Decoration_V1_Set_Mode_Args.{ mode = mode };
-    marshal(self.conn, self.id, ZXDG_TOPLEVEL_DECORATION_V1_SET_MODE, *args);
+    marshal(batch, self.id, ZXDG_TOPLEVEL_DECORATION_V1_SET_MODE, *args);
 }
 
 // unset the decoration mode
@@ -110,9 +109,9 @@ zxdg_toplevel_decoration_v1_set_mode :: (self: *Zxdg_Toplevel_Decoration_V1, mod
 // that the client doesn't prefer a particular decoration mode.
 //
 // This request has the same semantics as set_mode.
-zxdg_toplevel_decoration_v1_unset_mode :: (self: *Zxdg_Toplevel_Decoration_V1) {
+zxdg_toplevel_decoration_v1_unset_mode :: (batch: *MessageBuilder, self: *Zxdg_Toplevel_Decoration_V1) {
     args := Zxdg_Toplevel_Decoration_V1_Unset_Mode_Args.{};
-    marshal(self.conn, self.id, ZXDG_TOPLEVEL_DECORATION_V1_UNSET_MODE, *args);
+    marshal(batch, self.id, ZXDG_TOPLEVEL_DECORATION_V1_UNSET_MODE, *args);
 }
 
 ZXDG_TOPLEVEL_DECORATION_V1_INTERFACE :: Interface_Descriptor.{

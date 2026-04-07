@@ -39,8 +39,7 @@
 //
 Zxdg_Popup_V6 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run ZXDG_POPUP_V6_INTERFACE.version;
 }
 
 // Request opcodes
@@ -93,9 +92,9 @@ Zxdg_Popup_V6_Grab_Args :: struct {
 //
 // If this xdg_popup is not the "topmost" popup, a protocol error
 // will be sent.
-zxdg_popup_v6_destroy :: (self: *Zxdg_Popup_V6) {
+zxdg_popup_v6_destroy :: (batch: *MessageBuilder, self: *Zxdg_Popup_V6) {
     args := Zxdg_Popup_V6_Destroy_Args.{};
-    marshal(self.conn, self.id, ZXDG_POPUP_V6_DESTROY, *args);
+    marshal(batch, self.id, ZXDG_POPUP_V6_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -141,9 +140,9 @@ zxdg_popup_v6_destroy :: (self: *Zxdg_Popup_V6) {
 // and touch events for all their surfaces as normal (similar to an
 // "owner-events" grab in X11 parlance), while the top most grabbing popup
 // will always have keyboard focus.
-zxdg_popup_v6_grab :: (self: *Zxdg_Popup_V6, seat: *Wl_Seat, serial: u32) {
+zxdg_popup_v6_grab :: (batch: *MessageBuilder, self: *Zxdg_Popup_V6, seat: *Wl_Seat, serial: u32) {
     args := Zxdg_Popup_V6_Grab_Args.{ seat = seat.id, serial = serial };
-    marshal(self.conn, self.id, ZXDG_POPUP_V6_GRAB, *args);
+    marshal(batch, self.id, ZXDG_POPUP_V6_GRAB, *args);
 }
 
 ZXDG_POPUP_V6_INTERFACE :: Interface_Descriptor.{

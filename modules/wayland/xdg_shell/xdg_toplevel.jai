@@ -27,8 +27,7 @@
 //
 Xdg_Toplevel :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_TOPLEVEL_INTERFACE.version;
 }
 
 // Request opcodes
@@ -214,9 +213,9 @@ Xdg_Toplevel_Set_Minimized_Args :: struct {
 // destroy the xdg_toplevel (destructor)
 // This request destroys the role surface and unmaps the surface;
 // see "Unmapping" behavior in interface section for details.
-xdg_toplevel_destroy :: (self: *Xdg_Toplevel) {
+xdg_toplevel_destroy :: (batch: *MessageBuilder, self: *Xdg_Toplevel) {
     args := Xdg_Toplevel_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_TOPLEVEL_DESTROY, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -241,9 +240,9 @@ xdg_toplevel_destroy :: (self: *Xdg_Toplevel) {
 // The parent toplevel must not be one of the child toplevel's
 // descendants, and the parent must be different from the child toplevel,
 // otherwise the invalid_parent protocol error is raised.
-xdg_toplevel_set_parent :: (self: *Xdg_Toplevel, parent: *Xdg_Toplevel) {
+xdg_toplevel_set_parent :: (batch: *MessageBuilder, self: *Xdg_Toplevel, parent: *Xdg_Toplevel) {
     args := Xdg_Toplevel_Set_Parent_Args.{ parent = parent.id };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_SET_PARENT, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_SET_PARENT, *args);
 }
 
 // set surface title
@@ -254,9 +253,9 @@ xdg_toplevel_set_parent :: (self: *Xdg_Toplevel, parent: *Xdg_Toplevel) {
 // compositor.
 //
 // The string must be encoded in UTF-8.
-xdg_toplevel_set_title :: (self: *Xdg_Toplevel, title: string) {
+xdg_toplevel_set_title :: (batch: *MessageBuilder, self: *Xdg_Toplevel, title: string) {
     args := Xdg_Toplevel_Set_Title_Args.{ title = title };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_SET_TITLE, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_SET_TITLE, *args);
 }
 
 // set application ID
@@ -283,9 +282,9 @@ xdg_toplevel_set_title :: (self: *Xdg_Toplevel, title: string) {
 // names and .desktop files.
 //
 // [0] https://standards.freedesktop.org/desktop-entry-spec/
-xdg_toplevel_set_app_id :: (self: *Xdg_Toplevel, app_id: string) {
+xdg_toplevel_set_app_id :: (batch: *MessageBuilder, self: *Xdg_Toplevel, app_id: string) {
     args := Xdg_Toplevel_Set_App_Id_Args.{ app_id = app_id };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_SET_APP_ID, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_SET_APP_ID, *args);
 }
 
 // show the window menu
@@ -301,9 +300,9 @@ xdg_toplevel_set_app_id :: (self: *Xdg_Toplevel, app_id: string) {
 //
 // This request must be used in response to some sort of user action
 // like a button press, key press, or touch down event.
-xdg_toplevel_show_window_menu :: (self: *Xdg_Toplevel, seat: *Wl_Seat, serial: u32, x: s32, y: s32) {
+xdg_toplevel_show_window_menu :: (batch: *MessageBuilder, self: *Xdg_Toplevel, seat: *Wl_Seat, serial: u32, x: s32, y: s32) {
     args := Xdg_Toplevel_Show_Window_Menu_Args.{ seat = seat.id, serial = serial, x = x, y = y };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_SHOW_WINDOW_MENU, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_SHOW_WINDOW_MENU, *args);
 }
 
 // start an interactive move
@@ -323,9 +322,9 @@ xdg_toplevel_show_window_menu :: (self: *Xdg_Toplevel, seat: *Wl_Seat, serial: u
 // compositor to visually indicate that the move is taking place, such as
 // updating a pointer cursor, during the move. There is no guarantee
 // that the device focus will return when the move is completed.
-xdg_toplevel_move :: (self: *Xdg_Toplevel, seat: *Wl_Seat, serial: u32) {
+xdg_toplevel_move :: (batch: *MessageBuilder, self: *Xdg_Toplevel, seat: *Wl_Seat, serial: u32) {
     args := Xdg_Toplevel_Move_Args.{ seat = seat.id, serial = serial };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_MOVE, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_MOVE, *args);
 }
 
 // start an interactive resize
@@ -360,9 +359,9 @@ xdg_toplevel_move :: (self: *Xdg_Toplevel, seat: *Wl_Seat, serial: u32) {
 // for example when dragging the top left corner. The compositor may also
 // use this information to adapt its behavior, e.g. choose an appropriate
 // cursor image.
-xdg_toplevel_resize :: (self: *Xdg_Toplevel, seat: *Wl_Seat, serial: u32, edges: u32) {
+xdg_toplevel_resize :: (batch: *MessageBuilder, self: *Xdg_Toplevel, seat: *Wl_Seat, serial: u32, edges: u32) {
     args := Xdg_Toplevel_Resize_Args.{ seat = seat.id, serial = serial, edges = edges };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_RESIZE, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_RESIZE, *args);
 }
 
 // set the maximum size
@@ -399,9 +398,9 @@ xdg_toplevel_resize :: (self: *Xdg_Toplevel, seat: *Wl_Seat, serial: u32, edges:
 // The width and height must be greater than or equal to zero. Using
 // strictly negative values for width or height will result in a
 // invalid_size error.
-xdg_toplevel_set_max_size :: (self: *Xdg_Toplevel, width: s32, height: s32) {
+xdg_toplevel_set_max_size :: (batch: *MessageBuilder, self: *Xdg_Toplevel, width: s32, height: s32) {
     args := Xdg_Toplevel_Set_Max_Size_Args.{ width = width, height = height };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_SET_MAX_SIZE, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_SET_MAX_SIZE, *args);
 }
 
 // set the minimum size
@@ -438,9 +437,9 @@ xdg_toplevel_set_max_size :: (self: *Xdg_Toplevel, width: s32, height: s32) {
 // The width and height must be greater than or equal to zero. Using
 // strictly negative values for width and height will result in a
 // invalid_size error.
-xdg_toplevel_set_min_size :: (self: *Xdg_Toplevel, width: s32, height: s32) {
+xdg_toplevel_set_min_size :: (batch: *MessageBuilder, self: *Xdg_Toplevel, width: s32, height: s32) {
     args := Xdg_Toplevel_Set_Min_Size_Args.{ width = width, height = height };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_SET_MIN_SIZE, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_SET_MIN_SIZE, *args);
 }
 
 // maximize the window
@@ -463,9 +462,9 @@ xdg_toplevel_set_min_size :: (self: *Xdg_Toplevel, width: s32, height: s32) {
 // If the surface is in a fullscreen state, this request has no direct
 // effect. It may alter the state the surface is returned to when
 // unmaximized unless overridden by the compositor.
-xdg_toplevel_set_maximized :: (self: *Xdg_Toplevel) {
+xdg_toplevel_set_maximized :: (batch: *MessageBuilder, self: *Xdg_Toplevel) {
     args := Xdg_Toplevel_Set_Maximized_Args.{};
-    marshal(self.conn, self.id, XDG_TOPLEVEL_SET_MAXIMIZED, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_SET_MAXIMIZED, *args);
 }
 
 // unmaximize the window
@@ -490,9 +489,9 @@ xdg_toplevel_set_maximized :: (self: *Xdg_Toplevel) {
 // If the surface is in a fullscreen state, this request has no direct
 // effect. It may alter the state the surface is returned to when
 // unmaximized unless overridden by the compositor.
-xdg_toplevel_unset_maximized :: (self: *Xdg_Toplevel) {
+xdg_toplevel_unset_maximized :: (batch: *MessageBuilder, self: *Xdg_Toplevel) {
     args := Xdg_Toplevel_Unset_Maximized_Args.{};
-    marshal(self.conn, self.id, XDG_TOPLEVEL_UNSET_MAXIMIZED, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_UNSET_MAXIMIZED, *args);
 }
 
 // set the window as fullscreen on an output
@@ -519,9 +518,9 @@ xdg_toplevel_unset_maximized :: (self: *Xdg_Toplevel) {
 // sure that other screen content not part of the same surface tree (made
 // up of subsurfaces, popups or similarly coupled surfaces) are not
 // visible below the fullscreened surface.
-xdg_toplevel_set_fullscreen :: (self: *Xdg_Toplevel, output: *Wl_Output) {
+xdg_toplevel_set_fullscreen :: (batch: *MessageBuilder, self: *Xdg_Toplevel, output: *Wl_Output) {
     args := Xdg_Toplevel_Set_Fullscreen_Args.{ output = output.id };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_SET_FULLSCREEN, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_SET_FULLSCREEN, *args);
 }
 
 // unset the window as fullscreen
@@ -542,9 +541,9 @@ xdg_toplevel_set_fullscreen :: (self: *Xdg_Toplevel, output: *Wl_Output) {
 //
 // The client must also acknowledge the configure when committing the new
 // content (see ack_configure).
-xdg_toplevel_unset_fullscreen :: (self: *Xdg_Toplevel) {
+xdg_toplevel_unset_fullscreen :: (batch: *MessageBuilder, self: *Xdg_Toplevel) {
     args := Xdg_Toplevel_Unset_Fullscreen_Args.{};
-    marshal(self.conn, self.id, XDG_TOPLEVEL_UNSET_FULLSCREEN, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_UNSET_FULLSCREEN, *args);
 }
 
 // set the window as minimized
@@ -556,9 +555,9 @@ xdg_toplevel_unset_fullscreen :: (self: *Xdg_Toplevel) {
 // instead use the wl_surface.frame event for this, as this will
 // also work with live previews on windows in Alt-Tab, Expose or
 // similar compositor features.
-xdg_toplevel_set_minimized :: (self: *Xdg_Toplevel) {
+xdg_toplevel_set_minimized :: (batch: *MessageBuilder, self: *Xdg_Toplevel) {
     args := Xdg_Toplevel_Set_Minimized_Args.{};
-    marshal(self.conn, self.id, XDG_TOPLEVEL_SET_MINIMIZED, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_SET_MINIMIZED, *args);
 }
 
 XDG_TOPLEVEL_INTERFACE :: Interface_Descriptor.{

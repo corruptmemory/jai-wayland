@@ -5,8 +5,7 @@
 //
 Xdg_Toplevel_Drag_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_TOPLEVEL_DRAG_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -35,9 +34,9 @@ Xdg_Toplevel_Drag_V1_Attach_Args :: struct {
 // called after the underlying wl_data_source drag has ended, as indicated
 // by the dnd_drop_performed or cancelled events. In any other case an
 // ongoing_drag error is raised.
-xdg_toplevel_drag_v1_destroy :: (self: *Xdg_Toplevel_Drag_V1) {
+xdg_toplevel_drag_v1_destroy :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Drag_V1) {
     args := Xdg_Toplevel_Drag_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_TOPLEVEL_DRAG_V1_DESTROY, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_DRAG_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -57,9 +56,9 @@ xdg_toplevel_drag_v1_destroy :: (self: *Xdg_Toplevel_Drag_V1) {
 // This request can be called multiple times but issuing it while a
 // toplevel with an active role is attached raises a toplevel_attached
 // error.
-xdg_toplevel_drag_v1_attach :: (self: *Xdg_Toplevel_Drag_V1, toplevel: *Xdg_Toplevel, x_offset: s32, y_offset: s32) {
+xdg_toplevel_drag_v1_attach :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Drag_V1, toplevel: *Xdg_Toplevel, x_offset: s32, y_offset: s32) {
     args := Xdg_Toplevel_Drag_V1_Attach_Args.{ toplevel = toplevel.id, x_offset = x_offset, y_offset = y_offset };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_DRAG_V1_ATTACH, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_DRAG_V1_ATTACH, *args);
 }
 
 XDG_TOPLEVEL_DRAG_V1_INTERFACE :: Interface_Descriptor.{

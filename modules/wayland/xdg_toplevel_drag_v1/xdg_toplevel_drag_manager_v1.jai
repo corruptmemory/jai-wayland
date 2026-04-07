@@ -39,8 +39,7 @@
 //
 Xdg_Toplevel_Drag_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_TOPLEVEL_DRAG_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -64,9 +63,9 @@ Xdg_Toplevel_Drag_Manager_V1_Get_Xdg_Toplevel_Drag_Args :: struct {
 // Destroy this xdg_toplevel_drag_manager_v1 object. Other objects,
 // including xdg_toplevel_drag_v1 objects created by this factory, are not
 // affected by this request.
-xdg_toplevel_drag_manager_v1_destroy :: (self: *Xdg_Toplevel_Drag_Manager_V1) {
+xdg_toplevel_drag_manager_v1_destroy :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Drag_Manager_V1) {
     args := Xdg_Toplevel_Drag_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_TOPLEVEL_DRAG_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_DRAG_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -81,9 +80,9 @@ xdg_toplevel_drag_manager_v1_destroy :: (self: *Xdg_Toplevel_Drag_Manager_V1) {
 //
 // Destroying data_source while a toplevel is attached to the
 // xdg_toplevel_drag is undefined.
-xdg_toplevel_drag_manager_v1_get_xdg_toplevel_drag :: (self: *Xdg_Toplevel_Drag_Manager_V1, new_id: u32, data_source: *Wl_Data_Source) {
+xdg_toplevel_drag_manager_v1_get_xdg_toplevel_drag :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Drag_Manager_V1, new_id: u32, data_source: *Wl_Data_Source) {
     args := Xdg_Toplevel_Drag_Manager_V1_Get_Xdg_Toplevel_Drag_Args.{ data_source = data_source.id };
-    marshal_constructor(self.conn, self.id, XDG_TOPLEVEL_DRAG_MANAGER_V1_GET_XDG_TOPLEVEL_DRAG, new_id, *args);
+    marshal_constructor(batch, self.id, XDG_TOPLEVEL_DRAG_MANAGER_V1_GET_XDG_TOPLEVEL_DRAG, new_id, *args);
 }
 
 XDG_TOPLEVEL_DRAG_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

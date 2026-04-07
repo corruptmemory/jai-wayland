@@ -22,8 +22,7 @@
 //
 Ext_Image_Copy_Capture_Session_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_IMAGE_COPY_CAPTURE_SESSION_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -104,9 +103,9 @@ Ext_Image_Copy_Capture_Session_V1_Destroy_Args :: struct {
 // At most one frame object can exist for a given session at any time. If
 // a client sends a create_frame request before a previous frame object
 // has been destroyed, the duplicate_frame protocol error is raised.
-ext_image_copy_capture_session_v1_create_frame :: (self: *Ext_Image_Copy_Capture_Session_V1, new_id: u32) {
+ext_image_copy_capture_session_v1_create_frame :: (batch: *MessageBuilder, self: *Ext_Image_Copy_Capture_Session_V1, new_id: u32) {
     args := Ext_Image_Copy_Capture_Session_V1_Create_Frame_Args.{};
-    marshal_constructor(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_SESSION_V1_CREATE_FRAME, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_IMAGE_COPY_CAPTURE_SESSION_V1_CREATE_FRAME, new_id, *args);
 }
 
 // delete this object (destructor)
@@ -115,9 +114,9 @@ ext_image_copy_capture_session_v1_create_frame :: (self: *Ext_Image_Copy_Capture
 //
 // This request doesn't affect ext_image_copy_capture_frame_v1 objects created by
 // this object.
-ext_image_copy_capture_session_v1_destroy :: (self: *Ext_Image_Copy_Capture_Session_V1) {
+ext_image_copy_capture_session_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Image_Copy_Capture_Session_V1) {
     args := Ext_Image_Copy_Capture_Session_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_IMAGE_COPY_CAPTURE_SESSION_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_IMAGE_COPY_CAPTURE_SESSION_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

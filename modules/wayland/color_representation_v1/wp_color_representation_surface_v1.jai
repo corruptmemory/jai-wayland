@@ -16,8 +16,7 @@
 //
 Wp_Color_Representation_Surface_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_COLOR_REPRESENTATION_SURFACE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -120,9 +119,9 @@ Wp_Color_Representation_Surface_V1_Set_Chroma_Location_Args :: struct {
 // description for how a compositor handles a surface without color
 // representation metadata. Unsetting is double-buffered state, see
 // wl_surface.commit.
-wp_color_representation_surface_v1_destroy :: (self: *Wp_Color_Representation_Surface_V1) {
+wp_color_representation_surface_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Color_Representation_Surface_V1) {
     args := Wp_Color_Representation_Surface_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_COLOR_REPRESENTATION_SURFACE_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_COLOR_REPRESENTATION_SURFACE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -138,9 +137,9 @@ wp_color_representation_surface_v1_destroy :: (self: *Wp_Color_Representation_Su
 // otherwise.
 //
 // Alpha mode is double buffered, see wl_surface.commit.
-wp_color_representation_surface_v1_set_alpha_mode :: (self: *Wp_Color_Representation_Surface_V1, alpha_mode: u32) {
+wp_color_representation_surface_v1_set_alpha_mode :: (batch: *MessageBuilder, self: *Wp_Color_Representation_Surface_V1, alpha_mode: u32) {
     args := Wp_Color_Representation_Surface_V1_Set_Alpha_Mode_Args.{ alpha_mode = alpha_mode };
-    marshal(self.conn, self.id, WP_COLOR_REPRESENTATION_SURFACE_V1_SET_ALPHA_MODE, *args);
+    marshal(batch, self.id, WP_COLOR_REPRESENTATION_SURFACE_V1_SET_ALPHA_MODE, *args);
 }
 
 // set the matrix coefficients and range
@@ -170,9 +169,9 @@ wp_color_representation_surface_v1_set_alpha_mode :: (self: *Wp_Color_Representa
 //
 // The coefficients-range combination is double-buffered, see
 // wl_surface.commit.
-wp_color_representation_surface_v1_set_coefficients_and_range :: (self: *Wp_Color_Representation_Surface_V1, coefficients: u32, range: u32) {
+wp_color_representation_surface_v1_set_coefficients_and_range :: (batch: *MessageBuilder, self: *Wp_Color_Representation_Surface_V1, coefficients: u32, range: u32) {
     args := Wp_Color_Representation_Surface_V1_Set_Coefficients_And_Range_Args.{ coefficients = coefficients, range = range };
-    marshal(self.conn, self.id, WP_COLOR_REPRESENTATION_SURFACE_V1_SET_COEFFICIENTS_AND_RANGE, *args);
+    marshal(batch, self.id, WP_COLOR_REPRESENTATION_SURFACE_V1_SET_COEFFICIENTS_AND_RANGE, *args);
 }
 
 // set the chroma location
@@ -193,9 +192,9 @@ wp_color_representation_surface_v1_set_coefficients_and_range :: (self: *Wp_Colo
 // wp_color_representation_surface_v1::chroma_location enum.
 //
 // The chroma location type is double-buffered, see wl_surface.commit.
-wp_color_representation_surface_v1_set_chroma_location :: (self: *Wp_Color_Representation_Surface_V1, chroma_location: u32) {
+wp_color_representation_surface_v1_set_chroma_location :: (batch: *MessageBuilder, self: *Wp_Color_Representation_Surface_V1, chroma_location: u32) {
     args := Wp_Color_Representation_Surface_V1_Set_Chroma_Location_Args.{ chroma_location = chroma_location };
-    marshal(self.conn, self.id, WP_COLOR_REPRESENTATION_SURFACE_V1_SET_CHROMA_LOCATION, *args);
+    marshal(batch, self.id, WP_COLOR_REPRESENTATION_SURFACE_V1_SET_CHROMA_LOCATION, *args);
 }
 
 WP_COLOR_REPRESENTATION_SURFACE_V1_INTERFACE :: Interface_Descriptor.{

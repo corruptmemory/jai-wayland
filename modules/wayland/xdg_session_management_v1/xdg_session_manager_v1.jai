@@ -16,8 +16,7 @@
 //
 Xdg_Session_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_SESSION_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -59,9 +58,9 @@ Xdg_Session_Manager_V1_Get_Session_Args :: struct {
 // Destroy this object (destructor)
 // Destroy the manager object. The existing session objects will be
 // unaffected.
-xdg_session_manager_v1_destroy :: (self: *Xdg_Session_Manager_V1) {
+xdg_session_manager_v1_destroy :: (batch: *MessageBuilder, self: *Xdg_Session_Manager_V1) {
     args := Xdg_Session_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_SESSION_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, XDG_SESSION_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -89,9 +88,9 @@ xdg_session_manager_v1_destroy :: (self: *Xdg_Session_Manager_V1) {
 //
 // A client is allowed to have any number of in use sessions at the same
 // time.
-xdg_session_manager_v1_get_session :: (self: *Xdg_Session_Manager_V1, new_id: u32, reason: u32, session_id: string) {
+xdg_session_manager_v1_get_session :: (batch: *MessageBuilder, self: *Xdg_Session_Manager_V1, new_id: u32, reason: u32, session_id: string) {
     args := Xdg_Session_Manager_V1_Get_Session_Args.{ reason = reason, session_id = session_id };
-    marshal_constructor(self.conn, self.id, XDG_SESSION_MANAGER_V1_GET_SESSION, new_id, *args);
+    marshal_constructor(batch, self.id, XDG_SESSION_MANAGER_V1_GET_SESSION, new_id, *args);
 }
 
 XDG_SESSION_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

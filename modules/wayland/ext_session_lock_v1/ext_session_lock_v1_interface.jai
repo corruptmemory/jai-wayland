@@ -54,8 +54,7 @@
 //
 Ext_Session_Lock_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_SESSION_LOCK_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -120,9 +119,9 @@ Ext_Session_Lock_V1_Unlock_And_Destroy_Args :: struct {
 //
 // It is a protocol error to make this request if the locked event was
 // sent, the unlock_and_destroy request must be used instead.
-ext_session_lock_v1_destroy :: (self: *Ext_Session_Lock_V1) {
+ext_session_lock_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Session_Lock_V1) {
     args := Ext_Session_Lock_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_SESSION_LOCK_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_SESSION_LOCK_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -138,9 +137,9 @@ ext_session_lock_v1_destroy :: (self: *Ext_Session_Lock_V1) {
 //
 // Attempting to create more than one lock surface for a given output
 // is a duplicate_output protocol error.
-ext_session_lock_v1_get_lock_surface :: (self: *Ext_Session_Lock_V1, new_id: u32, surface: *Wl_Surface, output: *Wl_Output) {
+ext_session_lock_v1_get_lock_surface :: (batch: *MessageBuilder, self: *Ext_Session_Lock_V1, new_id: u32, surface: *Wl_Surface, output: *Wl_Output) {
     args := Ext_Session_Lock_V1_Get_Lock_Surface_Args.{ surface = surface.id, output = output.id };
-    marshal_constructor(self.conn, self.id, EXT_SESSION_LOCK_V1_GET_LOCK_SURFACE, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_SESSION_LOCK_V1_GET_LOCK_SURFACE, new_id, *args);
 }
 
 // unlock the session, destroying the object (destructor)
@@ -167,9 +166,9 @@ ext_session_lock_v1_get_lock_surface :: (self: *Ext_Session_Lock_V1, new_id: u32
 // to the asynchronous nature of the Wayland protocol. For example,
 // the server might terminate the client with a protocol error before
 // it processes the unlock_and_destroy request.
-ext_session_lock_v1_unlock_and_destroy :: (self: *Ext_Session_Lock_V1) {
+ext_session_lock_v1_unlock_and_destroy :: (batch: *MessageBuilder, self: *Ext_Session_Lock_V1) {
     args := Ext_Session_Lock_V1_Unlock_And_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_SESSION_LOCK_V1_UNLOCK_AND_DESTROY, *args);
+    marshal(batch, self.id, EXT_SESSION_LOCK_V1_UNLOCK_AND_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 

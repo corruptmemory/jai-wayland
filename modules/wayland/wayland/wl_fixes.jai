@@ -8,8 +8,7 @@
 //
 Wl_Fixes :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WL_FIXES_INTERFACE.version;
 }
 
 // Request opcodes
@@ -25,9 +24,9 @@ Wl_Fixes_Destroy_Registry_Args :: struct {
 
 
 // destroys this object (destructor)
-wl_fixes_destroy :: (self: *Wl_Fixes) {
+wl_fixes_destroy :: (batch: *MessageBuilder, self: *Wl_Fixes) {
     args := Wl_Fixes_Destroy_Args.{};
-    marshal(self.conn, self.id, WL_FIXES_DESTROY, *args);
+    marshal(batch, self.id, WL_FIXES_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -41,9 +40,9 @@ wl_fixes_destroy :: (self: *Wl_Fixes) {
 // of the registry and will no longer emit any events on the registry. The
 // client should re-use the object ID once it receives the
 // wl_display.delete_id event.
-wl_fixes_destroy_registry :: (self: *Wl_Fixes, registry: *Wl_Registry) {
+wl_fixes_destroy_registry :: (batch: *MessageBuilder, self: *Wl_Fixes, registry: *Wl_Registry) {
     args := Wl_Fixes_Destroy_Registry_Args.{ registry = registry.id };
-    marshal(self.conn, self.id, WL_FIXES_DESTROY_REGISTRY, *args);
+    marshal(batch, self.id, WL_FIXES_DESTROY_REGISTRY, *args);
 }
 
 WL_FIXES_INTERFACE :: Interface_Descriptor.{

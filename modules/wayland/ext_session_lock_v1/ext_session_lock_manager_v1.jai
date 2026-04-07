@@ -7,8 +7,7 @@
 //
 Ext_Session_Lock_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run EXT_SESSION_LOCK_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -26,9 +25,9 @@ Ext_Session_Lock_Manager_V1_Lock_Args :: struct {
 // This informs the compositor that the session lock manager object will
 // no longer be used. Existing objects created through this interface
 // remain valid.
-ext_session_lock_manager_v1_destroy :: (self: *Ext_Session_Lock_Manager_V1) {
+ext_session_lock_manager_v1_destroy :: (batch: *MessageBuilder, self: *Ext_Session_Lock_Manager_V1) {
     args := Ext_Session_Lock_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, EXT_SESSION_LOCK_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, EXT_SESSION_LOCK_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -37,9 +36,9 @@ ext_session_lock_manager_v1_destroy :: (self: *Ext_Session_Lock_Manager_V1) {
 // session. The compositor will send either the ext_session_lock_v1.locked
 // or ext_session_lock_v1.finished event on the created object in
 // response to this request.
-ext_session_lock_manager_v1_lock :: (self: *Ext_Session_Lock_Manager_V1, new_id: u32) {
+ext_session_lock_manager_v1_lock :: (batch: *MessageBuilder, self: *Ext_Session_Lock_Manager_V1, new_id: u32) {
     args := Ext_Session_Lock_Manager_V1_Lock_Args.{};
-    marshal_constructor(self.conn, self.id, EXT_SESSION_LOCK_MANAGER_V1_LOCK, new_id, *args);
+    marshal_constructor(batch, self.id, EXT_SESSION_LOCK_MANAGER_V1_LOCK, new_id, *args);
 }
 
 EXT_SESSION_LOCK_MANAGER_V1_INTERFACE :: Interface_Descriptor.{

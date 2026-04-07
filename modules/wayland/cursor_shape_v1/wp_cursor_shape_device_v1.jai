@@ -7,8 +7,7 @@
 //
 Wp_Cursor_Shape_Device_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run WP_CURSOR_SHAPE_DEVICE_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -121,9 +120,9 @@ Wp_Cursor_Shape_Device_V1_Set_Shape_Args :: struct {
 // Destroy the cursor shape device.
 //
 // The device cursor shape remains unchanged.
-wp_cursor_shape_device_v1_destroy :: (self: *Wp_Cursor_Shape_Device_V1) {
+wp_cursor_shape_device_v1_destroy :: (batch: *MessageBuilder, self: *Wp_Cursor_Shape_Device_V1) {
     args := Wp_Cursor_Shape_Device_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, WP_CURSOR_SHAPE_DEVICE_V1_DESTROY, *args);
+    marshal(batch, self.id, WP_CURSOR_SHAPE_DEVICE_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -146,9 +145,9 @@ wp_cursor_shape_device_v1_destroy :: (self: *Wp_Cursor_Shape_Device_V1) {
 // The serial parameter must match the latest wl_pointer.enter or
 // zwp_tablet_tool_v2.proximity_in serial number sent to the client.
 // Otherwise the request will be ignored.
-wp_cursor_shape_device_v1_set_shape :: (self: *Wp_Cursor_Shape_Device_V1, serial: u32, shape: u32) {
+wp_cursor_shape_device_v1_set_shape :: (batch: *MessageBuilder, self: *Wp_Cursor_Shape_Device_V1, serial: u32, shape: u32) {
     args := Wp_Cursor_Shape_Device_V1_Set_Shape_Args.{ serial = serial, shape = shape };
-    marshal(self.conn, self.id, WP_CURSOR_SHAPE_DEVICE_V1_SET_SHAPE, *args);
+    marshal(batch, self.id, WP_CURSOR_SHAPE_DEVICE_V1_SET_SHAPE, *args);
 }
 
 WP_CURSOR_SHAPE_DEVICE_V1_INTERFACE :: Interface_Descriptor.{

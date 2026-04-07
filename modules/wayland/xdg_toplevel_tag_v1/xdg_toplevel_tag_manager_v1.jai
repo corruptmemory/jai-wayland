@@ -17,8 +17,7 @@
 //
 Xdg_Toplevel_Tag_Manager_V1 :: struct {
     id: u32;
-    version: u32;
-    conn: *Connection;
+    version: u32 = #run XDG_TOPLEVEL_TAG_MANAGER_V1_INTERFACE.version;
 }
 
 // Request opcodes
@@ -43,9 +42,9 @@ Xdg_Toplevel_Tag_Manager_V1_Set_Toplevel_Description_Args :: struct {
 // destroy toplevel tag object (destructor)
 // Destroy this toplevel tag manager object. This request has no other
 // effects.
-xdg_toplevel_tag_manager_v1_destroy :: (self: *Xdg_Toplevel_Tag_Manager_V1) {
+xdg_toplevel_tag_manager_v1_destroy :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Tag_Manager_V1) {
     args := Xdg_Toplevel_Tag_Manager_V1_Destroy_Args.{};
-    marshal(self.conn, self.id, XDG_TOPLEVEL_TAG_MANAGER_V1_DESTROY, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_TAG_MANAGER_V1_DESTROY, *args);
     // TODO(Phase 4): destroy_proxy(self);
 }
 
@@ -64,9 +63,9 @@ xdg_toplevel_tag_manager_v1_destroy :: (self: *Xdg_Toplevel_Tag_Manager_V1) {
 // The client should set the tag as part of the initial commit on the
 // associated toplevel, but it may set it at any time afterwards as well,
 // for example if the purpose of the toplevel changes.
-xdg_toplevel_tag_manager_v1_set_toplevel_tag :: (self: *Xdg_Toplevel_Tag_Manager_V1, toplevel: *Xdg_Toplevel, tag: string) {
+xdg_toplevel_tag_manager_v1_set_toplevel_tag :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Tag_Manager_V1, toplevel: *Xdg_Toplevel, tag: string) {
     args := Xdg_Toplevel_Tag_Manager_V1_Set_Toplevel_Tag_Args.{ toplevel = toplevel.id, tag = tag };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_TAG, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_TAG, *args);
 }
 
 // set description
@@ -78,9 +77,9 @@ xdg_toplevel_tag_manager_v1_set_toplevel_tag :: (self: *Xdg_Toplevel_Tag_Manager
 // The client should set the description as part of the initial commit on
 // the associated toplevel, but it may set it at any time afterwards as
 // well, for example if the purpose of the toplevel changes.
-xdg_toplevel_tag_manager_v1_set_toplevel_description :: (self: *Xdg_Toplevel_Tag_Manager_V1, toplevel: *Xdg_Toplevel, description: string) {
+xdg_toplevel_tag_manager_v1_set_toplevel_description :: (batch: *MessageBuilder, self: *Xdg_Toplevel_Tag_Manager_V1, toplevel: *Xdg_Toplevel, description: string) {
     args := Xdg_Toplevel_Tag_Manager_V1_Set_Toplevel_Description_Args.{ toplevel = toplevel.id, description = description };
-    marshal(self.conn, self.id, XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_DESCRIPTION, *args);
+    marshal(batch, self.id, XDG_TOPLEVEL_TAG_MANAGER_V1_SET_TOPLEVEL_DESCRIPTION, *args);
 }
 
 XDG_TOPLEVEL_TAG_MANAGER_V1_INTERFACE :: Interface_Descriptor.{
