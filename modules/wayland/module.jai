@@ -6,6 +6,7 @@
 #load "marshal.jai";
 #load "shm.jai";
 #load "registry.jai";
+#load "session.jai";
 
 #load "wayland/wayland.jai";
 

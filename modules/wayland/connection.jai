@@ -85,6 +85,12 @@ allocate_id :: (conn: *Connection) -> u32 {
     return id;
 }
 
+// Same as above, but using the context
+allocate_id :: () -> u32 {
+    return allocate_id(*context.wayland_session.conn);
+}
+
+
 // Queue message bytes into the outgoing buffer.
 connection_queue :: (conn: *Connection, data: *u8, size: u32) {
     assert(conn.out_used + size <= conn.out_buf.count, "outgoing buffer overflow");
@@ -102,6 +108,7 @@ connection_queue_fd :: (conn: *Connection, fd: s32) {
 // Flush the outgoing buffer via sendmsg with SCM_RIGHTS ancillary data.
 // Returns true on success, false on failure.
 connection_flush :: (conn: *Connection) -> bool {
+    print("flushing... ");
     if conn.out_used == 0  return true;
 
     iov: iovec;
@@ -127,12 +134,24 @@ connection_flush :: (conn: *Connection) -> bool {
     }
 
     // MSG is an enum — cast 0 for no flags.
+    if msg.msg_iov != null {
+        print("iov: % ", msg.msg_iov.iov_len);
+    }
+    if msg.msg_control != null {
+        print("control: % ", msg.msg_controllen);
+    }
     bytes_sent := sendmsg(conn.socket_fd, *msg, cast(MSG) 0);
+    print("%\n", bytes_sent);
     if bytes_sent < 0  return false;
 
     conn.out_used = 0;
     conn.out_fds_count = 0;
     return true;
+}
+
+// Same as above, just using the context
+connection_flush :: () -> bool {
+    return connection_flush(*context.wayland_session.conn);
 }
 
 // Read incoming data via recvmsg with SCM_RIGHTS ancillary data.
@@ -202,6 +221,10 @@ connection_read :: (conn: *Connection) -> s64 {
     }
 
     return bytes_read;
+}
+
+connection_read :: () -> s64 {
+    return connection_read(*context.wayland_session.conn);
 }
 
 // Peek at the next incoming message header.

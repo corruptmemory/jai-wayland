@@ -26,7 +26,7 @@
 //
 Wl_Registry :: struct {
     id: u32;
-    version: u32;
+    version: u32 = #run WL_REGISTRY_INTERFACE.version;
     conn: *Connection;
 }
 

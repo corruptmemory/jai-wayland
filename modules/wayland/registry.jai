@@ -55,10 +55,63 @@ discover_globals :: (conn: *Connection) -> [] Global_Info, u32 {
     return globals, registry_id;
 }
 
+// Same as above, but fills in registry
+discover_globals :: () -> u32 {
+    using context.wayland_session;
+    display := init_display(*conn);
+
+    registry_id := allocate_id(*conn);
+    wl_display_get_registry(*display, registry_id);
+    sync_id := allocate_id(*conn);
+    wl_display_sync(*display, sync_id);
+    connection_flush(*conn);
+
+    done := false;
+    while !done && connection_read(*conn) > 0 {
+        msg, size := connection_peek_message(*conn);
+        while msg != null {
+            object_id, opcode, _ := unpack_header(msg);
+            payload := msg + HEADER_SIZE;
+
+            if object_id == registry_id {
+                if opcode == WL_REGISTRY_GLOBAL {
+                    offset: u32 = 0;
+                    gname := read_u32(payload + offset);
+                    offset += 4;
+                    iface, iface_bytes := read_string(payload + offset);
+                    offset += iface_bytes;
+                    ver := read_u32(payload + offset);
+                    array_add(*globals, .{
+                        name = gname,
+                        interface_name = copy_string(iface),
+                        version = ver,
+                    });
+                }
+            } else if object_id == sync_id {
+                done = true;
+            }
+
+            connection_consume_message(*conn, size);
+            msg, size = connection_peek_message(*conn);
+        }
+    }
+
+    return registry_id;
+}
+
+
 // Look up a global by interface name. Returns the global's name (u32)
 // for use with wl_registry_bind, or 0 if not found.
 find_global :: (globals: [] Global_Info, iface_name: string) -> u32 {
     for globals {
+        if it.interface_name == iface_name  return it.name;
+    }
+    return 0;
+}
+
+// Same as above, but uses the context
+find_global :: (iface_name: string) -> u32 {
+    for context.wayland_session.globals {
         if it.interface_name == iface_name  return it.name;
     }
     return 0;
