@@ -10,6 +10,43 @@ HEIGHT :: 480;
 STRIDE :: WIDTH * 4;         // 4 bytes per pixel (XRGB8888)
 BUF_SIZE :: STRIDE * HEIGHT;
 
+WaylandMessageHeader :: struct {
+  object_id : u32;
+  opcode    : u16;
+  msg_size  : u32;
+  payload   : *u8;
+}
+
+WaylandConnectionEx :: struct {
+    wm_base: *Wayland.Xdg_Wm_Base;
+    conn: *Wayland.Connection;
+}
+
+for_expansion :: (conn: *WaylandConnectionEx, body: Code, flags: For_Flags) #expand {
+    while bts := Wayland.connection_read(conn.conn) {
+        if bts <= 0 break;
+        msg, size := Wayland.connection_peek_message(conn.conn);
+        while msg != null {
+            header: WaylandMessageHeader;
+            header.object_id, header.opcode, header.msg_size = Wayland.unpack_header(msg);
+            header.payload = msg + Wayland.HEADER_SIZE;
+
+            if header.object_id == conn.wm_base.id && header.opcode == Wayland.XDG_WM_BASE_PING {
+                serial := Wayland.read_u32(header.payload);
+                Wayland.xdg_wm_base_pong(conn.wm_base, serial);
+                Wayland.connection_flush(conn.conn);
+            } else {
+                `it := header;
+                `it_index := 0;
+                #insert(break=break bts) body;
+            }
+
+            Wayland.connection_consume_message(conn.conn, header.msg_size);
+            msg, size = Wayland.connection_peek_message(conn.conn);
+        }
+    }
+}
+
 main :: () {
     conn: Wayland.Connection;
     if !Wayland.wayland_connect(*conn) {
@@ -151,32 +188,24 @@ main :: () {
 
     print("Window displayed. Close the window or press Ctrl+C to exit.\n");
 
+    wconn := WaylandConnectionEx.{
+          wm_base = *wm_base,
+          conn    = *conn
+    };
+
     // Phase 6: event loop — respond to pings, handle close
-    while Wayland.connection_read(*conn) > 0 {
-        msg, size := Wayland.connection_peek_message(*conn);
-        while msg != null {
-            object_id, opcode, msg_size := Wayland.unpack_header(msg);
-            payload := msg + Wayland.HEADER_SIZE;
-
-            if object_id == wm_base.id && opcode == Wayland.XDG_WM_BASE_PING {
-                serial := Wayland.read_u32(payload);
-                Wayland.xdg_wm_base_pong(*wm_base, serial);
-                Wayland.connection_flush(*conn);
-            } else if object_id == toplevel.id && opcode == Wayland.XDG_TOPLEVEL_CLOSE {
-                print("Close requested.\n");
-                munmap(data, BUF_SIZE);
-                close(fd);
-                return;
-            } else if object_id == 1 && opcode == Wayland.WL_DISPLAY_ERROR {
-                err_obj := Wayland.read_u32(payload);
-                err_code := Wayland.read_u32(payload + 4);
-                err_msg, _ := Wayland.read_string(payload + 8);
-                print("FATAL: wl_display.error object=% code=%: %\n", err_obj, err_code, err_msg);
-                return;
-            }
-
-            Wayland.connection_consume_message(*conn, msg_size);
-            msg, size = Wayland.connection_peek_message(*conn);
+    for *wconn {
+        if it.object_id == toplevel.id && it.opcode == Wayland.XDG_TOPLEVEL_CLOSE {
+            print("Close requested.\n");
+            munmap(data, BUF_SIZE);
+            close(fd);
+            return;
+        } else if it.object_id == 1 && it.opcode == Wayland.WL_DISPLAY_ERROR {
+            err_obj := Wayland.read_u32(it.payload);
+            err_code := Wayland.read_u32(it.payload + 4);
+            err_msg, _ := Wayland.read_string(it.payload + 8);
+            print("FATAL: wl_display.error object=% code=%: %\n", err_obj, err_code, err_msg);
+            return;
         }
     }
 
