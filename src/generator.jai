@@ -344,7 +344,7 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
     type_name := to_jai_type_name(iface.name);
 
     // Build parameter list
-    print_to_builder(*sb, "% :: (self: *%", func_name, type_name);
+    print_to_builder(*sb, "% :: (batch: *MessageBuilder, self: *%", func_name, type_name);
 
     // For typed constructors: add new_id as first param after self
     if is_constructor {
@@ -408,7 +408,7 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
         print_to_builder(*sb, "    write_u32(_buf.data + _offset, version); _offset += 4;\n");
         print_to_builder(*sb, "    write_u32(_buf.data + _offset, new_id); _offset += 4;\n");
         print_to_builder(*sb, "    write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) %);\n", const_name);
-        print_to_builder(*sb, "    connection_queue(self.conn, _buf.data, _offset);\n");
+        print_to_builder(*sb, "    message_queue(batch, _buf.data, _offset);\n");
     } else if is_constructor {
         // Typed constructor: use marshal_constructor with caller-provided new_id
         print_to_builder(*sb, "    args := %.{", args_struct_name);
@@ -426,7 +426,7 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
         }
         if !first  print_to_builder(*sb, " ");
         print_to_builder(*sb, "};\n");
-        print_to_builder(*sb, "    marshal_constructor(self.conn, self.id, %, new_id, *args);\n", const_name);
+        print_to_builder(*sb, "    marshal_constructor(batch, self.id, %, new_id, *args);\n", const_name);
     } else if req.is_destructor {
         // Destructor: marshal + destroy comment
         print_to_builder(*sb, "    args := %.{", args_struct_name);
@@ -444,7 +444,7 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
         }
         if !first  print_to_builder(*sb, " ");
         print_to_builder(*sb, "};\n");
-        print_to_builder(*sb, "    marshal(self.conn, self.id, %, *args);\n", const_name);
+        print_to_builder(*sb, "    marshal(batch, self.id, %, *args);\n", const_name);
         print_to_builder(*sb, "    // TODO(Phase 4): destroy_proxy(self);\n");
     } else {
         // Normal request: marshal
@@ -463,7 +463,7 @@ generate_request :: (iface: *Interface, req: *Message, opcode: int) -> string {
         }
         if !first  print_to_builder(*sb, " ");
         print_to_builder(*sb, "};\n");
-        print_to_builder(*sb, "    marshal(self.conn, self.id, %, *args);\n", const_name);
+        print_to_builder(*sb, "    marshal(batch, self.id, %, *args);\n", const_name);
     }
 
     print_to_builder(*sb, "}\n");
@@ -496,8 +496,8 @@ generate_interface_struct :: (iface: *Interface) -> string {
 
     print_to_builder(*sb, "% :: struct {\n", type_name);
     print_to_builder(*sb, "    id: u32;\n");
-    print_to_builder(*sb, "    version: u32;\n");
-    print_to_builder(*sb, "    conn: *Connection;\n");
+    descriptor_name := tprint("%_INTERFACE", to_upper_snake(iface.name));
+    print_to_builder(*sb, "    version: u32 = #run %.version;\n", descriptor_name);
     print_to_builder(*sb, "}\n");
 
     return builder_to_string(*sb,, allocator = temp);
@@ -698,6 +698,7 @@ generate_module_root :: (protocol_names: [] string) -> string {
     print_to_builder(*sb, "#load \"marshal.jai\";\n");
     print_to_builder(*sb, "#load \"shm.jai\";\n");
     print_to_builder(*sb, "#load \"registry.jai\";\n");
+    print_to_builder(*sb, "#load \"session.jai\";\n");
 
     for name: protocol_names {
         print_to_builder(*sb, "\n#load \"%/%.jai\";\n", name, name);

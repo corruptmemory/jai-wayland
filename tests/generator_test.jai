@@ -280,7 +280,8 @@ test_generate_request_simple :: () {
     assert(contains(result, "x: s32"), "Missing x param");
     assert(contains(result, "width: s32"), "Missing width param");
     assert(contains(result, "Wl_Surface_Damage_Args.{"), "Missing args struct literal, got:\n%", result);
-    assert(contains(result, "marshal(self.conn, self.id, WL_SURFACE_DAMAGE"), "Missing marshal call, got:\n%", result);
+    assert(contains(result, "batch: *MessageBuilder"), "Missing batch parameter, got:\n%", result);
+    assert(contains(result, "marshal(batch, self.id, WL_SURFACE_DAMAGE"), "Missing marshal call, got:\n%", result);
     print("  PASS: test_generate_request_simple\n");
 }
 
@@ -292,7 +293,8 @@ test_generate_request_constructor :: () {
 
     result := generate_request(*iface, *req, 3);
     assert(contains(result, "new_id: u32"), "Constructor should take new_id param, got:\n%", result);
-    assert(contains(result, "marshal_constructor(self.conn, self.id, WL_SURFACE_FRAME"), "Missing marshal_constructor call, got:\n%", result);
+    assert(contains(result, "batch: *MessageBuilder"), "Missing batch parameter, got:\n%", result);
+    assert(contains(result, "marshal_constructor(batch, self.id, WL_SURFACE_FRAME"), "Missing marshal_constructor call, got:\n%", result);
     assert(!contains(result, "return null"), "Constructor should not return null, got:\n%", result);
     print("  PASS: test_generate_request_constructor\n");
 }
@@ -303,7 +305,8 @@ test_generate_request_destructor :: () {
 
     result := generate_request(*iface, *req, 0);
     assert(contains(result, "destructor"), "Should note destructor");
-    assert(contains(result, "marshal(self.conn, self.id, WL_SURFACE_DESTROY"), "Missing marshal call, got:\n%", result);
+    assert(contains(result, "batch: *MessageBuilder"), "Missing batch parameter, got:\n%", result);
+    assert(contains(result, "marshal(batch, self.id, WL_SURFACE_DESTROY"), "Missing marshal call, got:\n%", result);
     assert(contains(result, "TODO(Phase 4): destroy_proxy"), "Missing Phase 4 destroy TODO, got:\n%", result);
     print("  PASS: test_generate_request_destructor\n");
 }
@@ -321,7 +324,8 @@ test_generate_request_untyped_new_id :: () {
     assert(contains(result, "version: u32"), "Untyped new_id should have version param, got:\n%", result);
     assert(contains(result, "new_id: u32"), "Untyped new_id should have new_id param, got:\n%", result);
     assert(contains(result, "write_string"), "Should use write_string for interface_name, got:\n%", result);
-    assert(contains(result, "connection_queue"), "Should use connection_queue, got:\n%", result);
+    assert(contains(result, "batch: *MessageBuilder"), "Missing batch parameter, got:\n%", result);
+    assert(contains(result, "message_queue(batch,"), "Should use message_queue(batch,), got:\n%", result);
     print("  PASS: test_generate_request_untyped_new_id\n");
 }
 
@@ -336,8 +340,8 @@ test_generate_interface_struct :: () {
     result := generate_interface_struct(*iface);
     assert(contains(result, "Wl_Surface :: struct"), "Missing struct");
     assert(contains(result, "id: u32"), "Missing id field");
-    assert(contains(result, "version: u32"), "Missing version field");
-    assert(contains(result, "conn: *Connection"), "Missing conn field");
+    assert(contains(result, "version: u32 = #run WL_SURFACE_INTERFACE.version"), "Missing version field with default, got:\n%", result);
+    assert(!contains(result, "conn: *Connection"), "Should not have conn field");
     assert(contains(result, "a compositable surface"), "Missing summary comment");
     print("  PASS: test_generate_interface_struct\n");
 }
@@ -450,6 +454,7 @@ test_generate_module_root :: () {
 
     result := generate_module_root(names);
     assert(contains(result, "#load \"types.jai\""), "Missing types load");
+    assert(contains(result, "#load \"session.jai\""), "Missing session load");
     assert(contains(result, "#load \"wayland/wayland.jai\""), "Missing wayland load");
     assert(contains(result, "#load \"xdg_shell/xdg_shell.jai\""), "Missing xdg_shell load");
     print("  PASS: test_generate_module_root\n");
