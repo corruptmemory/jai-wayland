@@ -71,9 +71,10 @@ discover_globals :: () -> u32 {
     wl_display_sync(*batch, *display, sync_id);
     wayland_send(*s.conn, *batch);
 
+    recv: ReceiveBuffer;
     done := false;
-    while !done && wayland_receive(*s.conn, *s.recv) > 0 {
-        msg, size := receive_peek_message(*s.recv);
+    while !done && wayland_receive(*s.conn, *recv) > 0 {
+        msg, size := receive_peek_message(*recv);
         while msg != null {
             object_id, opcode, _ := unpack_header(msg);
             payload := msg + HEADER_SIZE;
@@ -96,8 +97,8 @@ discover_globals :: () -> u32 {
                 done = true;
             }
 
-            receive_consume_message(*s.recv, size);
-            msg, size = receive_peek_message(*s.recv);
+            receive_consume_message(*recv, size);
+            msg, size = receive_peek_message(*recv);
         }
     }
 

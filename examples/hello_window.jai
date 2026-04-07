@@ -94,12 +94,12 @@ main :: () {
 }
 
 drain_messages :: () {
-    recv := *context.wayland_session.recv;
-    wayland_receive(connection(), recv);
-    msg, size := receive_peek_message(recv);
+    recv: ReceiveBuffer;
+    wayland_receive(connection(), *recv);
+    msg, size := receive_peek_message(*recv);
     while msg != null {
         _, _, msg_size := unpack_header(msg);
-        receive_consume_message(recv, msg_size);
-        msg, size = receive_peek_message(recv);
+        receive_consume_message(*recv, msg_size);
+        msg, size = receive_peek_message(*recv);
     }
 }
