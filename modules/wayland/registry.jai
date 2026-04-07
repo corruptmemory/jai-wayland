@@ -15,16 +15,19 @@ discover_globals :: (conn: *Connection) -> [] Global_Info, u32 {
     display := init_display(conn);
 
     registry_id := allocate_id(conn);
-    wl_display_get_registry(*display, registry_id);
     sync_id := allocate_id(conn);
-    wl_display_sync(*display, sync_id);
-    connection_flush(conn);
 
+    batch: MessageBuilder;
+    wl_display_get_registry(*batch, *display, registry_id);
+    wl_display_sync(*batch, *display, sync_id);
+    wayland_send(conn, *batch);
+
+    recv: ReceiveBuffer;
     globals: [..] Global_Info;
 
     done := false;
-    while !done && connection_read(conn) > 0 {
-        msg, size := connection_peek_message(conn);
+    while !done && wayland_receive(conn, *recv) > 0 {
+        msg, size := receive_peek_message(*recv);
         while msg != null {
             object_id, opcode, _ := unpack_header(msg);
             payload := msg + HEADER_SIZE;
@@ -47,28 +50,30 @@ discover_globals :: (conn: *Connection) -> [] Global_Info, u32 {
                 done = true;
             }
 
-            connection_consume_message(conn, size);
-            msg, size = connection_peek_message(conn);
+            receive_consume_message(*recv, size);
+            msg, size = receive_peek_message(*recv);
         }
     }
 
     return globals, registry_id;
 }
 
-// Same as above, but fills in registry
+// Same as above, but fills in session registry and globals.
 discover_globals :: () -> u32 {
-    using context.wayland_session;
-    display := init_display(*conn);
+    s := context.wayland_session;
+    display := init_display(*s.conn);
 
-    registry_id := allocate_id(*conn);
-    wl_display_get_registry(*display, registry_id);
-    sync_id := allocate_id(*conn);
-    wl_display_sync(*display, sync_id);
-    connection_flush(*conn);
+    registry_id := allocate_id(*s.conn);
+    sync_id := allocate_id(*s.conn);
+
+    batch: MessageBuilder;
+    wl_display_get_registry(*batch, *display, registry_id);
+    wl_display_sync(*batch, *display, sync_id);
+    wayland_send(*s.conn, *batch);
 
     done := false;
-    while !done && connection_read(*conn) > 0 {
-        msg, size := connection_peek_message(*conn);
+    while !done && wayland_receive(*s.conn, *s.recv) > 0 {
+        msg, size := receive_peek_message(*s.recv);
         while msg != null {
             object_id, opcode, _ := unpack_header(msg);
             payload := msg + HEADER_SIZE;
@@ -81,7 +86,7 @@ discover_globals :: () -> u32 {
                     iface, iface_bytes := read_string(payload + offset);
                     offset += iface_bytes;
                     ver := read_u32(payload + offset);
-                    array_add(*globals, .{
+                    array_add(*s.globals, .{
                         name = gname,
                         interface_name = copy_string(iface),
                         version = ver,
@@ -91,14 +96,14 @@ discover_globals :: () -> u32 {
                 done = true;
             }
 
-            connection_consume_message(*conn, size);
-            msg, size = connection_peek_message(*conn);
+            receive_consume_message(*s.recv, size);
+            msg, size = receive_peek_message(*s.recv);
         }
     }
 
+    s.registry = Wl_Registry.{ id = registry_id };
     return registry_id;
 }
-
 
 // Look up a global by interface name. Returns the global's name (u32)
 // for use with wl_registry_bind, or 0 if not found.
@@ -109,7 +114,7 @@ find_global :: (globals: [] Global_Info, iface_name: string) -> u32 {
     return 0;
 }
 
-// Same as above, but uses the context
+// Same as above, but uses the context session.
 find_global :: (iface_name: string) -> u32 {
     for context.wayland_session.globals {
         if it.interface_name == iface_name  return it.name;
@@ -117,14 +122,11 @@ find_global :: (iface_name: string) -> u32 {
     return 0;
 }
 
-// Initialize a wl_display proxy. Always ID 1, always version 1.
+// Initialize a wl_display proxy. Always ID 1.
 // Advances the ID allocator past 1 so subsequent allocate_id calls start at 2.
 init_display :: (conn: *Connection) -> Wl_Display {
     display: Wl_Display;
     display.id = 1;
-    display.version = 1;
-    display.conn = conn;
-    // Ensure the allocator skips past ID 1
     if conn.next_id <= 1  conn.next_id = 2;
     return display;
 }
