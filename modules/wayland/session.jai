@@ -21,10 +21,11 @@ WaylandMessageHeader :: struct {
 
 for_expansion :: (session: *WaylandSession, body: Code, flags: For_Flags) #expand {
     {
-        recv: ReceiveBuffer;
-        while bts := wayland_receive(*session.conn, *recv) {
+        _recv: ReceiveBuffer;
+        `recv := *_recv;
+        while bts := wayland_receive(*session.conn, *_recv) {
             if bts <= 0 break;
-            msg, size := receive_peek_message(*recv);
+            msg, size := receive_peek_message(*_recv);
             while msg != null {
                 header: WaylandMessageHeader;
                 header.object_id, header.opcode, header.msg_size = unpack_header(msg);
@@ -41,8 +42,8 @@ for_expansion :: (session: *WaylandSession, body: Code, flags: For_Flags) #expan
                     #insert(break=break bts) body;
                 }
 
-                receive_consume_message(*recv, header.msg_size);
-                msg, size = receive_peek_message(*recv);
+                receive_consume_message(*_recv, header.msg_size);
+                msg, size = receive_peek_message(*_recv);
             }
         }
     }

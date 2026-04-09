@@ -28,14 +28,20 @@ build :: () {
           case "marshal_test";
             build_and_run_test("marshal_tests", "marshal_tests", "tests/marshal_test.jai", "build_tests");
             set_build_options_dc(.{do_output=false});
+          case "demarshal_test";
+            build_and_run_test("demarshal_tests", "demarshal_tests", "tests/demarshal_test.jai", "build_tests");
+            set_build_options_dc(.{do_output=false});
           case "hello_globals";
             build_and_run_test("hello_globals", "hello_globals", "examples/hello_globals.jai", "build");
+            set_build_options_dc(.{do_output=false});
+          case "hello_screens";
+            build_and_run_test("hello_screens", "hello_screens", "examples/hello_screens.jai", "build");
             set_build_options_dc(.{do_output=false});
           case "hello_window";
             build_and_run_test("hello_window", "hello_window", "examples/hello_window.jai", "build");
             set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'hello_globals', 'hello_window'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'demarshal_test', 'hello_screens', 'hello_globals', 'hello_window'.\n", arg));
         }
     }
 }
