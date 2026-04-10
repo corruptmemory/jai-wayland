@@ -10,6 +10,7 @@
 #load "session.jai";
 #load "output.jai";
 #load "input.jai";
+#load "xkb.jai";
 #load "type_registry.jai";
 
 #load "wayland/wayland.jai";

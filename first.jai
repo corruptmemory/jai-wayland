@@ -40,8 +40,11 @@ build :: () {
           case "hello_window";
             build_and_run_test("hello_window", "hello_window", "examples/hello_window.jai", "build");
             set_build_options_dc(.{do_output=false});
+          case "dump_keymap";
+            build_and_run_test("dump_keymap", "dump_keymap", "examples/dump_keymap.jai", "build");
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap'.\n", arg));
         }
     }
 }

@@ -2,7 +2,8 @@
 // Discovers native screen resolution, allocates one shm pool sized to it,
 // and creates cheap wl_buffer objects on resize. No remapping, no syscalls
 // on the resize hot path.
-// Keyboard input: r/g/b switch gradient color, q quits.
+// Keyboard: r/g/b switch gradient color, q quits.
+// Pointer: click prints coordinates and cycles color.
 
 #import,dir "../modules/wayland";
 #import "Basic";
@@ -10,12 +11,7 @@
 
 BPP :: 4;  // bytes per pixel (XRGB8888)
 
-// Linux evdev keycodes
-KEY_Q :: 16;
-KEY_R :: 19;
-KEY_G :: 34;
-KEY_B :: 48;
-
+COLORS :: Color.[.RED, .GREEN, .BLUE];
 Color :: enum { RED; GREEN; BLUE; }
 
 main :: () {
@@ -36,13 +32,19 @@ main :: () {
     pool_size := cast(s32)(screen_width * screen_height * BPP);
     print("Screen: %x%, pool: % bytes\n", screen_width, screen_height, pool_size);
 
-    // --- Acquire keyboard ---
-    kb, has_keyboard := get_keyboard_info();
-    if has_keyboard {
-        print("Keyboard acquired. Keys: r/g/b = color, q = quit\n");
-    } else {
-        print("No keyboard found.\n");
+    // --- Acquire input devices ---
+    seats := get_seats_info();
+    keyboards := get_keyboards_info(seats);
+    pointers := get_pointers_info(seats);
+    keymap: Keymap;
+    if keyboards.count > 0 {
+        keymap_ok: bool;
+        keymap, keymap_ok = parse_keymap_fd(keyboards[0].keymap_fd, keyboards[0].keymap_size);
+        if !keymap_ok  print("Warning: could not parse keymap\n");
     }
+    print("Input: % seat(s), % keyboard(s), % pointer(s)\n", seats.count, keyboards.count, pointers.count);
+    if keyboards.count > 0  print("  Keys: r/g/b = color, q = quit\n");
+    if pointers.count > 0   print("  Click: print coords + cycle color\n");
 
     batch: MessageBuilder;
 
@@ -114,9 +116,11 @@ main :: () {
 
     print("Window: %x%. Close to exit.\n", win_width, win_height);
 
-    // --- Event loop with resize + keyboard handling ---
+    // --- Event loop with resize + input handling ---
     pending_width:  s32 = 0;
     pending_height: s32 = 0;
+    pointer_x: float64 = 0;
+    pointer_y: float64 = 0;
 
     for session() {
         needs_repaint := false;
@@ -128,17 +132,40 @@ main :: () {
             wayland_send(*batch);
         }
 
-        if has_keyboard && it.object_id == kb.keyboard.id {
-            event: Wl_Keyboard_Event;
-            unmarshal_event(*event, it.opcode, it.payload, recv);
-            if event.kind == .KEY && event.key.state == cast(u32) Wl_Keyboard_Key_State.PRESSED {
-                if event.key.key == {
-                  case KEY_Q;
+        kb_event, is_kb := get_keyboard_event(it, keyboards, recv);
+        if is_kb {
+            if kb_event.kind == .KEY && kb_event.key.state == cast(u32) Wl_Keyboard_Key_State.PRESSED {
+                keysym := keymap_get_keysym(*keymap, kb_event.key.key);
+                if keysym == {
+                  case #char "q";
                     print("Quit requested.\n");
                     break;
-                  case KEY_R; current_color = .RED;   needs_repaint = true;
-                  case KEY_G; current_color = .GREEN; needs_repaint = true;
-                  case KEY_B; current_color = .BLUE;  needs_repaint = true;
+                  case #char "r"; current_color = .RED;   needs_repaint = true;
+                  case #char "g"; current_color = .GREEN; needs_repaint = true;
+                  case #char "b"; current_color = .BLUE;  needs_repaint = true;
+                }
+            }
+            continue;
+        }
+
+        ptr_event, is_ptr := get_pointer_event(it, pointers, recv);
+        if is_ptr {
+            if ptr_event.kind == {
+              case .ENTER;
+                pointer_x = fixed_to_float(ptr_event.enter.surface_x);
+                pointer_y = fixed_to_float(ptr_event.enter.surface_y);
+              case .MOTION;
+                pointer_x = fixed_to_float(ptr_event.motion.surface_x);
+                pointer_y = fixed_to_float(ptr_event.motion.surface_y);
+              case .BUTTON;
+                if ptr_event.button.state == cast(u32) Wl_Pointer_Button_State.PRESSED {
+                    print("Click at (%, %)\n", pointer_x, pointer_y);
+                    // Cycle to next color
+                    for COLORS  if it == current_color {
+                        current_color = COLORS[(it_index + 1) % COLORS.count];
+                        break;
+                    }
+                    needs_repaint = true;
                 }
             }
             continue;
