@@ -4,11 +4,12 @@
 #load "wire.jai";
 #load "connection.jai";
 #load "marshal.jai";
-#load "demarshal.jai";
+#load "unmarshal.jai";
 #load "shm.jai";
 #load "registry.jai";
 #load "session.jai";
 #load "output.jai";
+#load "input.jai";
 #load "type_registry.jai";
 
 #load "wayland/wayland.jai";

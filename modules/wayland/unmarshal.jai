@@ -1,26 +1,26 @@
-// Compile-time demarshal macro: walks event arg structs via type_info at compile time
+// Compile-time unmarshal macro: walks event arg structs via type_info at compile time
 // and emits type-specific deserialization code via #insert #run.
-// This is the mirror of marshal.jai — marshal serializes requests, demarshal
+// This is the mirror of marshal.jai — marshal serializes requests, unmarshal
 // deserializes events.
 
 #import "Basic";
 
-// The demarshal macro. T is the event arg struct type; #run runs at compile time,
+// The unmarshal macro. T is the event arg struct type; #run runs at compile time,
 // generating deserialization code specific to T, which #insert injects.
 // recv is needed for Fd fields (popped from ReceiveBuffer via SCM_RIGHTS).
-demarshal :: (args: *$T, payload: *u8, recv: *ReceiveBuffer) #expand {
-    #insert #run generate_demarshal_code(type_info(T));
+unmarshal :: (args: *$T, payload: *u8, recv: *ReceiveBuffer) #expand {
+    #insert #run generate_unmarshal_code(type_info(T));
 }
 
 // Demarshal a tagged union event. Dispatches on opcode to fill the correct
 // variant of the union. T is the tagged union type (e.g., Wl_Output_Event).
-demarshal_event :: (event: *$T, opcode: u16, payload: *u8, recv: *ReceiveBuffer) #expand {
-    #insert #run generate_demarshal_event_code(type_info(T));
+unmarshal_event :: (event: *$T, opcode: u16, payload: *u8, recv: *ReceiveBuffer) #expand {
+    #insert #run generate_unmarshal_event_code(type_info(T));
 }
 
 #scope_file
 
-generate_demarshal_code :: (ti: *Type_Info) -> string {
+generate_unmarshal_code :: (ti: *Type_Info) -> string {
     si := cast(*Type_Info_Struct) ti;
 
     if si.members.count == 0 return "{}";
@@ -33,13 +33,13 @@ generate_demarshal_code :: (ti: *Type_Info) -> string {
     }
 
     if !has_variable {
-        return emit_demarshal_fixed(si, "args");
+        return emit_unmarshal_fixed(si, "args");
     } else {
-        return emit_demarshal_variable(si, "args");
+        return emit_unmarshal_variable(si, "args");
     }
 }
 
-emit_demarshal_fixed :: (si: *Type_Info_Struct, prefix: string) -> string {
+emit_unmarshal_fixed :: (si: *Type_Info_Struct, prefix: string) -> string {
     sb: String_Builder;
 
     print_to_builder(*sb, "{\n");
@@ -79,7 +79,7 @@ emit_demarshal_fixed :: (si: *Type_Info_Struct, prefix: string) -> string {
     return builder_to_string(*sb);
 }
 
-emit_demarshal_variable :: (si: *Type_Info_Struct, prefix: string) -> string {
+emit_unmarshal_variable :: (si: *Type_Info_Struct, prefix: string) -> string {
     sb: String_Builder;
 
     print_to_builder(*sb, "{\n");
@@ -132,7 +132,7 @@ emit_demarshal_variable :: (si: *Type_Info_Struct, prefix: string) -> string {
     return builder_to_string(*sb);
 }
 
-generate_demarshal_event_code :: (ti: *Type_Info) -> string {
+generate_unmarshal_event_code :: (ti: *Type_Info) -> string {
     si := cast(*Type_Info_Struct) ti;
 
     if si.tagged_union_bindings.count == 0 return "{}";
@@ -159,7 +159,7 @@ generate_demarshal_event_code :: (ti: *Type_Info) -> string {
 
         print_to_builder(*sb, "        event.% = cast(%) %;\n", tag_name, tag_type_name, binding.constant_value);
 
-        // Inline demarshal code for this variant's args struct
+        // Inline unmarshal code for this variant's args struct
         if variant_si.members.count > 0 {
             variant_prefix := tprint("event.%", variant.name);
 
@@ -171,10 +171,10 @@ generate_demarshal_event_code :: (ti: *Type_Info) -> string {
             }
 
             if !has_variable {
-                inline_code := emit_demarshal_fixed(variant_si, variant_prefix);
+                inline_code := emit_unmarshal_fixed(variant_si, variant_prefix);
                 print_to_builder(*sb, "    %", inline_code);
             } else {
-                inline_code := emit_demarshal_variable(variant_si, variant_prefix);
+                inline_code := emit_unmarshal_variable(variant_si, variant_prefix);
                 print_to_builder(*sb, "    %", inline_code);
             }
         }

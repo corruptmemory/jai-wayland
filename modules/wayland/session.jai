@@ -31,7 +31,19 @@ for_expansion :: (session: *WaylandSession, body: Code, flags: For_Flags) #expan
                 header.object_id, header.opcode, header.msg_size = unpack_header(msg);
                 header.payload = msg + HEADER_SIZE;
 
-                if header.object_id == session.wm_base.id && header.opcode == XDG_WM_BASE_PING {
+                // defer ensures consume runs even if body uses 'continue'
+                defer {
+                    receive_consume_message(*_recv, header.msg_size);
+                    msg, size = receive_peek_message(*_recv);
+                }
+
+                if header.object_id == 1 && header.opcode == WL_DISPLAY_ERROR {
+                    err_obj := read_u32(header.payload);
+                    err_code := read_u32(header.payload + 4);
+                    err_msg, _ := read_string(header.payload + 8);
+                    print("FATAL: wl_display.error object=% code=%: %\n", err_obj, err_code, err_msg);
+                    break bts;
+                } else if header.object_id == session.wm_base.id && header.opcode == XDG_WM_BASE_PING {
                     serial := read_u32(header.payload);
                     ping_batch: MessageBuilder;
                     xdg_wm_base_pong(*ping_batch, *session.wm_base, serial);
@@ -41,9 +53,6 @@ for_expansion :: (session: *WaylandSession, body: Code, flags: For_Flags) #expan
                     `it_index := 0;
                     #insert(break=break bts) body;
                 }
-
-                receive_consume_message(*_recv, header.msg_size);
-                msg, size = receive_peek_message(*_recv);
             }
         }
     }
@@ -99,6 +108,10 @@ end_wayland_session :: () {
     free(context.wayland_session);
 }
 
+globals :: inline () -> [] Global_Info {
+    return context.wayland_session.globals;
+}
+
 session :: inline () -> *WaylandSession {
     return context.wayland_session;
 }
@@ -123,6 +136,17 @@ allocate_id :: inline () -> u32 {
     return allocate_id(*context.wayland_session.conn);
 }
 
-wayland_send :: (batch: *MessageBuilder) -> bool {
-    return wayland_send(*context.wayland_session.conn, batch);
+wayland_send :: (batch: *MessageBuilder, drain: bool = false) -> bool {
+    if !wayland_send(*context.wayland_session.conn, batch)  return false;
+    if drain {
+        recv: ReceiveBuffer;
+        wayland_receive(*context.wayland_session.conn, *recv);
+        msg, size := receive_peek_message(*recv);
+        while msg != null {
+            _, _, msg_size := unpack_header(msg);
+            receive_consume_message(*recv, msg_size);
+            msg, size = receive_peek_message(*recv);
+        }
+    }
+    return true;
 }
