@@ -38,6 +38,7 @@ EGL_RENDERABLE_TYPE    :: 0x3040;
 EGL_OPENGL_API         :: 0x30A2;
 EGL_OPENGL_BIT         :: 0x0008;
 EGL_PBUFFER_BIT        :: 0x0001;
+EGL_WINDOW_BIT         :: 0x0004;
 
 // Context creation (EGL_KHR_create_context).
 EGL_CONTEXT_MAJOR_VERSION_KHR           :: 0x3098;
