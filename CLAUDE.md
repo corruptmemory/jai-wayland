@@ -78,7 +78,7 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 **Examples** (`examples/`):
 - `hello_globals.jai` — 20 lines, connects and prints all compositor globals. First live test.
 - `hello_screens.jai` — ~30 lines, calls `get_screens_info()` and prints output name, modes, scale, geometry.
-- `hello_window.jai` — ~200 lines, discovers screen resolution + seats/keyboards/pointers via helpers, parses the xkb keymap for layout-independent keysym lookup, allocates one shm pool sized to native resolution, creates surface/xdg_surface/toplevel, handles dynamic resize + keyboard input (r/g/b keysyms switch gradient color, q quits) + pointer input (click prints coords and cycles color). Uses `defer` for repaint consolidation — handlers set `needs_repaint`, defer does paint+attach+damage+commit+send.
+- `hello_window.jai` — ~220 lines, discovers screen resolution + seats/keyboards/pointers via helpers, parses the xkb keymap for layout-independent keysym lookup, allocates a double-sized shm pool carved into two `Buffer_Slot` records at offsets 0 and `frame_max_bytes`, creates surface/xdg_surface/toplevel, handles dynamic resize + keyboard input (r/g/b keysyms switch gradient color, q quits) + pointer input (click prints coords and cycles color). **Double-buffered**: each repaint picks a non-in-flight slot via `find_free_slot`, paints, attaches, marks the slot in-flight; `wl_buffer.release` events route back to their slot via object-ID match. A persistent `dirty` flag outside the event loop lets repaints queue when both slots are in flight, re-firing naturally on the next release. Uses `defer` for repaint consolidation.
 - `dump_keymap.jai` — Diagnostic example. Opens a session, acquires the first keyboard via `get_seats_info` + `get_keyboards_info`, parses the keymap fd with `parse_keymap_fd`, and prints evdev→keysym mappings for common keys. Used to verify xkb parsing against the live compositor.
 
 **Tests:**
@@ -152,5 +152,4 @@ These edge cases were discovered during the compilation smoke test against all 5
 
 1. **Rendering integration (Phase 5)** — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU rendering beyond solid colors. OpenGL, Vulkan, and plain shared-memory paths.
 2. **Server-allocated objects** — Handle `new_id` args in events (e.g., wl_data_device.data_offer, tablet hotplug). IDs from 0xFF000000+ range.
-3. **Double buffering** — Front/back buffers in the same shm pool for tear-free resizes. Swap on `wl_buffer.release` event.
-4. **Fractional scaling** — `wp_fractional_scale_v1` protocol for non-integer scale factors (1.25, 1.5).
+3. **Fractional scaling** — `wp_fractional_scale_v1` protocol for non-integer scale factors (1.25, 1.5).
