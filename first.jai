@@ -49,8 +49,11 @@ build :: () {
           case "hello_dmabuf";
             build_and_run_test("hello_dmabuf", "hello_dmabuf", "examples/hello_dmabuf.jai", "build");
             set_build_options_dc(.{do_output=false});
+          case "hello_gl";
+            build_and_run_test("hello_gl", "hello_gl", "examples/hello_gl.jai", "build");
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'hello_dmabuf'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'hello_dmabuf', 'hello_gl'.\n", arg));
         }
     }
 }
