@@ -168,22 +168,31 @@ main :: () {
             }
         };
 
-        // wl_buffer.release — mark slot available
-        if it.opcode == WL_BUFFER_RELEASE {
-            obj_id := it.object_id;
-            for * slots  if it.buffer.id == obj_id {
-                it.in_flight = false;
-                break;
-            }
-            continue;
-        }
-
-        // wl_callback.done for the frame we most recently requested —
-        // compositor has displayed the frame, we can pace the next.
+        // wl_callback.done for the frame we most recently requested.
+        // NOTE: WL_CALLBACK_DONE and WL_BUFFER_RELEASE are both opcode 0 —
+        // different interfaces, same opcode byte on the wire. We MUST
+        // disambiguate by object_id before treating an opcode-0 message
+        // as one or the other. Callback check first because its id set
+        // is the most dynamic (allocated fresh every frame).
         if it.object_id == frame_callback_id && it.opcode == WL_CALLBACK_DONE {
             frame_requested = false;
             dirty = true;    // continuous animation
             continue;
+        }
+
+        // wl_buffer.release — mark slot available. Requires the object_id
+        // to actually match a known slot buffer (see note above).
+        if it.opcode == WL_BUFFER_RELEASE {
+            matched := false;
+            obj_id := it.object_id;
+            for * slots  if it.buffer.id == obj_id {
+                it.in_flight = false;
+                matched = true;
+                break;
+            }
+            if matched  continue;
+            // otherwise fall through — this wasn't our release event,
+            // it's some other opcode-0 event on an object we don't own.
         }
 
         // Keyboard: q quits, r/g/b flip the vertex color scheme.
