@@ -3,6 +3,8 @@
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 > **Branch:** `rendering-gl` — user creates; execute this plan there.
 
+> **Amendment (2026-04-18, after Task 3):** The original draft of this plan reused `~/jai/jai/modules/GL/` via `gl_load(*gl, eglGetProcAddress)`, on the assumption that routing calls through a function-pointer table would avoid hard-linkage. It does not: `glad_core.jai` declares `gl_lib :: #library,system "libGL"` and has unconditional `#foreign gl_lib` procedure declarations (glBegin/glEnd/glColor4f etc. at lines 1968+), which cause `libGL.so` to be linked regardless of whether the `gl_load` path is taken. Additionally, `GL.jai` does `#import "Window_Type"` which on Linux pulls in `X11`, hard-linking `libX11/libxcb/libXau/libXdmcp`. The first `ldd build/headless_gl` after Task 3 showed all of these linked in. This is a direct violation of the project thesis (a from-scratch Wayland client should not have X11 libraries linked in). Task 2.5 below was inserted to vendor `modules/GL/` under the same runtime-dlopen pattern as EGL and gbm, and Tasks 3+ have been updated to import it. The original "reuse Jai's GL module" bullet below is retained as historical context and struck through.
+
 **Goal:** Add GPU-accelerated rendering to jai-wayland via OpenGL 3.3 core, without introducing `libwayland-client.so` as a dependency. Render to GL textures, export them as DMA-BUF fds, wrap those as `wl_buffer` objects via `zwp_linux_dmabuf_v1`, present via the existing Wayland event loop.
 
 **Architecture (Path B — gbm + linux-dmabuf, no libwayland):**
@@ -14,11 +16,12 @@
 - Pace via `wl_surface.frame` callbacks (compositor-aligned v-sync)
 - Double-buffered with two texture+FBO+DMA-BUF slots, cycling on `wl_buffer.release` (same pattern as `hello_window.jai`)
 
-**Tech stack:** Jai, OpenGL 3.3 core (via existing `~/jai/jai/modules/GL`), EGL 1.5 (vendored), libgbm (vendored), `zwp_linux_dmabuf_v1` protocol (already generated into `modules/wayland/linux_dmabuf_v1/`).
+**Tech stack:** Jai, OpenGL 3.3 core (vendored into `modules/GL/`), EGL 1.5 (vendored into `modules/EGL/`), libgbm (vendored into `modules/gbm/`), `zwp_linux_dmabuf_v1` protocol (already generated into `modules/wayland/linux_dmabuf_v1/`). All three library modules use the same runtime-dlopen pattern — no `#foreign` declarations, no build-time linkage.
 
 **What we reuse from Jai's standard modules:**
-- `~/jai/jai/modules/GL/` — GL function table + `gl_load(*gl, GetProcAddress)` loader. We pass in `eglGetProcAddress`, everything else is free (glad_core.jai covers GL 3.3 core + ~15 common extensions).
+- ~~`~/jai/jai/modules/GL/` — GL function table + `gl_load(*gl, GetProcAddress)` loader. We pass in `eglGetProcAddress`, everything else is free (glad_core.jai covers GL 3.3 core + ~15 common extensions).~~ *Superseded by amendment — Jai's GL module hard-links `libGL` via `#foreign gl_lib` and pulls in X11 via `Window_Type`. Vendored into `modules/GL/` instead; see Task 2.5.*
 - `~/jai/jai/modules/Android/EGL/bindings.jai` — 265-line reference for EGL types and enum constants; we PORT (not import) into `modules/EGL/` because Android's uses `#foreign libegl` hard-link and we need runtime dlopen.
+- Jai's GL module is still used as a *reference* for function signatures, constant values, and the `gl_load` walk-the-struct-by-type_info pattern — we port selectively, we don't import.
 
 **What we reuse from the already-generated `modules/wayland/`:**
 - `zwp_linux_dmabuf_v1.create_params()` — request, no args → new `zwp_linux_buffer_params_v1`
@@ -251,6 +254,104 @@ git commit -m "feat: vendor minimal libgbm bindings"
 
 ---
 
+### Task 2.5: Vendor minimal GL bindings (inserted by amendment)
+
+**Why this exists:** The original plan reused `~/jai/jai/modules/GL/` via `gl_load(*gl, eglGetProcAddress)`. That turned out to hard-link `libGL` (via `#foreign gl_lib` declarations in `glad_core.jai`) and `libX11/libxcb/libXau/libXdmcp` (via `#import "Window_Type"` in `GL.jai`). We vendor our own minimal GL module under the same runtime-dlopen pattern as EGL and gbm.
+
+**Scope:** just the GL entry points this project uses — ~15 for Tasks 3–7 (texture + FBO + clear + readback + version query) and ~25 more for Task 8 (shader compile/link, VAO/VBO, uniforms, draw call). Task 8's additions can be added *when Task 8 lands* — this task only needs the Tasks 3–7 surface.
+
+**Files:**
+- Create: `modules/GL/module.jai` (`#load "gl.jai"; #load "loader.jai";`)
+- Create: `modules/GL/gl.jai` — types, constants, function-pointer variable declarations
+- Create: `modules/GL/loader.jai` — `gl_load(get_proc_address)` that populates all pointers via eglGetProcAddress, plus a `gl_get_version` helper
+
+**Key pattern:**
+
+```jai
+// gl.jai
+GLenum     :: u32;
+GLboolean  :: u8;
+GLbitfield :: u32;
+GLint      :: s32;
+GLuint     :: u32;
+GLsizei    :: s32;
+GLfloat    :: float32;
+GLchar     :: u8;
+GLintptr   :: s64;     // x86_64 Linux
+GLsizeiptr :: s64;
+
+// Only the constants we actually use — add more as Tasks 6/8 need them.
+GL_FALSE :: 0;
+GL_TRUE  :: 1;
+GL_COLOR_BUFFER_BIT :: 0x00004000;
+GL_TEXTURE_2D        :: 0x0DE1;
+GL_RGBA              :: 0x1908;
+GL_RGBA8             :: 0x8058;
+GL_UNSIGNED_BYTE     :: 0x1401;
+GL_LINEAR            :: 0x2601;
+GL_TEXTURE_MIN_FILTER :: 0x2801;
+GL_TEXTURE_MAG_FILTER :: 0x2800;
+GL_FRAMEBUFFER          :: 0x8D40;
+GL_COLOR_ATTACHMENT0    :: 0x8CE0;
+GL_FRAMEBUFFER_COMPLETE :: 0x8CD5;
+GL_MAJOR_VERSION :: 0x821B;
+GL_MINOR_VERSION :: 0x821C;
+
+// Function pointers populated by gl_load().
+glGenTextures:       #type (n: GLsizei, textures: *GLuint) #c_call;
+glBindTexture:       #type (target: GLenum, texture: GLuint) #c_call;
+glTexImage2D:        #type (target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, pixels: *void) #c_call;
+glTexParameteri:     #type (target: GLenum, pname: GLenum, param: GLint) #c_call;
+glDeleteTextures:    #type (n: GLsizei, textures: *GLuint) #c_call;
+glGenFramebuffers:   #type (n: GLsizei, framebuffers: *GLuint) #c_call;
+glBindFramebuffer:   #type (target: GLenum, framebuffer: GLuint) #c_call;
+glFramebufferTexture2D:  #type (target: GLenum, attachment: GLenum, textarget: GLenum, texture: GLuint, level: GLint) #c_call;
+glCheckFramebufferStatus:#type (target: GLenum) -> GLenum #c_call;
+glDeleteFramebuffers:    #type (n: GLsizei, framebuffers: *GLuint) #c_call;
+glViewport:          #type (x: GLint, y: GLint, width: GLsizei, height: GLsizei) #c_call;
+glClearColor:        #type (r: GLfloat, g: GLfloat, b: GLfloat, a: GLfloat) #c_call;
+glClear:             #type (mask: GLbitfield) #c_call;
+glReadPixels:        #type (x: GLint, y: GLint, width: GLsizei, height: GLsizei, format: GLenum, type: GLenum, pixels: *void) #c_call;
+glFinish:            #type () #c_call;
+glGetIntegerv:       #type (pname: GLenum, data: *GLint) #c_call;
+glGetString:         #type (name: GLenum) -> *u8 #c_call;
+```
+
+```jai
+// loader.jai
+GL_Get_Proc_Address :: #type (procname: *u8) -> *void #c_call;
+
+gl_load :: (get_proc: GL_Get_Proc_Address) -> bool {
+    // Each line: pointer = xx get_proc("name");
+    // Return false if any required pointer is null.
+    // ... (one line per function)
+}
+
+gl_get_version :: () -> major: s32, minor: s32 {
+    major, minor: s32;
+    glGetIntegerv(GL_MAJOR_VERSION, *major);
+    glGetIntegerv(GL_MINOR_VERSION, *minor);
+    return major, minor;
+}
+```
+
+**Verification:**
+
+1. `./build.sh` compiles — bindings typecheck, unused so no runtime exercise yet.
+2. After redoing Task 3 (below) with this module:
+   ```bash
+   ldd build/headless_gl | grep -cE 'libGL|libX11|libxcb|libXau|libXdmcp'
+   ```
+   expect `0`. Only `libc.so.6` and whatever POSIX pulls in for `dlopen` should appear.
+
+**Commit:**
+```bash
+git add modules/GL/ examples/headless_gl.jai
+git commit -m "feat: vendor minimal GL bindings (plan amendment: no libGL/X11 linkage)"
+```
+
+---
+
 ### Task 3: Headless EGL+GL smoke test
 
 **The critical early checkpoint.** Before touching Wayland, prove the full EGL+GL+gbm stack works: open render node, create gbm device, create EGL display, create GL 3.3 core context, `gl_load`, allocate FBO, `glClear` to a known color, read back the pixel. If this works, the rest of Phase 5 is plumbing. If it doesn't, stop and debug before going further.
@@ -263,7 +364,7 @@ git commit -m "feat: vendor minimal libgbm bindings"
 ```jai
 #import,dir "../modules/EGL";
 #import,dir "../modules/gbm";
-GL :: #import "GL";
+GL :: #import,dir "../modules/GL";   // vendored; see Task 2.5
 #import "Basic";
 #import "POSIX";
 
@@ -318,8 +419,10 @@ main :: () {
     // Surfaceless: no draw/read surface
     assert(eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx) == EGL_TRUE);
 
-    // 6. Load GL procedures + verify
-    GL.gl_load(*GL.gl, eglGetProcAddress);
+    // 6. Load GL procedures + verify. Vendored GL module uses module-scope
+    // function-pointer variables (no gl struct), so the load call is simpler
+    // than Jai's stock module.
+    assert(GL.gl_load(eglGetProcAddress), "GL proc loading failed");
     major_gl, minor_gl := GL.gl_get_version();
     print("GL %.% loaded\n", major_gl, minor_gl);
 
@@ -563,7 +666,7 @@ Wire the DMA-BUF export → wl_buffer path, attach to a surface, commit. No fram
 #import,dir "../modules/wayland";
 #import,dir "../modules/EGL";
 #import,dir "../modules/gbm";
-GL :: #import "GL";
+GL :: #import,dir "../modules/GL";   // vendored; see Task 2.5
 #import "Basic";
 #import "POSIX";
 
@@ -583,7 +686,7 @@ main :: () {
     // (config + context creation as in headless_gl.jai)
     // ...
     eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx);
-    GL.gl_load(*GL.gl, eglGetProcAddress);
+    GL.gl_load(eglGetProcAddress);
 
     // --- Discover dmabuf ---
     dmabuf_info, ok := get_dmabuf_info();
@@ -836,10 +939,11 @@ If Task 7+ fails: the GL rendering path itself is suspect, but the Phase 5 archi
 
 ## Post-execution checklist
 
-- [ ] All 10 tasks committed on `rendering-gl` branch
+- [ ] All 11 tasks committed on `rendering-gl` branch (10 original + Task 2.5 amendment)
 - [ ] `./build.sh - hello_gl` renders a rotating triangle in a Wayland window
 - [ ] `./build.sh - hello_window` still works (shm path not regressed)
 - [ ] `./build.sh - compile_test` passes
 - [ ] `ldd build/hello_gl | grep -c wayland` returns `0` — no libwayland-client linkage
+- [ ] `ldd build/hello_gl | grep -cE 'libGL\|libEGL\|libgbm\|libX11\|libxcb'` returns `0` — all GPU-facing libraries loaded via `dlopen` (added after Task 2.5 amendment)
 - [ ] Docs updated (CLAUDE.md, README.md)
 - [ ] Merged back to master
