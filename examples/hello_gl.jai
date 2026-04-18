@@ -1,10 +1,14 @@
-// hello_gl — first GPU-rendered pixel on Wayland via dmabuf.
+// hello_gl — GPU-rendered Wayland window, double-buffered via dmabuf,
+// paced by wl_surface.frame callbacks.
 //
-// Renders a solid-color frame into a GL texture, exports the texture's
-// backing as a DMA-BUF fd, wraps that fd as a wl_buffer through
-// zwp_linux_dmabuf_v1, and attaches it to an xdg_toplevel surface.
-// No double-buffering, no frame pacing, no input — those come in
-// Tasks 7-9. The goal here is "GL-rendered pixel appears on screen."
+// Two slots each hold a GL texture + FBO + EGLImage + DMA-BUF fd + wl_buffer.
+// The render loop rotates between slots: while the compositor is scanning
+// out slot N, we render slot N+1. wl_buffer.release marks a slot available.
+// wl_callback.done marks a frame displayed, freeing us to render the next.
+//
+// Task 7 uses an animated glClearColor (HSV cycle via sin waves) to
+// validate pacing without needing shaders — Task 8 swaps the clear for
+// a real rendered triangle, Task 9 adds keyboard/pointer input.
 
 #import,dir "../modules/wayland";
 #import,dir "../modules/EGL";
@@ -12,10 +16,20 @@
 GL :: #import,dir "../modules/GL";
 
 #import "Basic";
+#import "Math";
 #import "POSIX";
 
 WIDTH  :: 640;
 HEIGHT :: 480;
+
+Gl_Slot :: struct {
+    tex:       u32;
+    fbo:       u32;
+    image:     EGLImage;
+    buffer:    Wl_Buffer;
+    fd:        s32;
+    in_flight: bool;
+}
 
 main :: () {
     if !init_wayland_session() {
@@ -24,160 +38,48 @@ main :: () {
     }
     defer end_wayland_session();
 
-    // --- Init EGL + GL stack (identical shape to headless_gl) ---
-    drm_fd := open("/dev/dri/renderD128".data, O_RDWR | O_CLOEXEC);
-    if drm_fd < 0 {
-        print("Could not open /dev/dri/renderD128\n");
+    // --- EGL + GL stack ---
+    egl: EGL_Context;
+    if !init_gl_stack(*egl) {
+        print("Could not initialize EGL/GL\n");
         return;
     }
-    defer close(drm_fd);
+    defer destroy_gl_stack(*egl);
 
-    if !init_egl() || !init_gbm() {
-        print("EGL/gbm init failed\n");
-        return;
-    }
-
-    gbm := gbm_create_device(drm_fd);
-    if !gbm {
-        print("gbm_create_device failed\n");
-        return;
-    }
-    defer gbm_device_destroy(gbm);
-
-    dpy := eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR, gbm, null);
-    if dpy == EGL_NO_DISPLAY {
-        print("eglGetPlatformDisplay failed\n");
-        return;
-    }
-    if eglInitialize(dpy, null, null) != EGL_TRUE {
-        print("eglInitialize failed\n");
-        return;
-    }
-    defer eglTerminate(dpy);
-
-    if !init_egl_extensions(dpy) {
-        print("EGL_MESA_image_dma_buf_export unavailable\n");
-        return;
-    }
-
-    eglBindAPI(EGL_OPENGL_API);
-    config_attrs := s32.[
-        EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-        EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
-        EGL_NONE,
-    ];
-    config: EGLConfig;
-    num_configs: EGLint;
-    if eglChooseConfig(dpy, config_attrs.data, *config, 1, *num_configs) != EGL_TRUE || num_configs == 0 {
-        print("eglChooseConfig failed\n");
-        return;
-    }
-    ctx_attrs := s32.[
-        EGL_CONTEXT_MAJOR_VERSION_KHR, 3,
-        EGL_CONTEXT_MINOR_VERSION_KHR, 3,
-        EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
-        EGL_NONE,
-    ];
-    ctx := eglCreateContext(dpy, config, EGL_NO_CONTEXT, ctx_attrs.data);
-    if ctx == EGL_NO_CONTEXT {
-        print("eglCreateContext failed (err=0x%)\n", formatInt(eglGetError(), base=16));
-        return;
-    }
-    defer eglDestroyContext(dpy, ctx);
-
-    eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx);
-    if !GL.gl_load(eglGetProcAddress) {
-        print("GL proc loading failed\n");
-        return;
-    }
-
-    // --- Discover dmabuf and pick a format compatible with the export ---
+    // --- dmabuf discovery + format pick ---
     dmabuf_info, dmabuf_ok := get_dmabuf_info();
     if !dmabuf_ok {
         print("Compositor does not support zwp_linux_dmabuf_v1\n");
         return;
     }
-    // Mesa exports GL_RGBA/GL_UNSIGNED_BYTE textures as ABGR8888 fourcc (bytes
-    // R,G,B,A in memory). Request that as our preferred format; fall back to
-    // ARGB/XRGB if the compositor somehow doesn't advertise ABGR (rare).
+
     format, modifier, have_format := pick_format(dmabuf_info, GBM_FORMAT_ABGR8888);
     if !have_format {
         format, modifier, have_format = pick_format(dmabuf_info, GBM_FORMAT_XBGR8888);
     }
     if !have_format {
-        print("Compositor doesn't advertise ABGR8888 or XBGR8888\n");
+        print("Compositor doesn't advertise an ABGR/XBGR 8888 format\n");
         return;
     }
     print("Using format=0x% modifier=0x%\n",
         formatInt(format, base=16),
         formatInt(modifier, base=16));
 
-    // --- Create the GL texture + FBO, paint once ---
-    tex, fbo: u32;
-    GL.glGenTextures(1, *tex);
-    GL.glBindTexture(GL.GL_TEXTURE_2D, tex);
-    GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, WIDTH, HEIGHT, 0,
-        GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, null);
-    GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
-    GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
-
-    GL.glGenFramebuffers(1, *fbo);
-    GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, fbo);
-    GL.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0,
-        GL.GL_TEXTURE_2D, tex, 0);
-    if GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER) != GL.GL_FRAMEBUFFER_COMPLETE {
-        print("FBO not complete\n");
-        return;
-    }
-
-    GL.glViewport(0, 0, WIDTH, HEIGHT);
-    GL.glClearColor(0.8, 0.3, 0.2, 1.0);   // distinctive orange-red
-    GL.glClear(GL.GL_COLOR_BUFFER_BIT);
-    GL.glFinish();   // ensure GPU finished rendering before we export
-
-    // --- Export texture as DMA-BUF ---
-    image := eglCreateImageKHR(dpy, ctx, EGL_GL_TEXTURE_2D_KHR,
-        cast(EGLClientBuffer) cast(u64) tex, null);
-    if !image {
-        print("eglCreateImageKHR failed (err=0x%)\n", formatInt(eglGetError(), base=16));
-        return;
-    }
-    defer eglDestroyImageKHR(dpy, image);
-
-    fd, stride, offset: s32;
-    if eglExportDMABUFImageMESA(dpy, image, *fd, *stride, *offset) != EGL_TRUE {
-        print("eglExportDMABUFImageMESA failed\n");
-        return;
-    }
-    print("Exported DMA-BUF: fd=% stride=% offset=%\n", fd, stride, offset);
-
-    // --- Wrap the DMA-BUF as a wl_buffer via zwp_linux_dmabuf_v1 ---
+    // --- Pre-allocate two GL-backed buffer slots ---
+    slots: [2] Gl_Slot;
     batch: MessageBuilder;
-    params := Zwp_Linux_Buffer_Params_V1.{ id = allocate_id() };
-    zwp_linux_dmabuf_v1_create_params(*batch, *dmabuf_info.dmabuf, params.id);
+    for * slot, i: slots {
+        if !init_slot(slot, egl, *dmabuf_info.dmabuf, *batch, format, modifier) {
+            print("Failed to initialize slot %\n", i);
+            return;
+        }
+    }
+    wayland_send(*batch);
 
-    zwp_linux_buffer_params_v1_add(*batch, *params,
-        fd          = cast(Fd) fd,
-        plane_idx   = 0,
-        offset      = cast(u32) offset,
-        stride      = cast(u32) stride,
-        modifier_hi = cast(u32)(modifier >> 32),
-        modifier_lo = cast(u32)(modifier & 0xFFFFFFFF));
+    // --- Paint slot 0 with the initial frame ---
+    paint_gl_frame(*slots[0], 0.0);
 
-    buffer := Wl_Buffer.{ id = allocate_id() };
-    zwp_linux_buffer_params_v1_create_immed(*batch, *params,
-        new_id = buffer.id,
-        width  = WIDTH,
-        height = HEIGHT,
-        format = format,
-        flags  = 0);
-
-    // Params object is single-use; destroy it after create_immed so the
-    // compositor can free its side. The wl_buffer outlives it.
-    zwp_linux_buffer_params_v1_destroy(*batch, *params);
-
-    // --- Create surface + xdg_surface + xdg_toplevel ---
+    // --- Create surface + xdg roles ---
     surface := Wl_Surface.{ id = allocate_id() };
     xdg_surface := Xdg_Surface.{ id = allocate_id() };
     toplevel := Xdg_Toplevel.{ id = allocate_id() };
@@ -188,7 +90,7 @@ main :: () {
     wl_surface_commit(*batch, *surface);
     wayland_send(*batch);
 
-    // --- Wait for initial configure, then ack + attach + commit ---
+    // --- Wait for initial configure ---
     configure_serial: u32 = 0;
     for session() {
         if it.object_id == xdg_surface.id && it.opcode == XDG_SURFACE_CONFIGURE {
@@ -201,19 +103,203 @@ main :: () {
         return;
     }
 
+    // --- Ack, attach slot 0, request first frame callback, commit ---
+    frame_callback_id := allocate_id();
     xdg_surface_ack_configure(*batch, *xdg_surface, configure_serial);
-    wl_surface_attach(*batch, *surface, *buffer, 0, 0);
+    wl_surface_frame(*batch, *surface, frame_callback_id);
+    wl_surface_attach(*batch, *surface, *slots[0].buffer, 0, 0);
     wl_surface_damage_buffer(*batch, *surface, 0, 0, WIDTH, HEIGHT);
     wl_surface_commit(*batch, *surface);
     wayland_send(*batch);
+    slots[0].in_flight = true;
+    frame_requested := true;
 
-    print("hello_gl: window should show a solid orange-red %x% area. Close to exit.\n", WIDTH, HEIGHT);
+    print("hello_gl: animating. Close the window to exit.\n");
 
-    // --- Minimal event loop: exit on toplevel.close ---
+    // --- Main loop: frame-paced render-rotate ---
+    //
+    // `t` advances once per displayed frame. The clear color runs off
+    // three phase-shifted sines for a rainbow cycle.
+    //
+    // The defer at the top of the body fires after every message: if
+    // we're allowed to render (content wants repaint, compositor has
+    // handed a frame back, a slot is free) we paint into the free slot
+    // and re-arm the frame callback.
+    dirty := true;
+    t: float = 0.0;
+
     for session() {
+        defer if dirty && !frame_requested {
+            slot_idx := find_free_slot(slots);
+            if slot_idx >= 0 {
+                slot := *slots[slot_idx];
+                paint_gl_frame(slot, t);
+                t += 0.03;   // ~200 frames per hue cycle at 60Hz
+
+                frame_callback_id = allocate_id();
+                wl_surface_frame(*batch, *surface, frame_callback_id);
+                wl_surface_attach(*batch, *surface, *slot.buffer, 0, 0);
+                wl_surface_damage_buffer(*batch, *surface, 0, 0, WIDTH, HEIGHT);
+                wl_surface_commit(*batch, *surface);
+                wayland_send(*batch);
+
+                slot.in_flight = true;
+                frame_requested = true;
+                dirty = false;
+            }
+        };
+
+        // wl_buffer.release — mark slot available
+        if it.opcode == WL_BUFFER_RELEASE {
+            obj_id := it.object_id;
+            for * slots  if it.buffer.id == obj_id {
+                it.in_flight = false;
+                break;
+            }
+            continue;
+        }
+
+        // wl_callback.done for the frame we most recently requested —
+        // compositor has displayed the frame, we can pace the next.
+        if it.object_id == frame_callback_id && it.opcode == WL_CALLBACK_DONE {
+            frame_requested = false;
+            dirty = true;    // continuous animation; Task 9 will flip this
+                             // to input-driven
+            continue;
+        }
+
         if it.object_id == toplevel.id && it.opcode == XDG_TOPLEVEL_CLOSE {
             print("Close requested.\n");
             break;
         }
     }
+}
+
+// --- Helpers ---
+
+EGL_Context :: struct {
+    drm_fd: s32 = -1;
+    gbm:    Gbm_Device;
+    dpy:    EGLDisplay;
+    ctx:    EGLContext;
+}
+
+init_gl_stack :: (egl: *EGL_Context) -> bool {
+    egl.drm_fd = open("/dev/dri/renderD128".data, O_RDWR | O_CLOEXEC);
+    if egl.drm_fd < 0  return false;
+    if !init_egl() || !init_gbm()  return false;
+
+    egl.gbm = gbm_create_device(egl.drm_fd);
+    if !egl.gbm  return false;
+
+    egl.dpy = eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR, egl.gbm, null);
+    if egl.dpy == EGL_NO_DISPLAY  return false;
+
+    if eglInitialize(egl.dpy, null, null) != EGL_TRUE  return false;
+    if !init_egl_extensions(egl.dpy)  return false;
+
+    eglBindAPI(EGL_OPENGL_API);
+    config_attrs := s32.[
+        EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+        EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+        EGL_NONE,
+    ];
+    cfg: EGLConfig;
+    n: EGLint;
+    if eglChooseConfig(egl.dpy, config_attrs.data, *cfg, 1, *n) != EGL_TRUE || n == 0  return false;
+
+    ctx_attrs := s32.[
+        EGL_CONTEXT_MAJOR_VERSION_KHR, 3,
+        EGL_CONTEXT_MINOR_VERSION_KHR, 3,
+        EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR,
+        EGL_NONE,
+    ];
+    egl.ctx = eglCreateContext(egl.dpy, cfg, EGL_NO_CONTEXT, ctx_attrs.data);
+    if egl.ctx == EGL_NO_CONTEXT  return false;
+
+    if eglMakeCurrent(egl.dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl.ctx) != EGL_TRUE  return false;
+    if !GL.gl_load(eglGetProcAddress)  return false;
+    return true;
+}
+
+destroy_gl_stack :: (egl: *EGL_Context) {
+    if egl.ctx  eglDestroyContext(egl.dpy, egl.ctx);
+    if egl.dpy != EGL_NO_DISPLAY  eglTerminate(egl.dpy);
+    if egl.gbm  gbm_device_destroy(egl.gbm);
+    if egl.drm_fd >= 0  close(egl.drm_fd);
+}
+
+// Allocate a GL texture + FBO, export as DMA-BUF, wrap as wl_buffer.
+// The wl_buffer and params messages get queued into `batch`; the caller
+// sends when ready (we batch all slots into a single send).
+init_slot :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
+              batch: *MessageBuilder, format: u32, modifier: u64) -> bool
+{
+    GL.glGenTextures(1, *slot.tex);
+    GL.glBindTexture(GL.GL_TEXTURE_2D, slot.tex);
+    GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, WIDTH, HEIGHT, 0,
+        GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, null);
+    GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
+    GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
+
+    GL.glGenFramebuffers(1, *slot.fbo);
+    GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, slot.fbo);
+    GL.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0,
+        GL.GL_TEXTURE_2D, slot.tex, 0);
+    if GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER) != GL.GL_FRAMEBUFFER_COMPLETE  return false;
+
+    slot.image = eglCreateImageKHR(egl.dpy, egl.ctx, EGL_GL_TEXTURE_2D_KHR,
+        cast(EGLClientBuffer) cast(u64) slot.tex, null);
+    if !slot.image  return false;
+
+    fd, stride, offset: s32;
+    if eglExportDMABUFImageMESA(egl.dpy, slot.image, *fd, *stride, *offset) != EGL_TRUE  return false;
+    slot.fd = fd;
+
+    params := Zwp_Linux_Buffer_Params_V1.{ id = allocate_id() };
+    zwp_linux_dmabuf_v1_create_params(batch, dmabuf, params.id);
+    zwp_linux_buffer_params_v1_add(batch, *params,
+        fd          = cast(Fd) fd,
+        plane_idx   = 0,
+        offset      = cast(u32) offset,
+        stride      = cast(u32) stride,
+        modifier_hi = cast(u32)(modifier >> 32),
+        modifier_lo = cast(u32)(modifier & 0xFFFFFFFF));
+
+    slot.buffer = Wl_Buffer.{ id = allocate_id() };
+    zwp_linux_buffer_params_v1_create_immed(batch, *params,
+        new_id = slot.buffer.id,
+        width  = WIDTH,
+        height = HEIGHT,
+        format = format,
+        flags  = 0);
+    zwp_linux_buffer_params_v1_destroy(batch, *params);
+
+    return true;
+}
+
+find_free_slot :: (slots: [] Gl_Slot) -> int {
+    for slots  if !it.in_flight  return it_index;
+    return -1;
+}
+
+// Paint = glClear through a phase-shifted sine cycle. The actual rendering
+// work is trivial; the interesting behavior is in the GPU-to-compositor
+// handoff. Task 8 replaces this with a real triangle.
+paint_gl_frame :: (slot: *Gl_Slot, t: float) {
+    GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, slot.fbo);
+    GL.glViewport(0, 0, WIDTH, HEIGHT);
+
+    // Rainbow cycle: three sines 120° apart, remapped from [-1,1] to [0,1].
+    TAU : float : 6.2831853;
+    r : float = 0.5 + 0.5 * sin(t);
+    g : float = 0.5 + 0.5 * sin(t + TAU / 3.0);
+    b : float = 0.5 + 0.5 * sin(t + 2.0 * TAU / 3.0);
+    GL.glClearColor(r, g, b, 1.0);
+    GL.glClear(GL.GL_COLOR_BUFFER_BIT);
+
+    // Coarse but effective — ensure the render is finished before
+    // the compositor reads the DMA-BUF. Fences would be finer-grained.
+    GL.glFinish();
 }
