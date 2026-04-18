@@ -57,7 +57,26 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 - 109 tests across 6 test suites (xml, generator, wire, marshal, unmarshal, compile)
 - Tested live against Hyprland compositor on Artix Linux
 
-**Phase 5 (next):** Rendering integration — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU rendering beyond solid colors. OpenGL, Vulkan, and plain shared-memory paths.
+**Phase 5 (complete, GL path on Mesa):** GPU rendering via OpenGL 3.3 core, end-to-end GL → DMA-BUF → Wayland without any libwayland or libGL linkage.
+
+- **Vendored GPU bindings** — `modules/EGL/`, `modules/gbm/`, `modules/GL/`. Same pattern as the Wayland wire code: types + constants + function-pointer variable declarations in one file, `init_X()` loader in another (`dlopen` + `dlsym`). No `#foreign`, no build-time linkage. We vendor our own minimal GL instead of using Jai's stock GL module because Jai's `glad_core.jai` hard-links `libGL` and its `GL.jai` imports `Window_Type` which pulls in X11 transitively.
+- **EGL setup** — `EGL_PLATFORM_GBM_KHR` on `/dev/dri/renderD128` (the non-privileged render node). GL 3.3 core context, surfaceless (render to FBOs, never bind a surface).
+- **DMA-BUF export** — `eglCreateImageKHR(EGL_GL_TEXTURE_2D_KHR, tex)` wraps a GL texture as an EGLImage. `eglExportDMABUFImageMESA` returns fd + stride + offset. `eglExportDMABUFImageQueryMESA` returns fourcc + modifier.
+- **wl_buffer from DMA-BUF** — `modules/wayland/dmabuf.jai` helper discovers what formats the compositor advertises via `zwp_linux_dmabuf_v1.modifier` events. `zwp_linux_buffer_params_v1.add/create_immed` wraps the DMA-BUF fd as a `wl_buffer`. Attach to `wl_surface` through the existing path.
+- **Frame pacing** — `wl_surface.frame` callbacks gate the next render to compositor vsync. `wl_callback.done` clears the `frame_requested` flag and lets the render defer re-fire.
+- **Double-buffered** — two `Gl_Slot` records (each holding `tex` + `fbo` + `EGLImage` + `DMA-BUF fd` + `wl_buffer`) pre-allocated at startup. The render loop rotates between them; `wl_buffer.release` events free slots. Same architecture as the `wl_shm` path in `hello_window.jai`, substituting GL paint for CPU paint.
+- **Input** — the Phase 4 seat/keyboard/pointer/xkb helpers plug directly into the GL render loop unchanged.
+- **`ldd build/hello_gl`** — `libc.so.6` only. Zero hard-linkage to libEGL, libgbm, libGL, libwayland, libX11, libxcb.
+- **Examples added:**
+  - `headless_gl.jai` — EGL/GL/gbm smoke test (FBO glClear + readback + DMA-BUF export, no Wayland)
+  - `hello_dmabuf.jai` — prints the compositor's advertised (format, modifier) table
+  - `hello_gl.jai` — rotating RGB triangle in a Wayland window with keyboard + pointer input (the Phase 5 shippable milestone)
+- **Tested live against Hyprland + Mesa radeonsi on AMD.**
+
+**Known gaps (next phases):**
+- **nVidia support** — the current GL path assumes Mesa's `gbm` + `EGL_MESA_image_dma_buf_export`. nVidia's proprietary stack needs a separate code path (likely `EGL_PLATFORM_DEVICE_EXT` + `EGL_NV_stream_*` or a surfaceless fallback). **Not optional** — planned as runtime-conditional logic in `init_egl_extensions()`.
+- **Vulkan WSI**, **explicit fence sync**, **server-allocated object IDs**, **fractional scaling** — see `CLAUDE.md` Next Steps.
+- **Ergonomic "raylib-light" layer** on top of the raw primitives is the eventual target; the current `hello_gl.jai` is the proving ground, not the user-facing API.
 
 ## Building
 
@@ -74,8 +93,11 @@ Requires the Jai compiler (beta 0.2.028+) at `~/jai/jai/`.
 ./build.sh - generate          # Regenerate modules/wayland/ from protocol XML
 ./build.sh - hello_globals     # Build and run: print compositor globals
 ./build.sh - hello_screens     # Build and run: print output discovery
-./build.sh - hello_window      # Build and run: resizable double-buffered window
+./build.sh - hello_window      # Build and run: resizable double-buffered shm window
 ./build.sh - dump_keymap       # Build and run: xkb keymap diagnostic
+./build.sh - headless_gl       # Build and run: EGL/GL/gbm + DMA-BUF export smoke test
+./build.sh - hello_dmabuf      # Build and run: zwp_linux_dmabuf_v1 format discovery
+./build.sh - hello_gl          # Build and run: GPU-rendered rotating triangle (GL → DMA-BUF → Wayland)
 ```
 
 The build uses Jai's compile-time metaprogramming via `first.jai` — no external build tools required.
@@ -99,8 +121,11 @@ tests/
 examples/
   hello_globals.jai  — ~20 lines: connect, discover globals, print them
   hello_screens.jai  — ~30 lines: output discovery (modes, scale, geometry)
-  hello_window.jai   — ~220 lines: double-buffered resizable window, keyboard + pointer input, XKB keysym translation
+  hello_window.jai   — ~270 lines: double-buffered resizable shm window, keyboard + pointer input, XKB keysym translation
   dump_keymap.jai    — ~55 lines: mmap keymap fd, print evdev→keysym mappings
+  headless_gl.jai    — ~150 lines: EGL/GL/gbm smoke test + DMA-BUF export (no Wayland)
+  hello_dmabuf.jai   — ~45 lines: print compositor's advertised (format, modifier) pairs
+  hello_gl.jai       — ~500 lines: GPU-rendered rotating triangle via GL → DMA-BUF → Wayland, double-buffered, frame-paced, keyboard + pointer input
 modules/
   wayland/           — Generated Jai bindings (56 protocols, 175 interfaces)
     module.jai       — Module root (#load chain)
@@ -115,9 +140,13 @@ modules/
     input.jai        — Seat-based input: get_seats_info, get_keyboards_info, get_pointers_info
     xkb.jai          — XKB keymap parser (evdev keycode → keysym lookup)
     shm.jai          — memfd_create syscall wrapper
+    dmabuf.jai       — zwp_linux_dmabuf_v1 discovery: get_dmabuf_info, pick_format
     wayland/         — Core protocol (wl_display, wl_surface, wl_buffer, etc.)
     xdg_shell/       — XDG shell (xdg_toplevel, xdg_surface, etc.)
     ...              — 54 more protocol directories
+  EGL/               — Runtime-dlopen'd EGL 1.5 bindings (types + core entry points + MESA_image_dma_buf_export)
+  gbm/               — Runtime-dlopen'd libgbm bindings (device creation + DRM fourcc helpers)
+  GL/                — Runtime-dlopen'd minimal GL 3.3 core bindings (~40 entry points, loaded via eglGetProcAddress)
 vendor/
   wayland-protocols/   — Vendored protocol XML (core, stable, staging, unstable) — regenerated into modules/wayland/
   reference/           — zig-wayland and wayland-rs sources for reference
