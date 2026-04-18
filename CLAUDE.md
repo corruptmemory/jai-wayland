@@ -4,7 +4,7 @@
 
 Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire protocol directly, uses runtime dlopen for any shared libraries, and generates bindings from Wayland protocol XML specs.
 
-**Current status:** Phases 1-4 complete, unmarshal + screen/keyboard discovery + dynamic resize + keyboard input done. Working Wayland client — connects to compositor, discovers globals and outputs, displays resizable windows via wl_shm with pooled buffers, handles keyboard input. No libwayland dependency.
+**Current status:** Phases 1-4 complete, plus seat-based input API, pointer events, and XKB keysym translation. Working Wayland client — connects to compositor, discovers globals and outputs, displays resizable windows via wl_shm with pooled buffers, handles keyboard input (layout-independent via xkb keymap parsing) and pointer input (click/motion). No libwayland dependency.
 
 ## Build Commands
 
@@ -19,7 +19,8 @@ Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire
 ./build.sh - generate   # Regenerate modules/wayland/ from protocol XML
 ./build.sh - hello_globals  # Build and run hello_globals example (live compositor)
 ./build.sh - hello_screens  # Build and run hello_screens example (output discovery)
-./build.sh - hello_window   # Build and run hello_window example (resizable window)
+./build.sh - hello_window   # Build and run hello_window example (resizable window + keyboard + pointer)
+./build.sh - dump_keymap    # Build and run dump_keymap example (xkb keymap parser diagnostic)
 ```
 
 Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to create compiler workspaces. The `-` separates compiler args from metaprogram args.
@@ -57,7 +58,7 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 - `unmarshal.jai` — compile-time unmarshal macro (mirror of marshal). `unmarshal(*args, payload, recv)` fills a single event args struct; `unmarshal_event(*event, opcode, payload, recv)` dispatches opcode into a tagged union. Walks type_info at compile time, emits type-specific reads. Handles all 8 wire types: u32, s32, Fixed, string, `[] u8`, Fd (via `receive_pop_fd`), `*Interface` (`New(T,, temp)`), `*void`. For tagged unions, walks `tagged_union_bindings` to generate opcode→variant dispatch.
 
 **Generated module** (`modules/wayland/`):
-- `module.jai` → `#load` chain → `types.jai`, `wire.jai`, `connection.jai`, `marshal.jai`, `unmarshal.jai`, `shm.jai`, `registry.jai`, `session.jai`, `output.jai`, `input.jai` → per-protocol directories → per-interface files
+- `module.jai` → `#load` chain → `types.jai`, `wire.jai`, `connection.jai`, `marshal.jai`, `unmarshal.jai`, `shm.jai`, `registry.jai`, `session.jai`, `output.jai`, `input.jai`, `xkb.jai` → per-protocol directories → per-interface files
 - `types.jai` — shared types: `Interface_Descriptor`, `Wire_Arg_Type`, `Fixed`, `Fd` (distinct s32), wire constants
 - Interface structs: `id: u32` + `version: u32 = #run DESCRIPTOR.version` (no `conn` field, version defaulted)
 - Request functions take `batch: *MessageBuilder` as first param, then `self: *Interface`, then protocol args. Use `marshal()` calls that serialize args into the MessageBuilder.
@@ -68,7 +69,8 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 - `registry.jai` — `discover_globals(conn)` performs get_registry + sync roundtrip using MessageBuilder/ReceiveBuffer, returns `[] Global_Info` + registry ID. Context-based overload stores into session. `find_global(globals, name)` / `find_global(name)` lookups. `init_display(conn)` creates wl_display proxy (always ID 1).
 - `shm.jai` — `memfd_create(name, flags)` thin wrapper over Linux syscall for anonymous shared memory.
 - `output.jai` — `Mode_Info`, `Screen_Info` structs, `get_screens_info()` discovers all compositor outputs via wl_output bind + sync roundtrip + `unmarshal_event`. Returns `[] Screen_Info` with name, modes, current_mode, scale_factor, geometry.
-- `input.jai` — `Keyboard_Info` struct (seat, keyboard, keymap_fd, keymap_size), `get_keyboard_info()` binds wl_seat, checks capabilities, acquires wl_keyboard, receives keymap event. Returns keyboard info + bool.
+- `input.jai` — Seat-based input discovery. `Seat_Info` (seat, name, capabilities), `Keyboard_Info` (seat_index, keyboard, keymap_fd, keymap_size), `Pointer_Info` (seat_index, pointer). `get_seats_info()` enumerates seats and their capabilities. `get_keyboards_info(seats)` / `get_pointers_info(seats)` acquire wl_keyboard / wl_pointer for seats advertising the respective capability; keyboards receive the keymap event during acquisition. `get_keyboard_event(header, keyboards, recv)` / `get_pointer_event(header, pointers, recv)` match an incoming message against the known input objects and unmarshal the appropriate event tagged union — for clean event loops that route messages by object ID.
+- `xkb.jai` — XKB keymap parser. `parse_keymap_fd(fd, size)` mmaps the compositor's keymap fd and parses the xkb text format into a `Keymap` (`[768] Keymap_Entry`, each entry holds up to 4 keysyms per level). Two-phase parse: `xkb_keycodes` section maps xkb names (`AD01`, `AE02`) to xkb numbers, then `xkb_symbols` section maps names to keysyms; the result is keyed by evdev keycode (xkb_number - 8). `keymap_get_keysym(keymap, evdev_keycode, level)` looks up a keysym at shift level 0 or 1. `keysym_is_ascii(keysym)` flags printable-ASCII keysyms. This replaces hardcoded evdev scancodes with layout-independent keysym handling.
 - **Design: no inversion of control.** Application owns the event loop via `for session() { ... }`, switches on object IDs, decodes events with `unmarshal`/`unmarshal_event` or inline `read_u32`/`read_string`. No callbacks, no dispatch tables, no event queues.
 - **Message-shaped API:** Requests are batched into a `MessageBuilder` (string builder pattern), sent explicitly with `wayland_send`. No hidden flush state.
 - Wire read helpers: `read_string(src) -> string, u32` and `read_array(src) -> [] u8, u32` — mirrors of write_string/write_array.
@@ -76,7 +78,8 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 **Examples** (`examples/`):
 - `hello_globals.jai` — 20 lines, connects and prints all compositor globals. First live test.
 - `hello_screens.jai` — ~30 lines, calls `get_screens_info()` and prints output name, modes, scale, geometry.
-- `hello_window.jai` — ~180 lines, discovers screen resolution + keyboard via helpers, allocates one shm pool sized to native resolution, creates surface/xdg_surface/toplevel, handles dynamic resize + keyboard input (r/g/b switch gradient color, q quits). Uses `defer` for repaint consolidation — handlers set `needs_repaint`, defer does paint+attach+damage+commit+send.
+- `hello_window.jai` — ~200 lines, discovers screen resolution + seats/keyboards/pointers via helpers, parses the xkb keymap for layout-independent keysym lookup, allocates one shm pool sized to native resolution, creates surface/xdg_surface/toplevel, handles dynamic resize + keyboard input (r/g/b keysyms switch gradient color, q quits) + pointer input (click prints coords and cycles color). Uses `defer` for repaint consolidation — handlers set `needs_repaint`, defer does paint+attach+damage+commit+send.
+- `dump_keymap.jai` — Diagnostic example. Opens a session, acquires the first keyboard via `get_seats_info` + `get_keyboards_info`, parses the keymap fd with `parse_keymap_fd`, and prints evdev→keysym mappings for common keys. Used to verify xkb parsing against the live compositor.
 
 **Tests:**
 - `tests/xml_test.jai`: 22 tests (pull parser, entities, protocol parsing)
@@ -148,8 +151,6 @@ These edge cases were discovered during the compilation smoke test against all 5
 ## Next Steps
 
 1. **Rendering integration (Phase 5)** — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU rendering beyond solid colors. OpenGL, Vulkan, and plain shared-memory paths.
-2. **Pointer input** — wl_pointer event decoding (enter/leave, motion with Fixed coordinates, button, axis/scroll). Extend `input.jai` with `get_pointer_info()`.
-3. **XKB keymap parsing** — mmap the keymap Fd from `wl_keyboard.keymap`, parse xkb format for proper keysym translation (currently using raw evdev keycodes).
-4. **Server-allocated objects** — Handle `new_id` args in events (e.g., wl_data_device.data_offer, tablet hotplug). IDs from 0xFF000000+ range.
-5. **Double buffering** — Front/back buffers in the same shm pool for tear-free resizes. Swap on `wl_buffer.release` event.
-6. **Fractional scaling** — `wp_fractional_scale_v1` protocol for non-integer scale factors (1.25, 1.5).
+2. **Server-allocated objects** — Handle `new_id` args in events (e.g., wl_data_device.data_offer, tablet hotplug). IDs from 0xFF000000+ range.
+3. **Double buffering** — Front/back buffers in the same shm pool for tear-free resizes. Swap on `wl_buffer.release` event.
+4. **Fractional scaling** — `wp_fractional_scale_v1` protocol for non-integer scale factors (1.25, 1.5).

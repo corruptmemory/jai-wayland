@@ -2,3 +2,5 @@ build/
 build_tests/
 .build/
 .worktrees/
+*.sublime-project
+*.sublime-workspace
