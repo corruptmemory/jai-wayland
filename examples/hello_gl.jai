@@ -6,9 +6,8 @@
 // out slot N, we render slot N+1. wl_buffer.release marks a slot available.
 // wl_callback.done marks a frame displayed, freeing us to render the next.
 //
-// Task 7 uses an animated glClearColor (HSV cycle via sin waves) to
-// validate pacing without needing shaders — Task 8 swaps the clear for
-// a real rendered triangle, Task 9 adds keyboard/pointer input.
+// Task 8 renders a rotating RGB triangle: vertex + fragment shader,
+// VAO+VBO, single uniform for rotation angle. Task 9 adds input.
 
 #import,dir "../modules/wayland";
 #import,dir "../modules/EGL";
@@ -65,6 +64,13 @@ main :: () {
         formatInt(format, base=16),
         formatInt(modifier, base=16));
 
+    // --- Triangle setup (shader, VAO, VBO) ---
+    tri: Triangle;
+    if !init_triangle(*tri) {
+        print("Triangle setup failed\n");
+        return;
+    }
+
     // --- Pre-allocate two GL-backed buffer slots ---
     slots: [2] Gl_Slot;
     batch: MessageBuilder;
@@ -77,7 +83,7 @@ main :: () {
     wayland_send(*batch);
 
     // --- Paint slot 0 with the initial frame ---
-    paint_gl_frame(*slots[0], 0.0);
+    paint_gl_frame(*slots[0], tri, 0.0);
 
     // --- Create surface + xdg roles ---
     surface := Wl_Surface.{ id = allocate_id() };
@@ -133,8 +139,8 @@ main :: () {
             slot_idx := find_free_slot(slots);
             if slot_idx >= 0 {
                 slot := *slots[slot_idx];
-                paint_gl_frame(slot, t);
-                t += 0.03;   // ~200 frames per hue cycle at 60Hz
+                paint_gl_frame(slot, tri, t);
+                t += 0.02;   // ~0.2 rad/frame → ~2 sec per full rotation at 60Hz
 
                 frame_callback_id = allocate_id();
                 wl_surface_frame(*batch, *surface, frame_callback_id);
@@ -284,22 +290,137 @@ find_free_slot :: (slots: [] Gl_Slot) -> int {
     return -1;
 }
 
-// Paint = glClear through a phase-shifted sine cycle. The actual rendering
-// work is trivial; the interesting behavior is in the GPU-to-compositor
-// handoff. Task 8 replaces this with a real triangle.
-paint_gl_frame :: (slot: *Gl_Slot, t: float) {
+// --- Triangle rendering (Task 8) ---
+//
+// Minimal GL 3.3 core setup: one vertex shader, one fragment shader, one
+// program, one VAO, one VBO. The VBO holds three vertices, each (x, y, r,
+// g, b) as float32. The vertex shader rotates by a uniform angle. The
+// fragment shader just passes through the interpolated per-vertex color.
+
+VS_SRC :: #string GLSL
+#version 330 core
+layout(location = 0) in vec2 a_pos;
+layout(location = 1) in vec3 a_col;
+uniform float u_angle;
+out vec3 v_col;
+void main() {
+    float c = cos(u_angle);
+    float s = sin(u_angle);
+    vec2 r = vec2(c * a_pos.x - s * a_pos.y,
+                  s * a_pos.x + c * a_pos.y);
+    gl_Position = vec4(r, 0.0, 1.0);
+    v_col = a_col;
+}
+GLSL
+
+FS_SRC :: #string GLSL
+#version 330 core
+in vec3 v_col;
+out vec4 frag;
+void main() {
+    frag = vec4(v_col, 1.0);
+}
+GLSL
+
+Triangle :: struct {
+    program:    u32;
+    vao:        u32;
+    vbo:        u32;
+    u_angle:    GL.GLint;   // uniform location; may be -1 if optimized out
+    r: float = 1.0;  g: float = 0.2; b: float = 0.2;   // vertex A color
+    r2: float = 0.2; g2: float = 1.0; b2: float = 0.2; // vertex B color
+    r3: float = 0.2; g3: float = 0.2; b3: float = 1.0; // vertex C color
+}
+
+init_triangle :: (tri: *Triangle) -> bool {
+    vs, vs_ok := compile_shader(GL.GL_VERTEX_SHADER, VS_SRC);
+    if !vs_ok  return false;
+    defer GL.glDeleteShader(vs);
+
+    fs, fs_ok := compile_shader(GL.GL_FRAGMENT_SHADER, FS_SRC);
+    if !fs_ok  return false;
+    defer GL.glDeleteShader(fs);
+
+    tri.program = GL.glCreateProgram();
+    GL.glAttachShader(tri.program, vs);
+    GL.glAttachShader(tri.program, fs);
+    GL.glLinkProgram(tri.program);
+
+    linked: GL.GLint;
+    GL.glGetProgramiv(tri.program, GL.GL_LINK_STATUS, *linked);
+    if linked != GL.GL_TRUE {
+        log_len: GL.GLint;
+        GL.glGetProgramiv(tri.program, GL.GL_INFO_LOG_LENGTH, *log_len);
+        log_buf: [1024] u8;
+        GL.glGetProgramInfoLog(tri.program, log_buf.count, null, log_buf.data);
+        print("Program link failed: %\n", cast(string) log_buf);
+        return false;
+    }
+
+    tri.u_angle = GL.glGetUniformLocation(tri.program, "u_angle".data);
+
+    // Upload three vertices: equilateral triangle, R/G/B at each corner.
+    // Jai expects the array literal's element type to match — float values
+    // from constants need to be promoted explicitly.
+    SQRT3_OVER_2 :: 0.8660254;
+    verts := float.[
+        //   x            y           r      g      b
+             0.0,          0.7,       tri.r,  tri.g,  tri.b,
+            -cast(float) SQRT3_OVER_2 * 0.7,  -0.35,  tri.r2, tri.g2, tri.b2,
+             cast(float) SQRT3_OVER_2 * 0.7,  -0.35,  tri.r3, tri.g3, tri.b3,
+    ];
+
+    GL.glGenVertexArrays(1, *tri.vao);
+    GL.glBindVertexArray(tri.vao);
+
+    GL.glGenBuffers(1, *tri.vbo);
+    GL.glBindBuffer(GL.GL_ARRAY_BUFFER, tri.vbo);
+    GL.glBufferData(GL.GL_ARRAY_BUFFER, verts.count * size_of(float), verts.data, GL.GL_STATIC_DRAW);
+
+    stride : GL.GLsizei = 5 * size_of(float);
+    GL.glVertexAttribPointer(0, 2, GL.GL_FLOAT, GL.GL_FALSE, stride, cast(*void) 0);
+    GL.glEnableVertexAttribArray(0);
+    GL.glVertexAttribPointer(1, 3, GL.GL_FLOAT, GL.GL_FALSE, stride, cast(*void)(2 * size_of(float)));
+    GL.glEnableVertexAttribArray(1);
+
+    GL.glBindVertexArray(0);
+    GL.glBindBuffer(GL.GL_ARRAY_BUFFER, 0);
+    return true;
+}
+
+compile_shader :: (kind: GL.GLenum, src: string) -> sh: u32, ok: bool {
+    sh := GL.glCreateShader(kind);
+    src_data := src.data;
+    src_len  : GL.GLint = cast(GL.GLint) src.count;
+    GL.glShaderSource(sh, 1, *src_data, *src_len);
+    GL.glCompileShader(sh);
+
+    status: GL.GLint;
+    GL.glGetShaderiv(sh, GL.GL_COMPILE_STATUS, *status);
+    if status != GL.GL_TRUE {
+        log_buf: [1024] u8;
+        GL.glGetShaderInfoLog(sh, log_buf.count, null, log_buf.data);
+        print("Shader compile failed: %\n", cast(string) log_buf);
+        GL.glDeleteShader(sh);
+        return 0, false;
+    }
+    return sh, true;
+}
+
+paint_gl_frame :: (slot: *Gl_Slot, tri: Triangle, t: float) {
     GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, slot.fbo);
     GL.glViewport(0, 0, WIDTH, HEIGHT);
-
-    // Rainbow cycle: three sines 120° apart, remapped from [-1,1] to [0,1].
-    TAU : float : 6.2831853;
-    r : float = 0.5 + 0.5 * sin(t);
-    g : float = 0.5 + 0.5 * sin(t + TAU / 3.0);
-    b : float = 0.5 + 0.5 * sin(t + 2.0 * TAU / 3.0);
-    GL.glClearColor(r, g, b, 1.0);
+    GL.glClearColor(0.05, 0.05, 0.08, 1.0);   // dark background
     GL.glClear(GL.GL_COLOR_BUFFER_BIT);
 
-    // Coarse but effective — ensure the render is finished before
-    // the compositor reads the DMA-BUF. Fences would be finer-grained.
+    GL.glUseProgram(tri.program);
+    GL.glUniform1f(tri.u_angle, t);
+    GL.glBindVertexArray(tri.vao);
+    GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3);
+    GL.glBindVertexArray(0);
+    GL.glUseProgram(0);
+
+    // Ensure GPU finished rendering before the compositor imports the
+    // DMA-BUF. Fences would be finer-grained; glFinish is adequate here.
     GL.glFinish();
 }
