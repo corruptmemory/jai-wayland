@@ -64,6 +64,21 @@ main :: () {
         formatInt(format, base=16),
         formatInt(modifier, base=16));
 
+    // --- Input: seats, keyboards, pointers, keymap ---
+    seats     := get_seats_info();
+    keyboards := get_keyboards_info(seats);
+    pointers  := get_pointers_info(seats);
+    keymap: Keymap;
+    if keyboards.count > 0 {
+        ok: bool;
+        keymap, ok = parse_keymap_fd(keyboards[0].keymap_fd, keyboards[0].keymap_size);
+        if !ok  print("Warning: failed to parse keymap — r/g/b/q keys inactive\n");
+    }
+    print("Input: % seat(s), % keyboard(s), % pointer(s)\n",
+        seats.count, keyboards.count, pointers.count);
+    if keyboards.count > 0  print("  Keys:  r/g/b = color scheme, q = quit\n");
+    if pointers.count > 0   print("  Click: prints pointer coords, cycles scheme\n");
+
     // --- Triangle setup (shader, VAO, VBO) ---
     tri: Triangle;
     if !init_triangle(*tri) {
@@ -120,19 +135,17 @@ main :: () {
     slots[0].in_flight = true;
     frame_requested := true;
 
-    print("hello_gl: animating. Close the window to exit.\n");
+    print("hello_gl: animating. Close the window or press q to exit.\n");
 
-    // --- Main loop: frame-paced render-rotate ---
+    // --- Main loop: frame-paced render-rotate, input-reactive ---
     //
-    // `t` advances once per displayed frame. The clear color runs off
-    // three phase-shifted sines for a rainbow cycle.
-    //
-    // The defer at the top of the body fires after every message: if
-    // we're allowed to render (content wants repaint, compositor has
-    // handed a frame back, a slot is free) we paint into the free slot
-    // and re-arm the frame callback.
+    // `t` advances once per displayed frame — rotates the triangle.
+    // r/g/b keys flip COLOR_SCHEMES entries; pointer click prints
+    // (x, y) and cycles to the next scheme.
     dirty := true;
     t: float = 0.0;
+    pointer_x: float64 = 0;
+    pointer_y: float64 = 0;
 
     for session() {
         defer if dirty && !frame_requested {
@@ -169,8 +182,43 @@ main :: () {
         // compositor has displayed the frame, we can pace the next.
         if it.object_id == frame_callback_id && it.opcode == WL_CALLBACK_DONE {
             frame_requested = false;
-            dirty = true;    // continuous animation; Task 9 will flip this
-                             // to input-driven
+            dirty = true;    // continuous animation
+            continue;
+        }
+
+        // Keyboard: q quits, r/g/b flip the vertex color scheme.
+        kb_event, is_kb := get_keyboard_event(it, keyboards, recv);
+        if is_kb {
+            if kb_event.kind == .KEY && kb_event.key.state == cast(u32) Wl_Keyboard_Key_State.PRESSED {
+                keysym := keymap_get_keysym(*keymap, kb_event.key.key);
+                if keysym == {
+                  case #char "q";
+                    print("Quit requested.\n");
+                    break;
+                  case #char "r"; apply_color_scheme(*tri, 1);
+                  case #char "g"; apply_color_scheme(*tri, 2);
+                  case #char "b"; apply_color_scheme(*tri, 3);
+                }
+            }
+            continue;
+        }
+
+        // Pointer: track motion; click prints coords + cycles scheme.
+        ptr_event, is_ptr := get_pointer_event(it, pointers, recv);
+        if is_ptr {
+            if ptr_event.kind == {
+              case .ENTER;
+                pointer_x = fixed_to_float(ptr_event.enter.surface_x);
+                pointer_y = fixed_to_float(ptr_event.enter.surface_y);
+              case .MOTION;
+                pointer_x = fixed_to_float(ptr_event.motion.surface_x);
+                pointer_y = fixed_to_float(ptr_event.motion.surface_y);
+              case .BUTTON;
+                if ptr_event.button.state == cast(u32) Wl_Pointer_Button_State.PRESSED {
+                    print("Click at (%, %)\n", pointer_x, pointer_y);
+                    apply_color_scheme(*tri, (tri.scheme + 1) % SCHEME_COUNT);
+                }
+            }
             continue;
         }
 
@@ -323,14 +371,28 @@ void main() {
 GLSL
 
 Triangle :: struct {
-    program:    u32;
-    vao:        u32;
-    vbo:        u32;
-    u_angle:    GL.GLint;   // uniform location; may be -1 if optimized out
-    r: float = 1.0;  g: float = 0.2; b: float = 0.2;   // vertex A color
-    r2: float = 0.2; g2: float = 1.0; b2: float = 0.2; // vertex B color
-    r3: float = 0.2; g3: float = 0.2; b3: float = 1.0; // vertex C color
+    program: u32;
+    vao:     u32;
+    vbo:     u32;
+    u_angle: GL.GLint;   // uniform location; may be -1 if optimized out
+    scheme:  int = 0;    // index into COLOR_SCHEMES
 }
+
+// Four color schemes — default, then r/g/b highlight the respective vertex.
+// Each scheme is three (r, g, b) triples, one per vertex.
+COLOR_SCHEMES :: float.[
+    // default — saturated RGB at the three corners
+    1.0, 0.2, 0.2,    0.2, 1.0, 0.2,    0.2, 0.2, 1.0,
+    // r — warm reds/oranges
+    1.0, 0.3, 0.1,    0.9, 0.6, 0.2,    0.8, 0.2, 0.2,
+    // g — greens / teals
+    0.1, 1.0, 0.4,    0.2, 0.8, 0.6,    0.4, 1.0, 0.7,
+    // b — blues / purples
+    0.3, 0.4, 1.0,    0.6, 0.3, 0.9,    0.2, 0.2, 0.8,
+];
+SCHEME_COUNT    :: 4;
+VERTICES_PER_TRI :: 3;
+FLOATS_PER_SCHEME :: VERTICES_PER_TRI * 3;
 
 init_triangle :: (tri: *Triangle) -> bool {
     vs, vs_ok := compile_shader(GL.GL_VERTEX_SHADER, VS_SRC);
@@ -359,23 +421,15 @@ init_triangle :: (tri: *Triangle) -> bool {
 
     tri.u_angle = GL.glGetUniformLocation(tri.program, "u_angle".data);
 
-    // Upload three vertices: equilateral triangle, R/G/B at each corner.
-    // Jai expects the array literal's element type to match — float values
-    // from constants need to be promoted explicitly.
-    SQRT3_OVER_2 :: 0.8660254;
-    verts := float.[
-        //   x            y           r      g      b
-             0.0,          0.7,       tri.r,  tri.g,  tri.b,
-            -cast(float) SQRT3_OVER_2 * 0.7,  -0.35,  tri.r2, tri.g2, tri.b2,
-             cast(float) SQRT3_OVER_2 * 0.7,  -0.35,  tri.r3, tri.g3, tri.b3,
-    ];
-
     GL.glGenVertexArrays(1, *tri.vao);
     GL.glBindVertexArray(tri.vao);
 
     GL.glGenBuffers(1, *tri.vbo);
     GL.glBindBuffer(GL.GL_ARRAY_BUFFER, tri.vbo);
-    GL.glBufferData(GL.GL_ARRAY_BUFFER, verts.count * size_of(float), verts.data, GL.GL_STATIC_DRAW);
+
+    // Upload initial vertex data with scheme 0. Colors get rewritten in place
+    // on scheme change (see apply_color_scheme).
+    upload_triangle_verts(tri, 0);
 
     stride : GL.GLsizei = 5 * size_of(float);
     GL.glVertexAttribPointer(0, 2, GL.GL_FLOAT, GL.GL_FALSE, stride, cast(*void) 0);
@@ -386,6 +440,25 @@ init_triangle :: (tri: *Triangle) -> bool {
     GL.glBindVertexArray(0);
     GL.glBindBuffer(GL.GL_ARRAY_BUFFER, 0);
     return true;
+}
+
+// Pack (x, y, r, g, b) × 3 vertices using the given scheme, upload as VBO data.
+upload_triangle_verts :: (tri: Triangle, scheme: int) {
+    SQRT3_OVER_2 : float : 0.8660254;
+    cols := COLOR_SCHEMES.data + scheme * FLOATS_PER_SCHEME;
+    verts := float.[
+        //   x                           y        r           g           b
+             0.0,                        0.7,     cols[0],    cols[1],    cols[2],
+            -SQRT3_OVER_2 * 0.7,        -0.35,    cols[3],    cols[4],    cols[5],
+             SQRT3_OVER_2 * 0.7,        -0.35,    cols[6],    cols[7],    cols[8],
+    ];
+    GL.glBindBuffer(GL.GL_ARRAY_BUFFER, tri.vbo);
+    GL.glBufferData(GL.GL_ARRAY_BUFFER, verts.count * size_of(float), verts.data, GL.GL_STATIC_DRAW);
+}
+
+apply_color_scheme :: (tri: *Triangle, scheme: int) {
+    tri.scheme = scheme;
+    upload_triangle_verts(tri, scheme);
 }
 
 compile_shader :: (kind: GL.GLenum, src: string) -> sh: u32, ok: bool {
