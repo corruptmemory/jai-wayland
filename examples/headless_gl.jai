@@ -13,7 +13,7 @@
 
 #import,dir "../modules/EGL";
 #import,dir "../modules/gbm";
-GL :: #import "GL";
+GL :: #import,dir "../modules/GL";   // vendored; see Task 2.5 in the plan doc
 #import "Basic";
 #import "POSIX";
 
@@ -83,10 +83,10 @@ main :: () {
     assert(eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ctx) == EGL_TRUE,
         "eglMakeCurrent failed");
 
-    // 6. Load GL 3.3 core entry points. We hand Jai's GL loader our
-    //    dlsym'd eglGetProcAddress; it walks the GL_Procedures struct
-    //    and populates every function pointer.
-    GL.gl_load(*GL.gl, eglGetProcAddress);
+    // 6. Load GL 3.3 core entry points. Our vendored GL module takes just
+    //    the get-proc-address function; it resolves every entry point we
+    //    care about through module-scope function-pointer variables.
+    assert(GL.gl_load(eglGetProcAddress), "GL proc loading failed — context GL version too old?");
     major_gl, minor_gl := GL.gl_get_version();
     print("GL %.% loaded\n", major_gl, minor_gl);
 
