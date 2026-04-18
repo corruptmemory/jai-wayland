@@ -11,6 +11,7 @@
 #load "output.jai";
 #load "input.jai";
 #load "xkb.jai";
+#load "dmabuf.jai";
 #load "type_registry.jai";
 
 #load "wayland/wayland.jai";
