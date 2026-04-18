@@ -32,43 +32,50 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 **Phase 3 (complete):** Wire protocol — message framing, compile-time marshalling, fd passing.
 
 - `inline` primitive writers for native-endian 4-byte-aligned wire encoding
-- `marshal` macro: `#expand` + `#insert #run generate_marshal_code(type_info(T))` — walks arg struct fields at compile time, emits type-specific serialization code (fixed-size stack buffer or variable-size runtime path)
+- `marshal` / `unmarshal` macros: `#expand` + `#insert #run generate_marshal_code(type_info(T))` — walk arg struct fields at compile time, emit type-specific (de)serialization code
 - `marshal_constructor` variant: caller provides pre-allocated object ID, writes it as first arg
-- `Fd :: #type,distinct s32` — file descriptors tagged for compile-time walker, routed to `SCM_RIGHTS` out-of-band
-- `Connection` struct: Unix socket connect, send/recv buffers, fd queues, `sendmsg`/`recvmsg` with `SCM_RIGHTS` ancillary data
-- Object ID allocator (client IDs from 1, incrementing)
-- Generated request functions now call `marshal()`/`marshal_constructor()` instead of stubs
+- `Fd :: #type,distinct s32` — file descriptors tagged for the compile-time walker, routed to `SCM_RIGHTS` out-of-band
+- Split types: `Connection` (socket + ID allocator), `MessageBuilder` (outgoing batch, string-builder pattern), `ReceiveBuffer` (incoming). `sendmsg`/`recvmsg` with `SCM_RIGHTS` ancillary data.
+- Object ID allocator (client IDs from 1, incrementing, monotonic-on-wire)
+- Generated request functions call `marshal()` / `marshal_constructor()` targeting `*MessageBuilder`
 
-**Phase 4 (complete):** Client API — no inversion of control.
+**Phase 4 (complete):** Client API — no inversion of control, full input + windowing.
 
 - **Design principle: simple things MUST be simple.** Application owns the event loop. No callbacks, no dispatch tables, no event queues, no proxy lifecycle manager.
-- `discover_globals(conn)` — performs wl_display.get_registry + sync roundtrip, returns list of all compositor globals
-- `find_global(globals, name)` — look up a global by interface name
-- `init_display(conn)` — create wl_display proxy (always ID 1)
-- Wire read helpers: `read_string`, `read_array` — mirrors of write_string/write_array for event deserialization
-- `wl_registry.bind` — full untyped `new_id` wire encoding (interface name + version + id)
-- `memfd_create` — thin syscall wrapper for anonymous shared memory
-- `examples/hello_globals.jai` — 20 lines, prints all compositor globals
-- `examples/hello_window.jai` — ~150 lines, displays a black 640x480 window via wl_shm. Full protocol: discover, bind, create surface, configure, attach buffer, event loop with ping/pong
-- 96 tests across 5 test suites
-- Tested live against Hyprland compositor on Arch Linux
+- `WaylandSession` — holds `Connection`, `ReceiveBuffer`, bound globals (compositor, wm_base); lives in `#add_context wayland_session: *WaylandSession`. `for session()` for-expansion yields `WaylandMessageHeader` and transparently handles ping/pong + `wl_display.error`.
+- Global discovery: `discover_globals()` performs `wl_display.get_registry` + sync roundtrip and returns all compositor globals. Type registry for automatic version negotiation in `wl_registry_bind`.
+- Screen discovery: `get_screens_info()` — binds every `wl_output`, returns `[] Screen_Info` with modes, scale, geometry.
+- Seat-based input: `get_seats_info()` → `get_keyboards_info(seats)` + `get_pointers_info(seats)`. `get_keyboard_event` / `get_pointer_event` route incoming messages by object ID into tagged-union events. Works for multi-seat setups.
+- XKB keymap parsing (`xkb.jai`): mmap's the keymap fd from `wl_keyboard.keymap`, parses the xkb text format into a 768-entry evdev→keysym lookup table. Layout-independent keysyms replace raw scancodes.
+- `wl_shm` path with pooled buffers sized to the native screen resolution, so resize is a cheap `wl_buffer` re-describe (no remap, no syscalls).
+- Double-buffered painting: two `Buffer_Slot` records carve the pool at offsets `0` and `frame_max_bytes`. Paint picks a non-in-flight slot; `wl_buffer.release` events free slots. Persistent `dirty` flag queues paints when both slots are in flight.
+- Examples:
+  - `hello_globals.jai` — prints all compositor globals (~20 lines)
+  - `hello_screens.jai` — prints each output's modes, scale, geometry (~30 lines)
+  - `hello_window.jai` — double-buffered resizable window, keyboard (r/g/b/q keysyms) + pointer (click cycles color), dynamic resize (~220 lines)
+  - `dump_keymap.jai` — diagnostic: prints evdev→keysym mappings from the live compositor's keymap
+- 109 tests across 6 test suites (xml, generator, wire, marshal, unmarshal, compile)
+- Tested live against Hyprland compositor on Artix Linux
 
-**Phase 5 (next):** Rendering integration — EGL/Vulkan WSI, `wl_shm` for CPU rendering.
+**Phase 5 (next):** Rendering integration — EGL/Vulkan WSI for GPU buffers, `wl_shm` for CPU rendering beyond solid colors. OpenGL, Vulkan, and plain shared-memory paths.
 
 ## Building
 
-Requires the Jai compiler (beta 0.2.026+) at `~/jai/jai/`.
+Requires the Jai compiler (beta 0.2.028+) at `~/jai/jai/`.
 
 ```bash
-./build.sh              # Build → build/main
-./build.sh - test       # Build and run XML/protocol tests
-./build.sh - gen_test   # Build and run generator tests
-./build.sh - wire_test  # Build and run wire protocol tests
-./build.sh - marshal_test  # Build and run marshal macro tests
-./build.sh - compile_test  # Build and run compilation smoke tests
-./build.sh - generate   # Regenerate modules/wayland/ from protocol XML
-./build.sh - hello_globals  # Build and run: print compositor globals
-./build.sh - hello_window   # Build and run: display a black window
+./build.sh                     # Build → build/main
+./build.sh - test              # 22 XML/protocol tests
+./build.sh - gen_test          # 36 generator tests
+./build.sh - wire_test         # 22 wire protocol tests
+./build.sh - marshal_test      # 9 marshal macro tests
+./build.sh - unmarshal_test    # 12 unmarshal macro tests
+./build.sh - compile_test      # 8 compilation smoke tests
+./build.sh - generate          # Regenerate modules/wayland/ from protocol XML
+./build.sh - hello_globals     # Build and run: print compositor globals
+./build.sh - hello_screens     # Build and run: print output discovery
+./build.sh - hello_window      # Build and run: resizable double-buffered window
+./build.sh - dump_keymap       # Build and run: xkb keymap diagnostic
 ```
 
 The build uses Jai's compile-time metaprogramming via `first.jai` — no external build tools required.
@@ -85,27 +92,36 @@ src/
 tests/
   xml_test.jai       — 22 tests (parser, entities, protocol)
   generator_test.jai — 36 tests (naming, enums, events, requests, assembly)
-  wire_test.jai      — 20 tests (primitive read/write, header, string/array, buffers)
+  wire_test.jai      — 22 tests (primitive read/write, header, string/array, buffers)
   marshal_test.jai   — 9 tests (fixed args, fd, string, array, constructors)
-  compile_test.jai   — 9 tests (imports generated module, verifies types)
+  unmarshal_test.jai — 12 tests (round-trip, tagged union dispatch)
+  compile_test.jai   — 8 tests (imports generated module, verifies types)
 examples/
-  hello_globals.jai  — 20 lines: connect, discover globals, print them
-  hello_window.jai   — ~150 lines: full wl_shm black window with event loop
+  hello_globals.jai  — ~20 lines: connect, discover globals, print them
+  hello_screens.jai  — ~30 lines: output discovery (modes, scale, geometry)
+  hello_window.jai   — ~220 lines: double-buffered resizable window, keyboard + pointer input, XKB keysym translation
+  dump_keymap.jai    — ~55 lines: mmap keymap fd, print evdev→keysym mappings
 modules/
-  wayland/           — Generated Jai bindings (56 protocols)
+  wayland/           — Generated Jai bindings (56 protocols, 175 interfaces)
     module.jai       — Module root (#load chain)
     types.jai        — Shared types (Fixed, Fd, Interface_Descriptor, Wire_Arg_Type)
     wire.jai         — Wire primitives (read/write, header, string/array encoding)
-    connection.jai   — Socket connect, buffers, fd queues, sendmsg/recvmsg
+    connection.jai   — Connection / MessageBuilder / ReceiveBuffer; sendmsg/recvmsg with SCM_RIGHTS
     marshal.jai      — Compile-time marshal macro (#expand + #insert #run)
+    unmarshal.jai    — Compile-time unmarshal macro (event decode + tagged union dispatch)
+    session.jai      — WaylandSession actor, for_expansion event loop, context-based convenience API
     registry.jai     — discover_globals, find_global, init_display helpers
+    output.jai       — get_screens_info (wl_output discovery)
+    input.jai        — Seat-based input: get_seats_info, get_keyboards_info, get_pointers_info
+    xkb.jai          — XKB keymap parser (evdev keycode → keysym lookup)
     shm.jai          — memfd_create syscall wrapper
-    wayland/         — Core protocol (wl_display, wl_surface, etc.)
+    wayland/         — Core protocol (wl_display, wl_surface, wl_buffer, etc.)
     xdg_shell/       — XDG shell (xdg_toplevel, xdg_surface, etc.)
     ...              — 54 more protocol directories
 vendor/
-  wayland-protocols/   — Vendored protocol XML (core, stable, staging, unstable)
+  wayland-protocols/   — Vendored protocol XML (core, stable, staging, unstable) — regenerated into modules/wayland/
   reference/           — zig-wayland and wayland-rs sources for reference
+docs/plans/            — Design + implementation plan docs (one per phase/feature)
 first.jai            — Build metaprogram
 ```
 
