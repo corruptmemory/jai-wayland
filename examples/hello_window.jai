@@ -14,6 +14,13 @@ BPP :: 4;  // bytes per pixel (XRGB8888)
 COLORS :: Color.[.RED, .GREEN, .BLUE];
 Color :: enum { RED; GREEN; BLUE; }
 
+Buffer_Slot :: struct {
+    buffer:    Wl_Buffer;
+    offset:    u32;       // byte offset into the shm pool
+    pixels:    *u8;       // cached = pixel_data + offset
+    in_flight: bool;      // true = attached, awaiting wl_buffer.release
+}
+
 main :: () {
     if !init_wayland_session() {
         print("Failed to create Wayland session\n");
@@ -29,8 +36,9 @@ main :: () {
         screen_width  = screens[0].current_mode.width;
         screen_height = screens[0].current_mode.height;
     }
-    pool_size := cast(s32)(screen_width * screen_height * BPP);
-    print("Screen: %x%, pool: % bytes\n", screen_width, screen_height, pool_size);
+    frame_max_bytes := cast(u32)(screen_width * screen_height * BPP);
+    pool_size       := cast(s32)(2 * frame_max_bytes);
+    print("Screen: %x%, pool: % bytes (double-buffered)\n", screen_width, screen_height, pool_size);
 
     // --- Acquire input devices ---
     seats := get_seats_info();
@@ -99,20 +107,39 @@ main :: () {
         return;
     }
 
-    // --- Create initial buffer from pool and present ---
+    // --- Create two buffer slots; paint slot 0 for the initial frame ---
     current_color := Color.BLUE;
-    current_buffer := Wl_Buffer.{ id = allocate_id() };
     stride := win_width * BPP;
-    paint(pixel_data, win_width, win_height, stride, current_color);
 
+    slots: [2] Buffer_Slot;
+    slots[0].offset = 0;
+    slots[1].offset = frame_max_bytes;
+    for * slots {
+        it.pixels = cast(*u8) pixel_data + it.offset;
+    }
+
+    // Paint the initial frame into slot 0's backing memory
+    paint(slots[0].pixels, win_width, win_height, stride, current_color);
+
+    // Acknowledge configure, create both buffer descriptors, attach slot 0.
+    // IDs must be allocated immediately before their create message (wire ordering).
     xdg_surface_ack_configure(*batch, *xdg_surface, configure_serial);
-    wl_shm_pool_create_buffer(*batch, *pool, current_buffer.id,
-        offset = 0, width = win_width, height = win_height,
-        stride = stride, format = cast(u32) Wl_Shm_Format.XRGB8888);
-    wl_surface_attach(*batch, *surface, *current_buffer, 0, 0);
+    for * slots {
+        it.buffer = Wl_Buffer.{ id = allocate_id() };
+        wl_shm_pool_create_buffer(*batch, *pool, it.buffer.id,
+            offset = cast(s32) it.offset, width = win_width, height = win_height,
+            stride = stride, format = cast(u32) Wl_Shm_Format.XRGB8888);
+    }
+    wl_surface_attach(*batch, *surface, *slots[0].buffer, 0, 0);
     wl_surface_damage_buffer(*batch, *surface, 0, 0, win_width, win_height);
     wl_surface_commit(*batch, *surface);
     wayland_send(*batch);
+    slots[0].in_flight = true;
+
+    // TEMPORARY (removed in next commit): lets the old single-buffer resize
+    // code below still compile. The next commit replaces that resize logic
+    // with one that operates on both slots.
+    current_buffer := slots[0].buffer;
 
     print("Window: %x%. Close to exit.\n", win_width, win_height);
 
