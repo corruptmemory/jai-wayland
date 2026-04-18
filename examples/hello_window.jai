@@ -136,11 +136,6 @@ main :: () {
     wayland_send(*batch);
     slots[0].in_flight = true;
 
-    // TEMPORARY (removed in next commit): lets the old single-buffer resize
-    // code below still compile. The next commit replaces that resize logic
-    // with one that operates on both slots.
-    current_buffer := slots[0].buffer;
-
     print("Window: %x%. Close to exit.\n", win_width, win_height);
 
     // --- Event loop with resize + input handling ---
@@ -148,15 +143,36 @@ main :: () {
     pending_height: s32 = 0;
     pointer_x: float64 = 0;
     pointer_y: float64 = 0;
+    dirty := false;   // persists across iterations; cleared only when a paint actually lands
 
     for session() {
-        needs_repaint := false;
-        defer if needs_repaint {
-            paint(pixel_data, win_width, win_height, stride, current_color);
-            wl_surface_attach(*batch, *surface, *current_buffer, 0, 0);
-            wl_surface_damage_buffer(*batch, *surface, 0, 0, win_width, win_height);
-            wl_surface_commit(*batch, *surface);
-            wayland_send(*batch);
+        // Paint on scope exit if dirty and a slot is free.
+        // If both slots are in flight, dirty stays set and the next release
+        // event naturally re-fires this defer on the now-free slot.
+        defer if dirty {
+            slot_idx := find_free_slot(slots);
+            if slot_idx >= 0 {
+                slot := *slots[slot_idx];
+                paint(slot.pixels, win_width, win_height, stride, current_color);
+                wl_surface_attach(*batch, *surface, *slot.buffer, 0, 0);
+                wl_surface_damage_buffer(*batch, *surface, 0, 0, win_width, win_height);
+                wl_surface_commit(*batch, *surface);
+                wayland_send(*batch);
+                slot.in_flight = true;
+                dirty = false;
+            }
+        };
+
+        // Route wl_buffer.release — mark the slot available
+        if it.opcode == WL_BUFFER_RELEASE {
+            obj_id := it.object_id;
+            for * slots {
+                if it.buffer.id == obj_id {
+                    it.in_flight = false;
+                    break;
+                }
+            }
+            continue;
         }
 
         kb_event, is_kb := get_keyboard_event(it, keyboards, recv);
@@ -167,9 +183,9 @@ main :: () {
                   case #char "q";
                     print("Quit requested.\n");
                     break;
-                  case #char "r"; current_color = .RED;   needs_repaint = true;
-                  case #char "g"; current_color = .GREEN; needs_repaint = true;
-                  case #char "b"; current_color = .BLUE;  needs_repaint = true;
+                  case #char "r"; current_color = .RED;   dirty = true;
+                  case #char "g"; current_color = .GREEN; dirty = true;
+                  case #char "b"; current_color = .BLUE;  dirty = true;
                 }
             }
             continue;
@@ -192,7 +208,7 @@ main :: () {
                         current_color = COLORS[(it_index + 1) % COLORS.count];
                         break;
                     }
-                    needs_repaint = true;
+                    dirty = true;
                 }
             }
             continue;
@@ -220,24 +236,30 @@ main :: () {
                 win_height = pending_height;
                 stride = win_width * BPP;
 
-                // Destroy old buffer, create new from same pool
-                old_buffer := current_buffer;
-                current_buffer = Wl_Buffer.{ id = allocate_id() };
-
-                wl_buffer_destroy(*batch, *old_buffer);
-                wl_shm_pool_create_buffer(*batch, *pool, current_buffer.id,
-                    offset = 0, width = win_width, height = win_height,
-                    stride = stride, format = cast(u32) Wl_Shm_Format.XRGB8888);
-                needs_repaint = true;
+                // Destroy both old buffer descriptors, create two new ones at the
+                // same pool offsets with the new dimensions. The mmap is unchanged.
+                for * slots  wl_buffer_destroy(*batch, *it.buffer);
+                for * slots {
+                    it.buffer = Wl_Buffer.{ id = allocate_id() };
+                    wl_shm_pool_create_buffer(*batch, *pool, it.buffer.id,
+                        offset = cast(s32) it.offset, width = win_width, height = win_height,
+                        stride = stride, format = cast(u32) Wl_Shm_Format.XRGB8888);
+                    it.in_flight = false;
+                }
+                dirty = true;
             }
 
             xdg_surface_ack_configure(*batch, *xdg_surface, serial);
-            if !needs_repaint {
-                wl_surface_commit(*batch, *surface);
-                wayland_send(*batch);
+            if !dirty {
+                wayland_send(*batch);  // flush the ack; defer won't run (nothing to repaint)
             }
         }
     }
+}
+
+find_free_slot :: (slots: [] Buffer_Slot) -> s32 {
+    for slots  if !it.in_flight  return cast(s32) it_index;
+    return -1;
 }
 
 // Paint the visible region with a gradient in the given color
