@@ -22,6 +22,12 @@ GL :: #import,dir "../modules/GL";
 DEFAULT_WIDTH  :: 640;
 DEFAULT_HEIGHT :: 480;
 
+Gl_Backend :: enum {
+    AUTO;               // try GBM_BO, fall back to MESA_TEXTURE_EXPORT if unavailable
+    GBM_BO;             // GBM BO → EGLImage → FBO; hard-fail if extensions absent
+    MESA_TEXTURE_EXPORT; // EGL_MESA_image_dma_buf_export path
+}
+
 Gl_Slot :: struct {
     tex:       u32;
     fbo:       u32;
@@ -38,6 +44,10 @@ Gl_Slot :: struct {
     height:    s32;
     bo_backed: bool;
     in_flight: bool;
+    // Placeholders for EGL_KHR_fence_sync + wp_linux_drm_syncobj_v1 explicit sync.
+    // Currently unused — glFinish() provides coarse but correct GPU ordering.
+    acquire_fence_fd: s32 = -1;
+    release_fence_fd: s32 = -1;
 }
 
 main :: () {
@@ -54,6 +64,8 @@ main :: () {
         return;
     }
     defer destroy_gl_stack(*egl);
+    backend := choose_gl_backend();
+    print("GL backend: %\n", gl_backend_name(backend));
 
     // --- dmabuf discovery ---
     dmabuf_info, dmabuf_ok := get_dmabuf_info();
@@ -133,7 +145,7 @@ main :: () {
     // --- Pre-allocate two GL-backed buffer slots at compositor size ---
     slots: [2] Gl_Slot;
     for * slot, i: slots {
-        if !init_slot(slot, egl, *dmabuf_info.dmabuf, *batch, format, modifier, win_width, win_height) {
+        if !init_slot(slot, egl, *dmabuf_info.dmabuf, *batch, format, modifier, win_width, win_height, backend) {
             print("Failed to initialize slot %\n", i);
             return;
         }
@@ -181,7 +193,7 @@ main :: () {
                 retire_slots(*batch, *retired_slots, slots, egl);
 
                 for * slot, i: slots {
-                    if !init_slot(slot, egl, *dmabuf_info.dmabuf, *batch, format, modifier, resize_width, resize_height, log_success = false) {
+                    if !init_slot(slot, egl, *dmabuf_info.dmabuf, *batch, format, modifier, resize_width, resize_height, backend, log_success = false) {
                         assert(false, "Failed to initialize resized slot %", i);
                     }
                 }
@@ -325,6 +337,22 @@ main :: () {
 }
 
 // --- Helpers ---
+
+gl_backend_name :: (b: Gl_Backend) -> string {
+    if b == {
+        case .GBM_BO;             return "gbm_bo";
+        case .MESA_TEXTURE_EXPORT; return "mesa_texture_export";
+        case .AUTO;               return "auto";
+    }
+    return "unknown";
+}
+
+// Returns which backend AUTO would resolve to given the currently-loaded extensions.
+choose_gl_backend :: () -> Gl_Backend {
+    if gbm_bo_create != null && gbm_bo_destroy != null && GL.glEGLImageTargetTexture2DOES != null
+        return .GBM_BO;
+    return .MESA_TEXTURE_EXPORT;
+}
 
 EGL_Context :: struct {
     drm_fd: s32 = -1;
@@ -474,13 +502,10 @@ pick_global_format_for_gbm_pass :: (gbm: Gbm_Device, supported: [] Format_Modifi
 // sends when ready (we batch all slots into a single send).
 init_slot :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
               batch: *MessageBuilder, format: u32, modifier: u64, width: s32, height: s32,
-              log_success := true) -> bool
+              backend: Gl_Backend = .AUTO, log_success := true) -> bool
 {
-    slot_path_ptr := getenv("JAI_WAYLAND_GL_SLOT_PATH");
-    if slot_path_ptr != null && to_string(slot_path_ptr) == "mesa" {
-        print("Using Mesa texture-export slot path due to JAI_WAYLAND_GL_SLOT_PATH=mesa\n");
+    if backend == .MESA_TEXTURE_EXPORT
         return init_slot_mesa(slot, egl, dmabuf, batch, format, modifier, width, height);
-    }
 
     if init_slot_bo(slot, egl, dmabuf, batch, format, modifier, width, height) {
         if log_success {
@@ -492,6 +517,9 @@ init_slot :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
         return true;
     }
 
+    if backend == .GBM_BO  return false;
+
+    // AUTO: BO init failed, fall back to Mesa texture export.
     destroy_slot(slot, egl);
     slot.* = .{};
     print("BO-backed slot initialization failed; falling back to Mesa texture export\n");
@@ -613,6 +641,8 @@ destroy_slot :: (slot: *Gl_Slot, egl: EGL_Context) {
     if slot.bo != null  gbm_bo_destroy(slot.bo);
     if slot.fd >= 0  close(slot.fd);
     if slot.image_fd >= 0  close(slot.image_fd);
+    if slot.acquire_fence_fd >= 0  close(slot.acquire_fence_fd);
+    if slot.release_fence_fd >= 0  close(slot.release_fence_fd);
 }
 
 retire_slots :: (batch: *MessageBuilder, retired: *[..] Gl_Slot, slots: [] Gl_Slot, egl: EGL_Context) {
