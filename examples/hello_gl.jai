@@ -538,12 +538,15 @@ init_slot_bo :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
     planes := ifx gbm_bo_get_plane_count != null then gbm_bo_get_plane_count(slot.bo) else 1;
     if planes != 1  return false;
 
-    slot.format = format;
-    slot.modifier = modifier;
+    actual_format := ifx gbm_bo_get_format != null then gbm_bo_get_format(slot.bo) else format;
+    actual_modifier := ifx gbm_bo_get_modifier != null then gbm_bo_get_modifier(slot.bo) else modifier;
+
+    slot.format = actual_format;
+    slot.modifier = actual_modifier;
     slot.width = width;
     slot.height = height;
     slot.bo_backed = true;
-    queue_dmabuf_buffer(batch, dmabuf, *slot.buffer, slot.fd, slot.offset, slot.stride, format, modifier, width, height);
+    queue_dmabuf_buffer(batch, dmabuf, *slot.buffer, slot.fd, slot.offset, slot.stride, actual_format, actual_modifier, width, height);
     return true;
 }
 

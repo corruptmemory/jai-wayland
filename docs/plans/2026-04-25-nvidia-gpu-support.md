@@ -56,8 +56,11 @@ As of 2026-04-25:
   compositor preference order, filters candidates through GBM device capability,
   and falls back to the older global format/modifier list when feedback is
   unavailable or unusable.
-- Task 4 NVIDIA presentation is still pending a dGPU display/session test after
-  rebooting into BIOS dGPU mode.
+- Task 4 NVIDIA presentation is validated after rebooting into BIOS dGPU mode:
+  `headless_gl` selects the NVIDIA render node and passes, and `hello_gl`
+  presents a rotating/resizable triangle on the internal display. The BO path
+  now advertises the actual GBM BO format/modifier returned by the driver when
+  creating the Wayland DMA-BUF, which is required for NVIDIA's tiled modifiers.
 
 ## Current State
 
@@ -67,9 +70,9 @@ while `JAI_WAYLAND_RENDER_NODE` and `JAI_WAYLAND_GPU_VENDOR` allow explicit
 selection.
 
 `headless_gl` proves BO-backed FBO rendering on Intel and NVIDIA. `hello_gl`
-uses BO-backed Wayland buffer slots on the Intel/iGPU path and keeps the older
-`EGL_MESA_image_dma_buf_export` texture-export path as a local fallback. Modern
-NVIDIA supports GBM, so the first NVIDIA implementation should remain
+uses BO-backed Wayland buffer slots on both Intel/iGPU and NVIDIA/dGPU paths and
+keeps the older `EGL_MESA_image_dma_buf_export` texture-export path as a local
+fallback. Modern NVIDIA supports GBM, so the first NVIDIA implementation remains
 GBM/DMA-BUF first, not EGLStream first. EGLStream is legacy/compositor-dependent
 and should only be considered as a later fallback if GBM cannot cover a required
 target.
