@@ -7,6 +7,22 @@
 
 DRM_FORMAT_MOD_INVALID : u64 : 0x00ffffffffffffff;
 
+supports_bo_format_modifier :: (gbm: Gbm_Device, format: u32, modifier: u64, flags: u32) -> bool {
+    if !ensure_gbm_bo_runtime()  return false;
+
+    if gbm_device_is_format_supported != null {
+        if gbm_device_is_format_supported(gbm, format, flags) == 0  return false;
+    }
+
+    if modifier == DRM_FORMAT_MOD_INVALID  return true;
+
+    if gbm_device_get_format_modifier_plane_count != null {
+        return gbm_device_get_format_modifier_plane_count(gbm, format, modifier) > 0;
+    }
+
+    return true;
+}
+
 create_bo_with_modifier :: (gbm: Gbm_Device, width: s32, height: s32, format: u32, modifier: u64, flags: u32) -> Gbm_Bo {
     if !ensure_gbm_bo_runtime()  return null;
 

@@ -220,6 +220,21 @@ copy_bytes :: (dst: *[..] u8, src: [] u8) {
     for src  array_add(dst, it);
 }
 
+// Pick the first matching format in compositor tranche order. This does not
+// apply renderer-specific capability checks; callers that own GBM/Vulkan state
+// should filter tranche entries before committing to the result.
+pick_format_from_feedback :: (feedback: Dmabuf_Feedback_Info, preferred_fourcc: u32) -> format: u32, modifier: u64, found: bool {
+    if !feedback.complete  return 0, 0, false;
+
+    for tranche: feedback.tranches {
+        for fm: tranche.formats {
+            if fm.format == preferred_fourcc  return fm.format, fm.modifier, true;
+        }
+    }
+
+    return 0, 0, false;
+}
+
 // Pick a (format, modifier) pair from the compositor's advertised set that
 // matches the requested fourcc. Preference order:
 //   1. LINEAR modifier for the preferred format (CPU-mappable, simplest)

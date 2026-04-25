@@ -55,24 +55,12 @@ main :: () {
     }
     defer destroy_gl_stack(*egl);
 
-    // --- dmabuf discovery + format pick ---
+    // --- dmabuf discovery ---
     dmabuf_info, dmabuf_ok := get_dmabuf_info();
     if !dmabuf_ok {
         print("Compositor does not support zwp_linux_dmabuf_v1\n");
         return;
     }
-
-    format, modifier, have_format := pick_format(dmabuf_info, GBM_FORMAT_ABGR8888);
-    if !have_format {
-        format, modifier, have_format = pick_format(dmabuf_info, GBM_FORMAT_XBGR8888);
-    }
-    if !have_format {
-        print("Compositor doesn't advertise an ABGR/XBGR 8888 format\n");
-        return;
-    }
-    print("Using format=0x% modifier=0x%\n",
-        formatInt(format, base=16),
-        formatInt(modifier, base=16));
 
     // --- Input: seats, keyboards, pointers, keymap ---
     seats     := get_seats_info();
@@ -131,6 +119,16 @@ main :: () {
     }
 
     print("Configured window: %x%\n", win_width, win_height);
+
+    // --- Surface feedback + format pick ---
+    format, modifier, have_format := choose_dmabuf_format(egl.gbm, dmabuf_info, *surface);
+    if !have_format {
+        print("Compositor doesn't advertise a GBM-usable ABGR/XBGR 8888 format\n");
+        return;
+    }
+    print("Using format=0x% modifier=0x%\n",
+        formatInt(format, base=16),
+        formatInt(modifier, base=16));
 
     // --- Pre-allocate two GL-backed buffer slots at compositor size ---
     slots: [2] Gl_Slot;
@@ -396,6 +394,79 @@ destroy_gl_stack :: (egl: *EGL_Context) {
     if egl.dpy != EGL_NO_DISPLAY  eglTerminate(egl.dpy);
     if egl.gbm  gbm_device_destroy(egl.gbm);
     if egl.drm_fd >= 0  close(egl.drm_fd);
+}
+
+choose_dmabuf_format :: (gbm: Gbm_Device, info: Dmabuf_Info, surface: *Wl_Surface) -> format: u32, modifier: u64, found: bool {
+    flags := cast(u32) GBM_BO_USE_RENDERING;
+    preferred := u32.[ GBM_FORMAT_ABGR8888, GBM_FORMAT_XBGR8888 ];
+    format: u32;
+    modifier: u64;
+    found: bool;
+
+    if info.feedback_supported {
+        feedback, feedback_ok := get_surface_dmabuf_feedback(*info.dmabuf, surface);
+        if feedback_ok {
+            for preferred_format: preferred {
+                format, modifier, found = pick_format_from_feedback_for_gbm(gbm, feedback, preferred_format, flags);
+                if found {
+                    print("Using dmabuf surface feedback for format selection\n");
+                    return format, modifier, true;
+                }
+            }
+
+            print("dmabuf surface feedback had no GBM-usable ABGR/XBGR format; falling back to global list\n");
+        }
+    }
+
+    for preferred_format: preferred {
+        format, modifier, found = pick_global_format_for_gbm(gbm, info.supported, preferred_format, flags);
+        if found {
+            print("Using dmabuf global format list for format selection\n");
+            return format, modifier, true;
+        }
+    }
+
+    return 0, 0, false;
+}
+
+pick_format_from_feedback_for_gbm :: (gbm: Gbm_Device, feedback: Dmabuf_Feedback_Info, preferred_fourcc: u32, flags: u32) -> format: u32, modifier: u64, found: bool {
+    if !feedback.complete  return 0, 0, false;
+
+    for tranche: feedback.tranches {
+        for fm: tranche.formats {
+            if fm.format != preferred_fourcc  continue;
+            if !Gpu.supports_bo_format_modifier(gbm, fm.format, fm.modifier, flags)  continue;
+            return fm.format, fm.modifier, true;
+        }
+    }
+
+    return 0, 0, false;
+}
+
+pick_global_format_for_gbm :: (gbm: Gbm_Device, supported: [] Format_Modifier, preferred_fourcc: u32, flags: u32) -> format: u32, modifier: u64, found: bool {
+    format: u32;
+    modifier: u64;
+    found: bool;
+
+    format, modifier, found = pick_global_format_for_gbm_pass(gbm, supported, preferred_fourcc, flags, DRM_FORMAT_MOD_LINEAR, require_modifier = true);
+    if found  return format, modifier, true;
+
+    format, modifier, found = pick_global_format_for_gbm_pass(gbm, supported, preferred_fourcc, flags, DRM_FORMAT_MOD_INVALID, require_modifier = true);
+    if found  return format, modifier, true;
+
+    format, modifier, found = pick_global_format_for_gbm_pass(gbm, supported, preferred_fourcc, flags, 0, require_modifier = false);
+    return format, modifier, found;
+}
+
+pick_global_format_for_gbm_pass :: (gbm: Gbm_Device, supported: [] Format_Modifier, preferred_fourcc: u32, flags: u32, wanted_modifier: u64, require_modifier: bool) -> format: u32, modifier: u64, found: bool {
+    for fm: supported {
+        if fm.format != preferred_fourcc  continue;
+        if require_modifier && fm.modifier != wanted_modifier  continue;
+        if !Gpu.supports_bo_format_modifier(gbm, fm.format, fm.modifier, flags)  continue;
+        return fm.format, fm.modifier, true;
+    }
+
+    return 0, 0, false;
 }
 
 // Allocate a GL texture + FBO, export as DMA-BUF, wrap as wl_buffer.

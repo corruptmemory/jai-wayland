@@ -50,8 +50,12 @@ As of 2026-04-25:
   `modules/wayland/dmabuf.jai` can collect default and per-surface
   `zwp_linux_dmabuf_feedback_v1` snapshots, and `hello_dmabuf` prints the
   feedback main device, format table size, tranches, flags, and sample
-  format/modifier entries. Buffer selection still uses the older global
-  format/modifier list.
+  format/modifier entries.
+- Task 5 second slice is implemented on the Intel/iGPU path: `hello_gl` now
+  requests per-surface feedback after initial configure, walks tranches in
+  compositor preference order, filters candidates through GBM device capability,
+  and falls back to the older global format/modifier list when feedback is
+  unavailable or unusable.
 - Task 4 NVIDIA presentation is still pending a dGPU display/session test after
   rebooting into BIOS dGPU mode.
 
@@ -72,9 +76,10 @@ target.
 
 `modules/wayland/dmabuf.jai` can now read both the older global
 `zwp_linux_dmabuf_v1.format` / `.modifier` events and read-only
-`zwp_linux_dmabuf_feedback_v1` snapshots. `hello_gl` still selects buffers from
-the global list; the next Task 5 slice should use feedback tranches as the
-source of truth for cross-GPU/modifier selection.
+`zwp_linux_dmabuf_feedback_v1` snapshots. `hello_gl` uses per-surface feedback
+tranches first for format/modifier selection and falls back to the global list
+only when necessary. On Hyprland with the Intel/iGPU path, feedback currently
+selects `AB24` with the linear modifier (`0x0`).
 
 ## Design Direction
 
