@@ -2,5 +2,7 @@ build/
 build_tests/
 .build/
 .worktrees/
+.codex
+.codex/
 *.sublime-project
 *.sublime-workspace
