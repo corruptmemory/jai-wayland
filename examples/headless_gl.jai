@@ -269,11 +269,11 @@ test_bo_backed_fbo :: (dpy: EGLDisplay, gbm: Gbm_Device) {
     FORMAT :: GBM_FORMAT_XRGB8888;
     FLAGS  :: GBM_BO_USE_RENDERING;
 
-    bo := gbm_bo_create(gbm, WIDTH, HEIGHT, FORMAT, FLAGS);
+    bo := Gpu.create_bo_with_modifier(gbm, WIDTH, HEIGHT, FORMAT, Gpu.DRM_FORMAT_MOD_INVALID, FLAGS);
     assert(bo != null, "BO-backed FBO: gbm_bo_create failed");
     defer gbm_bo_destroy(bo);
 
-    image, image_fd, image_ok := create_image_from_gbm_bo(dpy, bo);
+    image, image_fd, image_ok := Gpu.create_image_from_gbm_bo(dpy, bo, WIDTH, HEIGHT, verbose = true);
     assert(image_ok, "BO-backed FBO: failed to create EGLImage from GBM BO");
     if image_fd >= 0  defer close(image_fd);
     defer eglDestroyImageKHR(dpy, image);
@@ -318,68 +318,4 @@ test_bo_backed_fbo :: (dpy: EGLDisplay, gbm: Gbm_Device) {
         print("BO-backed FBO export: fd=% stride=% planes=% modifier=0x%\n",
             fd, stride, planes, formatInt(modifier, base=16));
     }
-}
-
-create_image_from_gbm_bo :: (dpy: EGLDisplay, bo: Gbm_Bo) -> EGLImage, s32, bool {
-    image := eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
-        cast(EGLClientBuffer) bo, null);
-    if image != null {
-        print("BO-backed FBO import: EGL_NATIVE_PIXMAP_KHR\n");
-        return image, -1, true;
-    }
-
-    native_error := eglGetError();
-    print("BO-backed FBO import: EGL_NATIVE_PIXMAP_KHR failed (err=0x%), trying EGL_LINUX_DMA_BUF_EXT\n",
-        formatInt(native_error, base=16));
-
-    if gbm_bo_get_fd == null || gbm_bo_get_stride == null || gbm_bo_get_format == null {
-        return null, -1, false;
-    }
-
-    fd := gbm_bo_get_fd(bo);
-    if fd < 0  return null, -1, false;
-
-    width := ifx gbm_bo_get_width != null then gbm_bo_get_width(bo) else 0;
-    height := ifx gbm_bo_get_height != null then gbm_bo_get_height(bo) else 0;
-    format := gbm_bo_get_format(bo);
-    stride := gbm_bo_get_stride(bo);
-    offset := ifx gbm_bo_get_offset != null then gbm_bo_get_offset(bo, 0) else 0;
-    modifier := ifx gbm_bo_get_modifier != null then gbm_bo_get_modifier(bo) else 0;
-
-    if gbm_bo_get_modifier != null {
-        attrs := EGLint.[
-            EGL_WIDTH, cast(EGLint) width,
-            EGL_HEIGHT, cast(EGLint) height,
-            EGL_LINUX_DRM_FOURCC_EXT, cast(EGLint) format,
-            EGL_DMA_BUF_PLANE0_FD_EXT, fd,
-            EGL_DMA_BUF_PLANE0_OFFSET_EXT, cast(EGLint) offset,
-            EGL_DMA_BUF_PLANE0_PITCH_EXT, cast(EGLint) stride,
-            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, cast,trunc(EGLint) modifier,
-            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, cast,trunc(EGLint) (modifier >> 32),
-            EGL_NONE,
-        ];
-        image = eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, null, attrs.data);
-    } else {
-        attrs := EGLint.[
-            EGL_WIDTH, cast(EGLint) width,
-            EGL_HEIGHT, cast(EGLint) height,
-            EGL_LINUX_DRM_FOURCC_EXT, cast(EGLint) format,
-            EGL_DMA_BUF_PLANE0_FD_EXT, fd,
-            EGL_DMA_BUF_PLANE0_OFFSET_EXT, cast(EGLint) offset,
-            EGL_DMA_BUF_PLANE0_PITCH_EXT, cast(EGLint) stride,
-            EGL_NONE,
-        ];
-        image = eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, null, attrs.data);
-    }
-
-    if image == null {
-        print("BO-backed FBO import: EGL_LINUX_DMA_BUF_EXT failed (err=0x%)\n",
-            formatInt(eglGetError(), base=16));
-        close(fd);
-        return null, -1, false;
-    }
-
-    print("BO-backed FBO import: EGL_LINUX_DMA_BUF_EXT fd=% stride=% modifier=0x%\n",
-        fd, stride, formatInt(modifier, base=16));
-    return image, fd, true;
 }

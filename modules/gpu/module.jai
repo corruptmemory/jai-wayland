@@ -5,3 +5,4 @@
 // XML-driven under modules/wayland.
 
 #load "device.jai";
+#load "dmabuf_bo.jai";

@@ -165,28 +165,62 @@ main :: () {
     // r/g/b keys flip COLOR_SCHEMES entries; pointer click prints
     // (x, y) and cycles to the next scheme.
     dirty := true;
-    t: float = 0.0;
+    rotation_start := monotonic_seconds();
     pointer_x: float64 = 0;
     pointer_y: float64 = 0;
+    pending_width:  s32 = 0;
+    pending_height: s32 = 0;
+    resize_width:   s32 = 0;
+    resize_height:  s32 = 0;
+    resize_serial:  u32 = 0;
+    resize_pending := false;
+    retired_slots: [..] Gl_Slot;
+    defer for * retired_slots  destroy_slot(it, egl);
 
     for session() {
-        defer if dirty && !frame_requested {
-            slot_idx := find_free_slot(slots);
-            if slot_idx >= 0 {
-                slot := *slots[slot_idx];
-                paint_gl_frame(slot, tri, t);
-                t += 0.02;   // ~0.2 rad/frame → ~2 sec per full rotation at 60Hz
+        defer {
+            if resize_pending && !frame_requested {
+                retire_slots(*batch, *retired_slots, slots, egl);
 
+                for * slot, i: slots {
+                    if !init_slot(slot, egl, *dmabuf_info.dmabuf, *batch, format, modifier, resize_width, resize_height, log_success = false) {
+                        assert(false, "Failed to initialize resized slot %", i);
+                    }
+                }
+
+                win_width = resize_width;
+                win_height = resize_height;
+
+                paint_gl_frame(*slots[0], tri, rotation_angle(rotation_start));
                 frame_callback_id = allocate_id();
+                xdg_surface_ack_configure(*batch, *xdg_surface, resize_serial);
                 wl_surface_frame(*batch, *surface, frame_callback_id);
-                wl_surface_attach(*batch, *surface, *slot.buffer, 0, 0);
-                wl_surface_damage_buffer(*batch, *surface, 0, 0, slot.width, slot.height);
+                wl_surface_attach(*batch, *surface, *slots[0].buffer, 0, 0);
+                wl_surface_damage_buffer(*batch, *surface, 0, 0, slots[0].width, slots[0].height);
                 wl_surface_commit(*batch, *surface);
                 wayland_send(*batch);
 
-                slot.in_flight = true;
+                slots[0].in_flight = true;
                 frame_requested = true;
                 dirty = false;
+                resize_pending = false;
+            } else if dirty && !frame_requested && !resize_pending {
+                slot_idx := find_free_slot(slots);
+                if slot_idx >= 0 {
+                    slot := *slots[slot_idx];
+                    paint_gl_frame(slot, tri, rotation_angle(rotation_start));
+
+                    frame_callback_id = allocate_id();
+                    wl_surface_frame(*batch, *surface, frame_callback_id);
+                    wl_surface_attach(*batch, *surface, *slot.buffer, 0, 0);
+                    wl_surface_damage_buffer(*batch, *surface, 0, 0, slot.width, slot.height);
+                    wl_surface_commit(*batch, *surface);
+                    wayland_send(*batch);
+
+                    slot.in_flight = true;
+                    frame_requested = true;
+                    dirty = false;
+                }
             }
         };
 
@@ -213,8 +247,44 @@ main :: () {
                 break;
             }
             if matched  continue;
+            if release_retired_slot(*batch, *retired_slots, obj_id, egl) {
+                wayland_send(*batch);
+                continue;
+            }
             // otherwise fall through — this wasn't our release event,
             // it's some other opcode-0 event on an object we don't own.
+        }
+
+        if it.object_id == toplevel.id {
+            if it.opcode == XDG_TOPLEVEL_CONFIGURE {
+                args: Xdg_Toplevel_Configure_Args;
+                unmarshal(*args, it.payload, recv);
+                if args.width > 0 && args.height > 0 {
+                    pending_width = args.width;
+                    pending_height = args.height;
+                }
+                continue;
+            } else if it.opcode == XDG_TOPLEVEL_CLOSE {
+                print("Close requested.\n");
+                break;
+            }
+        }
+
+        if it.object_id == xdg_surface.id && it.opcode == XDG_SURFACE_CONFIGURE {
+            serial := read_u32(it.payload);
+            if pending_width > 0 && pending_height > 0 &&
+               (pending_width != win_width || pending_height != win_height)
+            {
+                resize_width = pending_width;
+                resize_height = pending_height;
+                resize_serial = serial;
+                resize_pending = true;
+                dirty = false;
+            } else {
+                xdg_surface_ack_configure(*batch, *xdg_surface, serial);
+                wayland_send(*batch);
+            }
+            continue;
         }
 
         // Keyboard: q quits, r/g/b flip the vertex color scheme.
@@ -253,10 +323,6 @@ main :: () {
             continue;
         }
 
-        if it.object_id == toplevel.id && it.opcode == XDG_TOPLEVEL_CLOSE {
-            print("Close requested.\n");
-            break;
-        }
     }
 }
 
@@ -336,7 +402,8 @@ destroy_gl_stack :: (egl: *EGL_Context) {
 // The wl_buffer and params messages get queued into `batch`; the caller
 // sends when ready (we batch all slots into a single send).
 init_slot :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
-              batch: *MessageBuilder, format: u32, modifier: u64, width: s32, height: s32) -> bool
+              batch: *MessageBuilder, format: u32, modifier: u64, width: s32, height: s32,
+              log_success := true) -> bool
 {
     slot_path_ptr := getenv("JAI_WAYLAND_GL_SLOT_PATH");
     if slot_path_ptr != null && to_string(slot_path_ptr) == "mesa" {
@@ -345,10 +412,12 @@ init_slot :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
     }
 
     if init_slot_bo(slot, egl, dmabuf, batch, format, modifier, width, height) {
-        print("Initialized BO-backed slot buffer=% format=0x% modifier=0x%\n",
-            slot.buffer.id,
-            formatInt(slot.format, base=16),
-            formatInt(slot.modifier, base=16));
+        if log_success {
+            print("Initialized BO-backed slot buffer=% format=0x% modifier=0x%\n",
+                slot.buffer.id,
+                formatInt(slot.format, base=16),
+                formatInt(slot.modifier, base=16));
+        }
         return true;
     }
 
@@ -369,11 +438,11 @@ init_slot_bo :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
         if gbm_device_is_format_supported(egl.gbm, format, flags) == 0  return false;
     }
 
-    slot.bo = create_slot_bo(egl.gbm, format, modifier, flags, width, height);
+    slot.bo = Gpu.create_bo_with_modifier(egl.gbm, width, height, format, modifier, flags);
     if slot.bo == null  return false;
 
     image_ok: bool;
-    slot.image, slot.image_fd, image_ok = create_image_from_gbm_bo(egl.dpy, slot.bo);
+    slot.image, slot.image_fd, image_ok = Gpu.create_image_from_gbm_bo(egl.dpy, slot.bo, width, height);
     if !image_ok  return false;
 
     GL.glGenTextures(1, *slot.tex);
@@ -405,75 +474,6 @@ init_slot_bo :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
     slot.bo_backed = true;
     queue_dmabuf_buffer(batch, dmabuf, *slot.buffer, slot.fd, slot.offset, slot.stride, format, modifier, width, height);
     return true;
-}
-
-create_slot_bo :: (gbm: Gbm_Device, format: u32, modifier: u64, flags: u32, width: s32, height: s32) -> Gbm_Bo {
-    if modifier == DRM_FORMAT_MOD_INVALID {
-        return gbm_bo_create(gbm, cast(u32) width, cast(u32) height, format, flags);
-    }
-
-    modifiers := u64.[ modifier ];
-    if gbm_bo_create_with_modifiers2 != null {
-        return gbm_bo_create_with_modifiers2(gbm, cast(u32) width, cast(u32) height, format, modifiers.data, modifiers.count, flags);
-    }
-    if gbm_bo_create_with_modifiers != null {
-        return gbm_bo_create_with_modifiers(gbm, cast(u32) width, cast(u32) height, format, modifiers.data, modifiers.count);
-    }
-
-    return gbm_bo_create(gbm, cast(u32) width, cast(u32) height, format, flags);
-}
-
-create_image_from_gbm_bo :: (dpy: EGLDisplay, bo: Gbm_Bo) -> EGLImage, s32, bool {
-    image := eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
-        cast(EGLClientBuffer) bo, null);
-    if image != null  return image, -1, true;
-
-    if gbm_bo_get_fd == null || gbm_bo_get_stride == null || gbm_bo_get_format == null {
-        return null, -1, false;
-    }
-
-    fd := gbm_bo_get_fd(bo);
-    if fd < 0  return null, -1, false;
-
-    width := ifx gbm_bo_get_width != null then gbm_bo_get_width(bo) else DEFAULT_WIDTH;
-    height := ifx gbm_bo_get_height != null then gbm_bo_get_height(bo) else DEFAULT_HEIGHT;
-    format := gbm_bo_get_format(bo);
-    stride := gbm_bo_get_stride(bo);
-    offset := ifx gbm_bo_get_offset != null then gbm_bo_get_offset(bo, 0) else 0;
-    modifier := ifx gbm_bo_get_modifier != null then gbm_bo_get_modifier(bo) else 0;
-
-    if gbm_bo_get_modifier != null {
-        attrs := EGLint.[
-            EGL_WIDTH, cast(EGLint) width,
-            EGL_HEIGHT, cast(EGLint) height,
-            EGL_LINUX_DRM_FOURCC_EXT, cast(EGLint) format,
-            EGL_DMA_BUF_PLANE0_FD_EXT, fd,
-            EGL_DMA_BUF_PLANE0_OFFSET_EXT, cast(EGLint) offset,
-            EGL_DMA_BUF_PLANE0_PITCH_EXT, cast(EGLint) stride,
-            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, cast,trunc(EGLint) modifier,
-            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, cast,trunc(EGLint) (modifier >> 32),
-            EGL_NONE,
-        ];
-        image = eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, null, attrs.data);
-    } else {
-        attrs := EGLint.[
-            EGL_WIDTH, cast(EGLint) width,
-            EGL_HEIGHT, cast(EGLint) height,
-            EGL_LINUX_DRM_FOURCC_EXT, cast(EGLint) format,
-            EGL_DMA_BUF_PLANE0_FD_EXT, fd,
-            EGL_DMA_BUF_PLANE0_OFFSET_EXT, cast(EGLint) offset,
-            EGL_DMA_BUF_PLANE0_PITCH_EXT, cast(EGLint) stride,
-            EGL_NONE,
-        ];
-        image = eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, null, attrs.data);
-    }
-
-    if image == null {
-        close(fd);
-        return null, -1, false;
-    }
-
-    return image, fd, true;
 }
 
 init_slot_mesa :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
@@ -541,9 +541,49 @@ destroy_slot :: (slot: *Gl_Slot, egl: EGL_Context) {
     if slot.image_fd >= 0  close(slot.image_fd);
 }
 
+retire_slots :: (batch: *MessageBuilder, retired: *[..] Gl_Slot, slots: [] Gl_Slot, egl: EGL_Context) {
+    for * slot: slots {
+        if slot.buffer.id == 0  continue;
+
+        if slot.in_flight {
+            array_add(retired, slot.*);
+        } else {
+            wl_buffer_destroy(batch, *slot.buffer);
+            destroy_slot(slot, egl);
+        }
+
+        slot.* = .{};
+    }
+}
+
+release_retired_slot :: (batch: *MessageBuilder, retired: *[..] Gl_Slot, object_id: u32, egl: EGL_Context) -> bool {
+    for * slot, i: retired.* {
+        if slot.buffer.id == object_id {
+            wl_buffer_destroy(batch, *slot.buffer);
+            destroy_slot(slot, egl);
+            array_unordered_remove_by_index(retired, i);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 find_free_slot :: (slots: [] Gl_Slot) -> int {
     for slots  if !it.in_flight  return it_index;
     return -1;
+}
+
+ROTATION_RADIANS_PER_SECOND :: 1.2;
+
+monotonic_seconds :: () -> float64 {
+    ts: timespec;
+    if clock_gettime(.MONOTONIC, *ts) != 0  return 0;
+    return cast(float64) ts.tv_sec + cast(float64) ts.tv_nsec / 1000000000.0;
+}
+
+rotation_angle :: (start_time: float64) -> float {
+    return cast(float) ((monotonic_seconds() - start_time) * ROTATION_RADIANS_PER_SECOND);
 }
 
 // --- Triangle rendering (Task 8) ---

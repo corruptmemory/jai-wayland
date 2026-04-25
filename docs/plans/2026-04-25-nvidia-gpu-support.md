@@ -39,6 +39,13 @@ As of 2026-04-25:
   the render node through `modules/gpu`, initializes both presentation slots as
   GBM BO-backed GL textures/FBOs, and keeps the old Mesa texture-export path as a
   local fallback if BO-backed slot setup fails.
+- `hello_gl` handles compositor-driven post-map resizes. On Hyprland tiling
+  resizes, it retires old in-flight buffers, commits replacement buffers at the
+  new size immediately, and frees retired GPU/Wayland resources after
+  `wl_buffer.release`.
+- Shared GBM BO allocation and EGLImage import helpers live in
+  `modules/gpu/dmabuf_bo.jai` and are used by both `headless_gl` and
+  `hello_gl`.
 - Task 4 NVIDIA presentation is still pending a dGPU display/session test after
   rebooting into BIOS dGPU mode.
 
