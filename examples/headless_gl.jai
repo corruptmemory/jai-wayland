@@ -1,7 +1,7 @@
 // headless_gl — smoke test for the EGL+GL+gbm stack.
 //
-// Opens /dev/dri/renderD128 (the generic render node, no display privileges),
-// creates a gbm_device, creates an EGL display via EGL_PLATFORM_GBM_KHR,
+// Selects a DRM render node, creates a gbm_device, creates an EGL display via
+// EGL_PLATFORM_GBM_KHR,
 // creates a GL 3.3 core context, loads GL entry points through
 // eglGetProcAddress, allocates an offscreen FBO, glClears to a known color,
 // and reads back the center pixel to verify it matches.
@@ -13,16 +13,27 @@
 
 #import,dir "../modules/EGL";
 #import,dir "../modules/gbm";
+Gpu :: #import,dir "../modules/gpu";
 GL :: #import,dir "../modules/GL";   // vendored; see Task 2.5 in the plan doc
 #import "Basic";
 #import "POSIX";
 
 main :: () {
-    // 1. Open render node. /dev/dri/renderD128 is the non-privileged render
-    //    node: rendering only, no KMS/modeset. Everyone in the `video` group
-    //    can open it; no TTY/DRM master dance required.
-    drm_fd := open("/dev/dri/renderD128".data, O_RDWR | O_CLOEXEC);
-    assert(drm_fd >= 0, "Failed to open /dev/dri/renderD128 (check 'video' group membership)");
+    // 1. Discover and select a render node. Render nodes are non-privileged:
+    //    rendering only, no KMS/modeset or DRM master dance required.
+    nodes: [..] Gpu.Render_Node_Info;
+    assert(Gpu.discover_render_nodes(*nodes), "No DRM render nodes discovered under /dev/dri");
+    Gpu.print_render_nodes(nodes);
+
+    selected, selected_ok := Gpu.choose_render_node(nodes);
+    assert(selected_ok, "No render node matched selection policy");
+    print("Selected render node: % (% id=0x%)\n",
+        selected.path,
+        Gpu.vendor_name(selected.vendor),
+        formatInt(selected.vendor_id, base=16, minimum_digits=4));
+
+    drm_fd := open(temp_c_string(selected.path), O_RDWR | O_CLOEXEC);
+    assert(drm_fd >= 0, "Failed to open % (check render/video group membership)", selected.path);
     defer close(drm_fd);
 
     // 2. Initialize dlopen'd libraries.
@@ -34,6 +45,11 @@ main :: () {
     gbm := gbm_create_device(drm_fd);
     assert(gbm != null, "gbm_create_device failed");
     defer gbm_device_destroy(gbm);
+
+    if gbm_device_get_backend_name != null {
+        print("GBM backend: %\n", to_string(gbm_device_get_backend_name(gbm)));
+    }
+    probe_gbm_bo(gbm);
 
     // 4. Create EGL display on top of gbm.
     dpy := eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR, gbm, null);
@@ -91,8 +107,12 @@ main :: () {
     //    the get-proc-address function; it resolves every entry point we
     //    care about through module-scope function-pointer variables.
     assert(GL.gl_load(eglGetProcAddress), "GL proc loading failed — context GL version too old?");
+    assert(GL.gl_load_egl_image_extensions(eglGetProcAddress),
+        "GL_OES_EGL_image extension missing (need glEGLImageTargetTexture2DOES)");
     major_gl, minor_gl := GL.gl_get_version();
     print("GL %.% loaded\n", major_gl, minor_gl);
+
+    test_bo_backed_fbo(dpy, gbm);
 
     // 7. Create a color texture + framebuffer object, glClear to a
     //    distinctive color, read back the center pixel.
@@ -192,4 +212,174 @@ main :: () {
     //    ensures no dangling binding before the context is destroyed.
     eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     print("OK — EGL+GL+gbm+DMA-BUF smoke test passed\n");
+}
+
+probe_gbm_bo :: (gbm: Gbm_Device) {
+    if gbm_bo_create == null || gbm_bo_destroy == null {
+        print("GBM BO probe skipped: gbm_bo_create/destroy not available\n");
+        return;
+    }
+
+    WIDTH  :: 64;
+    HEIGHT :: 64;
+    FORMAT :: GBM_FORMAT_XRGB8888;
+    FLAGS  :: GBM_BO_USE_RENDERING;
+
+    if gbm_device_is_format_supported != null {
+        supported := gbm_device_is_format_supported(gbm, FORMAT, FLAGS);
+        print("GBM XRGB8888 RENDERING support: %\n", supported != 0);
+    }
+
+    bo := gbm_bo_create(gbm, WIDTH, HEIGHT, FORMAT, FLAGS);
+    if bo == null {
+        print("GBM BO probe: gbm_bo_create failed for XRGB8888 RENDERING\n");
+        return;
+    }
+    defer gbm_bo_destroy(bo);
+
+    format := ifx gbm_bo_get_format != null then gbm_bo_get_format(bo) else FORMAT;
+    stride := ifx gbm_bo_get_stride != null then gbm_bo_get_stride(bo) else 0;
+    planes := ifx gbm_bo_get_plane_count != null then gbm_bo_get_plane_count(bo) else 0;
+    modifier := ifx gbm_bo_get_modifier != null then gbm_bo_get_modifier(bo) else 0;
+    print("GBM BO probe: format=0x% stride=% planes=% modifier=0x%\n",
+        formatInt(format, base=16),
+        stride,
+        planes,
+        formatInt(modifier, base=16));
+
+    if gbm_bo_get_fd != null {
+        fd := gbm_bo_get_fd(bo);
+        if fd >= 0 {
+            print("GBM BO probe: fd=%\n", fd);
+            close(fd);
+        } else {
+            print("GBM BO probe: gbm_bo_get_fd failed\n");
+        }
+    }
+}
+
+test_bo_backed_fbo :: (dpy: EGLDisplay, gbm: Gbm_Device) {
+    if gbm_bo_create == null || gbm_bo_destroy == null {
+        print("BO-backed FBO skipped: gbm_bo_create/destroy not available\n");
+        return;
+    }
+
+    WIDTH  :: 128;
+    HEIGHT :: 128;
+    FORMAT :: GBM_FORMAT_XRGB8888;
+    FLAGS  :: GBM_BO_USE_RENDERING;
+
+    bo := gbm_bo_create(gbm, WIDTH, HEIGHT, FORMAT, FLAGS);
+    assert(bo != null, "BO-backed FBO: gbm_bo_create failed");
+    defer gbm_bo_destroy(bo);
+
+    image, image_fd, image_ok := create_image_from_gbm_bo(dpy, bo);
+    assert(image_ok, "BO-backed FBO: failed to create EGLImage from GBM BO");
+    if image_fd >= 0  defer close(image_fd);
+    defer eglDestroyImageKHR(dpy, image);
+
+    tex: u32;
+    GL.glGenTextures(1, *tex);
+    GL.glBindTexture(GL.GL_TEXTURE_2D, tex);
+    GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
+    GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
+    GL.glEGLImageTargetTexture2DOES(GL.GL_TEXTURE_2D, image);
+    defer GL.glDeleteTextures(1, *tex);
+
+    fbo: u32;
+    GL.glGenFramebuffers(1, *fbo);
+    GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, fbo);
+    GL.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0, GL.GL_TEXTURE_2D, tex, 0);
+    assert(GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER) == GL.GL_FRAMEBUFFER_COMPLETE,
+        "BO-backed FBO: framebuffer not complete");
+    defer GL.glDeleteFramebuffers(1, *fbo);
+
+    GL.glViewport(0, 0, WIDTH, HEIGHT);
+    GL.glClearColor(0.9, 0.1, 0.4, 1.0);
+    GL.glClear(GL.GL_COLOR_BUFFER_BIT);
+
+    pixel: [4] u8;
+    GL.glReadPixels(WIDTH / 2, HEIGHT / 2, 1, 1, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, pixel.data);
+    print("BO-backed FBO center RGBA: (%, %, %, %)\n", pixel[0], pixel[1], pixel[2], pixel[3]);
+
+    // 0.9 * 255 = 230, 0.1 * 255 = 26, 0.4 * 255 = 102. Allow ±1.
+    assert(pixel[0] >= 229 && pixel[0] <= 231, "BO-backed FBO red channel wrong: %", pixel[0]);
+    assert(pixel[1] >= 25  && pixel[1] <= 27,  "BO-backed FBO green channel wrong: %", pixel[1]);
+    assert(pixel[2] >= 101 && pixel[2] <= 103, "BO-backed FBO blue channel wrong: %", pixel[2]);
+
+    if gbm_bo_get_fd != null {
+        fd := gbm_bo_get_fd(bo);
+        assert(fd >= 0, "BO-backed FBO: gbm_bo_get_fd failed");
+        defer close(fd);
+
+        stride := ifx gbm_bo_get_stride != null then gbm_bo_get_stride(bo) else 0;
+        planes := ifx gbm_bo_get_plane_count != null then gbm_bo_get_plane_count(bo) else 0;
+        modifier := ifx gbm_bo_get_modifier != null then gbm_bo_get_modifier(bo) else 0;
+        print("BO-backed FBO export: fd=% stride=% planes=% modifier=0x%\n",
+            fd, stride, planes, formatInt(modifier, base=16));
+    }
+}
+
+create_image_from_gbm_bo :: (dpy: EGLDisplay, bo: Gbm_Bo) -> EGLImage, s32, bool {
+    image := eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
+        cast(EGLClientBuffer) bo, null);
+    if image != null {
+        print("BO-backed FBO import: EGL_NATIVE_PIXMAP_KHR\n");
+        return image, -1, true;
+    }
+
+    native_error := eglGetError();
+    print("BO-backed FBO import: EGL_NATIVE_PIXMAP_KHR failed (err=0x%), trying EGL_LINUX_DMA_BUF_EXT\n",
+        formatInt(native_error, base=16));
+
+    if gbm_bo_get_fd == null || gbm_bo_get_stride == null || gbm_bo_get_format == null {
+        return null, -1, false;
+    }
+
+    fd := gbm_bo_get_fd(bo);
+    if fd < 0  return null, -1, false;
+
+    width := ifx gbm_bo_get_width != null then gbm_bo_get_width(bo) else 0;
+    height := ifx gbm_bo_get_height != null then gbm_bo_get_height(bo) else 0;
+    format := gbm_bo_get_format(bo);
+    stride := gbm_bo_get_stride(bo);
+    offset := ifx gbm_bo_get_offset != null then gbm_bo_get_offset(bo, 0) else 0;
+    modifier := ifx gbm_bo_get_modifier != null then gbm_bo_get_modifier(bo) else 0;
+
+    if gbm_bo_get_modifier != null {
+        attrs := EGLint.[
+            EGL_WIDTH, cast(EGLint) width,
+            EGL_HEIGHT, cast(EGLint) height,
+            EGL_LINUX_DRM_FOURCC_EXT, cast(EGLint) format,
+            EGL_DMA_BUF_PLANE0_FD_EXT, fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT, cast(EGLint) offset,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT, cast(EGLint) stride,
+            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, cast,trunc(EGLint) modifier,
+            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, cast,trunc(EGLint) (modifier >> 32),
+            EGL_NONE,
+        ];
+        image = eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, null, attrs.data);
+    } else {
+        attrs := EGLint.[
+            EGL_WIDTH, cast(EGLint) width,
+            EGL_HEIGHT, cast(EGLint) height,
+            EGL_LINUX_DRM_FOURCC_EXT, cast(EGLint) format,
+            EGL_DMA_BUF_PLANE0_FD_EXT, fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT, cast(EGLint) offset,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT, cast(EGLint) stride,
+            EGL_NONE,
+        ];
+        image = eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, null, attrs.data);
+    }
+
+    if image == null {
+        print("BO-backed FBO import: EGL_LINUX_DMA_BUF_EXT failed (err=0x%)\n",
+            formatInt(eglGetError(), base=16));
+        close(fd);
+        return null, -1, false;
+    }
+
+    print("BO-backed FBO import: EGL_LINUX_DMA_BUF_EXT fd=% stride=% modifier=0x%\n",
+        fd, stride, formatInt(modifier, base=16));
+    return image, fd, true;
 }

@@ -35,6 +35,8 @@ EGL_DEPTH_SIZE         :: 0x3025;
 EGL_SURFACE_TYPE       :: 0x3033;
 EGL_NONE               :: 0x3038;
 EGL_RENDERABLE_TYPE    :: 0x3040;
+EGL_HEIGHT             :: 0x3056;
+EGL_WIDTH              :: 0x3057;
 EGL_OPENGL_API         :: 0x30A2;
 EGL_OPENGL_BIT         :: 0x0008;
 EGL_PBUFFER_BIT        :: 0x0001;
@@ -52,7 +54,17 @@ EGL_VERSION    :: 0x3054;
 EGL_EXTENSIONS :: 0x3055;
 
 // EGL_KHR_image_base targets.
+EGL_NATIVE_PIXMAP_KHR :: 0x30B0;
 EGL_GL_TEXTURE_2D_KHR :: 0x30B1;
+
+// EGL_EXT_image_dma_buf_import.
+EGL_LINUX_DMA_BUF_EXT          :: 0x3270;
+EGL_LINUX_DRM_FOURCC_EXT       :: 0x3271;
+EGL_DMA_BUF_PLANE0_FD_EXT      :: 0x3272;
+EGL_DMA_BUF_PLANE0_OFFSET_EXT  :: 0x3273;
+EGL_DMA_BUF_PLANE0_PITCH_EXT   :: 0x3274;
+EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT :: 0x3443;
+EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT :: 0x3444;
 
 // Core function pointers — populated by init_egl() via dlsym.
 eglGetPlatformDisplay: #type (platform: EGLenum, native_display: *void, attrib_list: *EGLAttrib) -> EGLDisplay #c_call;

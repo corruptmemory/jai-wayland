@@ -18,6 +18,27 @@ This machine is a concrete target:
   - `/usr/lib/gbm/nvidia-drm_gbm.so`
   - `/usr/share/egl/egl_external_platform.d/15_nvidia_gbm.json`
 
+## Implementation Status
+
+As of 2026-04-25:
+
+- Tasks 1-3 are implemented in `headless_gl`.
+- Default render-node selection preserves the current Intel/iGPU path on the
+  laptop's integrated screen.
+- `JAI_WAYLAND_RENDER_NODE=/dev/dri/renderD129` and
+  `JAI_WAYLAND_GPU_VENDOR=nvidia` both select the NVIDIA render node.
+- GBM BO creation/export probes work on Intel and NVIDIA.
+- BO-backed FBO rendering works on Intel via `EGL_NATIVE_PIXMAP_KHR`.
+- BO-backed FBO rendering works on NVIDIA via fallback import through
+  `EGL_LINUX_DMA_BUF_EXT`; NVIDIA rejects direct native-pixmap import with
+  `EGL_BAD_PARAMETER`.
+- `ldd build/headless_gl` still shows no hard-linked EGL, gbm, GL, Wayland,
+  X11, or xcb dependencies.
+
+Task 4 is parked. Resume there by refactoring `hello_gl` slots from the current
+Mesa texture-export path to BO-backed slots, keeping the old path available as a
+fallback until compositor presentation is proven.
+
 ## Current State
 
 `examples/headless_gl.jai` and `examples/hello_gl.jai` hardcode
@@ -54,6 +75,25 @@ modules/gpu/
 The existing `modules/EGL`, `modules/gbm`, and `modules/GL` stay as low-level
 bindings. `modules/gpu` becomes the policy layer that chooses a device and a
 buffer creation path.
+
+## Generator Boundary
+
+The Wayland protocol bindings remain reproducible from XML plus
+`src/generator.jai`. If NVIDIA support requires a different generated protocol
+shape, update the generator and regenerate rather than hand-editing generated
+files under `modules/wayland/<protocol>/`.
+
+Phases 1-2 are outside that boundary. Render-node discovery, GPU selection
+policy, GBM BO function pointers, EGL/GL function pointers, and backend helpers
+are handwritten tracked source, matching the existing `modules/EGL`,
+`modules/gbm`, and `modules/GL` pattern.
+
+For dmabuf feedback, the generated requests and events already exist:
+`zwp_linux_dmabuf_v1.get_default_feedback`,
+`zwp_linux_dmabuf_v1.get_surface_feedback`, and
+`zwp_linux_dmabuf_feedback_v1` events. Task 5 should start by consuming those in
+`modules/wayland/dmabuf.jai`; change the generator only if the generated shape
+proves insufficient.
 
 The preferred render target path should become:
 

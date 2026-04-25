@@ -13,6 +13,7 @@ GLdouble   :: float64;
 GLchar     :: u8;
 GLintptr   :: s64;   // intptr_t on x86_64 Linux
 GLsizeiptr :: s64;
+GLeglImageOES :: *void;
 
 // --- Boolean constants ---
 GL_FALSE :: 0;
@@ -90,6 +91,7 @@ glDeleteTextures: #type (n: GLsizei, textures: *GLuint) #c_call;
 glBindTexture:    #type (target: GLenum, texture: GLuint) #c_call;
 glTexImage2D:     #type (target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type: GLenum, pixels: *void) #c_call;
 glTexParameteri:  #type (target: GLenum, pname: GLenum, param: GLint) #c_call;
+glEGLImageTargetTexture2DOES: #type (target: GLenum, image: GLeglImageOES) #c_call;
 
 // Framebuffer objects
 glGenFramebuffers:        #type (n: GLsizei, framebuffers: *GLuint) #c_call;

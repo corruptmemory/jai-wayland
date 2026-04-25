@@ -1,5 +1,5 @@
 // libgbm bindings — types + runtime dlopen loader.
-// Minimal surface: just enough to create a gbm_device we hand to EGL_PLATFORM_GBM_KHR.
+// Includes gbm_device plus optional BO entry points for GBM-backed DMA-BUF paths.
 
 #load "gbm.jai";
 #load "loader.jai";

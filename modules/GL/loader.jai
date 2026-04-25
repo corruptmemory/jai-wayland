@@ -87,6 +87,13 @@ gl_load :: (get_proc: GL_Get_Proc_Address) -> bool {
     return ok;
 }
 
+gl_load_egl_image_extensions :: (get_proc: GL_Get_Proc_Address) -> bool {
+    if !get_proc  return false;
+
+    glEGLImageTargetTexture2DOES = xx get_proc("glEGLImageTargetTexture2DOES");
+    return glEGLImageTargetTexture2DOES != null;
+}
+
 // Convenience — assumes a GL 3.0+ context. Uses glGetIntegerv which is more
 // reliable than parsing glGetString(GL_VERSION).
 gl_get_version :: () -> major: s32, minor: s32 {
