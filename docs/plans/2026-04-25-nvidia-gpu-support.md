@@ -46,6 +46,12 @@ As of 2026-04-25:
 - Shared GBM BO allocation and EGLImage import helpers live in
   `modules/gpu/dmabuf_bo.jai` and are used by both `headless_gl` and
   `hello_gl`.
+- Task 5 first slice is implemented as read-only diagnostics:
+  `modules/wayland/dmabuf.jai` can collect default and per-surface
+  `zwp_linux_dmabuf_feedback_v1` snapshots, and `hello_dmabuf` prints the
+  feedback main device, format table size, tranches, flags, and sample
+  format/modifier entries. Buffer selection still uses the older global
+  format/modifier list.
 - Task 4 NVIDIA presentation is still pending a dGPU display/session test after
   rebooting into BIOS dGPU mode.
 
@@ -64,11 +70,11 @@ GBM/DMA-BUF first, not EGLStream first. EGLStream is legacy/compositor-dependent
 and should only be considered as a later fallback if GBM cannot cover a required
 target.
 
-`modules/wayland/dmabuf.jai` currently uses global
-`zwp_linux_dmabuf_v1.format` / `.modifier` events. That is enough for the first
-Mesa proof but weak for hybrid GPU routing. The newer feedback API gives
-per-surface tranches and device preference and is the right long-term source of
-truth for cross-GPU/modifier selection.
+`modules/wayland/dmabuf.jai` can now read both the older global
+`zwp_linux_dmabuf_v1.format` / `.modifier` events and read-only
+`zwp_linux_dmabuf_feedback_v1` snapshots. `hello_gl` still selects buffers from
+the global list; the next Task 5 slice should use feedback tranches as the
+source of truth for cross-GPU/modifier selection.
 
 ## Design Direction
 

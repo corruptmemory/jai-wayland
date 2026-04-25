@@ -46,4 +46,82 @@ main :: () {
         }
         array_add(*printed, fmt.format);
     }
+
+    if info.feedback_supported {
+        default_feedback, default_ok := Wayland.get_default_dmabuf_feedback(*info.dmabuf);
+        if default_ok {
+            print_feedback_summary("Default zwp_linux_dmabuf_feedback_v1 snapshot", default_feedback);
+        } else {
+            print("\nDefault zwp_linux_dmabuf_feedback_v1 snapshot incomplete.\n");
+        }
+
+        surface := Wayland.Wl_Surface.{ id = Wayland.allocate_id() };
+        batch: Wayland.MessageBuilder;
+        Wayland.wl_compositor_create_surface(*batch, Wayland.compositor(), surface.id);
+        Wayland.wayland_send(*batch);
+
+        surface_feedback, surface_ok := Wayland.get_surface_dmabuf_feedback(*info.dmabuf, *surface);
+        if surface_ok {
+            print_feedback_summary("Surface zwp_linux_dmabuf_feedback_v1 snapshot", surface_feedback);
+        } else {
+            print("\nSurface zwp_linux_dmabuf_feedback_v1 snapshot incomplete.\n");
+        }
+
+        destroy_batch: Wayland.MessageBuilder;
+        Wayland.wl_surface_destroy(*destroy_batch, *surface);
+        Wayland.wayland_send(*destroy_batch);
+    } else {
+        print("\nzwp_linux_dmabuf_feedback_v1 unavailable; compositor advertised linux-dmabuf v<4.\n");
+    }
+}
+
+print_feedback_summary :: (label: string, feedback: Wayland.Dmabuf_Feedback_Info) {
+    print("\n%:\n", label);
+    print("  complete: %\n", feedback.complete);
+    print("  main device: ");
+    print_device_bytes(feedback.main_device);
+    print("\n");
+    print("  format table entries: %\n", feedback.format_table.count);
+    print("  tranches: %\n", feedback.tranches.count);
+
+    for tranche, i: feedback.tranches {
+        print("    tranche %: flags=0x% target_device=",
+            i,
+            formatInt(tranche.flags, base=16));
+        print_device_bytes(tranche.target_device);
+        print(" formats=%\n", tranche.formats.count);
+
+        max_print :: 8;
+        printed_count := 0;
+        for fmt: tranche.formats {
+            if printed_count >= max_print {
+                print("      ... % more\n", tranche.formats.count - printed_count);
+                break;
+            }
+            print("      ");
+            print_fourcc(fmt.format);
+            print(" modifier=0x%\n", formatInt(fmt.modifier, base=16, minimum_digits=16));
+            printed_count += 1;
+        }
+    }
+}
+
+print_fourcc :: (format: u32) {
+    fourcc_bytes: [4] u8;
+    fourcc_bytes[0] = cast(u8)(format & 0xFF);
+    fourcc_bytes[1] = cast(u8)((format >> 8) & 0xFF);
+    fourcc_bytes[2] = cast(u8)((format >> 16) & 0xFF);
+    fourcc_bytes[3] = cast(u8)((format >> 24) & 0xFF);
+    name: string = .{ count = 4, data = fourcc_bytes.data };
+    print("%", name);
+}
+
+print_device_bytes :: (bytes: [] u8) {
+    if bytes.count == 0 {
+        print("<empty>");
+        return;
+    }
+
+    print("0x");
+    for bytes  print("%", formatInt(it, base=16, minimum_digits=2));
 }
