@@ -35,21 +35,27 @@ As of 2026-04-25:
 - `ldd build/headless_gl` still shows no hard-linked EGL, gbm, GL, Wayland,
   X11, or xcb dependencies.
 
-Task 4 is parked. Resume there by refactoring `hello_gl` slots from the current
-Mesa texture-export path to BO-backed slots, keeping the old path available as a
-fallback until compositor presentation is proven.
+- Task 4 is implemented for the default Intel/iGPU path. `hello_gl` now selects
+  the render node through `modules/gpu`, initializes both presentation slots as
+  GBM BO-backed GL textures/FBOs, and keeps the old Mesa texture-export path as a
+  local fallback if BO-backed slot setup fails.
+- Task 4 NVIDIA presentation is still pending a dGPU display/session test after
+  rebooting into BIOS dGPU mode.
 
 ## Current State
 
-`examples/headless_gl.jai` and `examples/hello_gl.jai` hardcode
-`/dev/dri/renderD128`. That works on the current Mesa/iGPU path but prevents
-selecting the NVIDIA render node.
+`examples/headless_gl.jai` and `examples/hello_gl.jai` now select render nodes
+through `modules/gpu`. The default policy preserves the current Mesa/iGPU path,
+while `JAI_WAYLAND_RENDER_NODE` and `JAI_WAYLAND_GPU_VENDOR` allow explicit
+selection.
 
-The current render path exports a GL texture through
-`EGL_MESA_image_dma_buf_export`. That is a Mesa-oriented path. Modern NVIDIA
-supports GBM, so the first NVIDIA implementation should be GBM/DMA-BUF first,
-not EGLStream first. EGLStream is legacy/compositor-dependent and should only be
-considered as a later fallback if GBM cannot cover a required target.
+`headless_gl` proves BO-backed FBO rendering on Intel and NVIDIA. `hello_gl`
+uses BO-backed Wayland buffer slots on the Intel/iGPU path and keeps the older
+`EGL_MESA_image_dma_buf_export` texture-export path as a local fallback. Modern
+NVIDIA supports GBM, so the first NVIDIA implementation should remain
+GBM/DMA-BUF first, not EGLStream first. EGLStream is legacy/compositor-dependent
+and should only be considered as a later fallback if GBM cannot cover a required
+target.
 
 `modules/wayland/dmabuf.jai` currently uses global
 `zwp_linux_dmabuf_v1.format` / `.modifier` events. That is enough for the first
@@ -231,7 +237,10 @@ not implement it unless the selected format requires it.
 Checkpoint:
 
 - `hello_gl` works on the current Intel/Mesa path using BO-backed slots.
-- The old Mesa texture-export path can still be selected if needed.
+- The old Mesa texture-export path remains available as a local fallback when
+  BO-backed slot setup fails before the Wayland buffer is submitted.
+- NVIDIA `hello_gl` presentation remains to be tested after booting into a dGPU
+  session.
 
 Validation:
 

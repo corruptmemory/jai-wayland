@@ -12,21 +12,31 @@
 #import,dir "../modules/wayland";
 #import,dir "../modules/EGL";
 #import,dir "../modules/gbm";
+Gpu :: #import,dir "../modules/gpu";
 GL :: #import,dir "../modules/GL";
 
 #import "Basic";
 #import "Math";
 #import "POSIX";
 
-WIDTH  :: 640;
-HEIGHT :: 480;
+DEFAULT_WIDTH  :: 640;
+DEFAULT_HEIGHT :: 480;
 
 Gl_Slot :: struct {
     tex:       u32;
     fbo:       u32;
     image:     EGLImage;
+    bo:        Gbm_Bo;
     buffer:    Wl_Buffer;
-    fd:        s32;
+    fd:        s32 = -1;
+    image_fd:  s32 = -1;
+    stride:    u32;
+    offset:    u32;
+    modifier:  u64;
+    format:    u32;
+    width:     s32;
+    height:    s32;
+    bo_backed: bool;
     in_flight: bool;
 }
 
@@ -86,21 +96,8 @@ main :: () {
         return;
     }
 
-    // --- Pre-allocate two GL-backed buffer slots ---
-    slots: [2] Gl_Slot;
-    batch: MessageBuilder;
-    for * slot, i: slots {
-        if !init_slot(slot, egl, *dmabuf_info.dmabuf, *batch, format, modifier) {
-            print("Failed to initialize slot %\n", i);
-            return;
-        }
-    }
-    wayland_send(*batch);
-
-    // --- Paint slot 0 with the initial frame ---
-    paint_gl_frame(*slots[0], tri, 0.0);
-
     // --- Create surface + xdg roles ---
+    batch: MessageBuilder;
     surface := Wl_Surface.{ id = allocate_id() };
     xdg_surface := Xdg_Surface.{ id = allocate_id() };
     toplevel := Xdg_Toplevel.{ id = allocate_id() };
@@ -112,9 +109,18 @@ main :: () {
     wayland_send(*batch);
 
     // --- Wait for initial configure ---
+    win_width:  s32 = DEFAULT_WIDTH;
+    win_height: s32 = DEFAULT_HEIGHT;
     configure_serial: u32 = 0;
     for session() {
-        if it.object_id == xdg_surface.id && it.opcode == XDG_SURFACE_CONFIGURE {
+        if it.object_id == toplevel.id && it.opcode == XDG_TOPLEVEL_CONFIGURE {
+            args: Xdg_Toplevel_Configure_Args;
+            unmarshal(*args, it.payload, recv);
+            if args.width > 0 && args.height > 0 {
+                win_width = args.width;
+                win_height = args.height;
+            }
+        } else if it.object_id == xdg_surface.id && it.opcode == XDG_SURFACE_CONFIGURE {
             configure_serial = read_u32(it.payload);
             break;
         }
@@ -124,12 +130,28 @@ main :: () {
         return;
     }
 
+    print("Configured window: %x%\n", win_width, win_height);
+
+    // --- Pre-allocate two GL-backed buffer slots at compositor size ---
+    slots: [2] Gl_Slot;
+    for * slot, i: slots {
+        if !init_slot(slot, egl, *dmabuf_info.dmabuf, *batch, format, modifier, win_width, win_height) {
+            print("Failed to initialize slot %\n", i);
+            return;
+        }
+    }
+    defer for * slots  destroy_slot(it, egl);
+    wayland_send(*batch);
+
+    // --- Paint slot 0 with the initial frame ---
+    paint_gl_frame(*slots[0], tri, 0.0);
+
     // --- Ack, attach slot 0, request first frame callback, commit ---
     frame_callback_id := allocate_id();
     xdg_surface_ack_configure(*batch, *xdg_surface, configure_serial);
     wl_surface_frame(*batch, *surface, frame_callback_id);
     wl_surface_attach(*batch, *surface, *slots[0].buffer, 0, 0);
-    wl_surface_damage_buffer(*batch, *surface, 0, 0, WIDTH, HEIGHT);
+    wl_surface_damage_buffer(*batch, *surface, 0, 0, slots[0].width, slots[0].height);
     wl_surface_commit(*batch, *surface);
     wayland_send(*batch);
     slots[0].in_flight = true;
@@ -158,7 +180,7 @@ main :: () {
                 frame_callback_id = allocate_id();
                 wl_surface_frame(*batch, *surface, frame_callback_id);
                 wl_surface_attach(*batch, *surface, *slot.buffer, 0, 0);
-                wl_surface_damage_buffer(*batch, *surface, 0, 0, WIDTH, HEIGHT);
+                wl_surface_damage_buffer(*batch, *surface, 0, 0, slot.width, slot.height);
                 wl_surface_commit(*batch, *surface);
                 wayland_send(*batch);
 
@@ -248,12 +270,26 @@ EGL_Context :: struct {
 }
 
 init_gl_stack :: (egl: *EGL_Context) -> bool {
-    egl.drm_fd = open("/dev/dri/renderD128".data, O_RDWR | O_CLOEXEC);
+    nodes: [..] Gpu.Render_Node_Info;
+    if !Gpu.discover_render_nodes(*nodes)  return false;
+    Gpu.print_render_nodes(nodes);
+
+    selected, selected_ok := Gpu.choose_render_node(nodes);
+    if !selected_ok  return false;
+    print("Selected render node: % (% id=0x%)\n",
+        selected.path,
+        Gpu.vendor_name(selected.vendor),
+        formatInt(selected.vendor_id, base=16, minimum_digits=4));
+
+    egl.drm_fd = open(temp_c_string(selected.path), O_RDWR | O_CLOEXEC);
     if egl.drm_fd < 0  return false;
     if !init_egl() || !init_gbm()  return false;
 
     egl.gbm = gbm_create_device(egl.drm_fd);
     if !egl.gbm  return false;
+    if gbm_device_get_backend_name != null {
+        print("GBM backend: %\n", to_string(gbm_device_get_backend_name(egl.gbm)));
+    }
 
     egl.dpy = eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR, egl.gbm, null);
     if egl.dpy == EGL_NO_DISPLAY  return false;
@@ -283,6 +319,9 @@ init_gl_stack :: (egl: *EGL_Context) -> bool {
 
     if eglMakeCurrent(egl.dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl.ctx) != EGL_TRUE  return false;
     if !GL.gl_load(eglGetProcAddress)  return false;
+    if !GL.gl_load_egl_image_extensions(eglGetProcAddress) {
+        print("Warning: GL_OES_EGL_image missing; BO-backed slots disabled\n");
+    }
     return true;
 }
 
@@ -297,11 +336,152 @@ destroy_gl_stack :: (egl: *EGL_Context) {
 // The wl_buffer and params messages get queued into `batch`; the caller
 // sends when ready (we batch all slots into a single send).
 init_slot :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
-              batch: *MessageBuilder, format: u32, modifier: u64) -> bool
+              batch: *MessageBuilder, format: u32, modifier: u64, width: s32, height: s32) -> bool
+{
+    slot_path_ptr := getenv("JAI_WAYLAND_GL_SLOT_PATH");
+    if slot_path_ptr != null && to_string(slot_path_ptr) == "mesa" {
+        print("Using Mesa texture-export slot path due to JAI_WAYLAND_GL_SLOT_PATH=mesa\n");
+        return init_slot_mesa(slot, egl, dmabuf, batch, format, modifier, width, height);
+    }
+
+    if init_slot_bo(slot, egl, dmabuf, batch, format, modifier, width, height) {
+        print("Initialized BO-backed slot buffer=% format=0x% modifier=0x%\n",
+            slot.buffer.id,
+            formatInt(slot.format, base=16),
+            formatInt(slot.modifier, base=16));
+        return true;
+    }
+
+    destroy_slot(slot, egl);
+    slot.* = .{};
+    print("BO-backed slot initialization failed; falling back to Mesa texture export\n");
+    return init_slot_mesa(slot, egl, dmabuf, batch, format, modifier, width, height);
+}
+
+init_slot_bo :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
+                 batch: *MessageBuilder, format: u32, modifier: u64, width: s32, height: s32) -> bool
+{
+    if gbm_bo_create == null || gbm_bo_destroy == null  return false;
+    if GL.glEGLImageTargetTexture2DOES == null  return false;
+
+    flags := cast(u32) GBM_BO_USE_RENDERING;
+    if gbm_device_is_format_supported != null {
+        if gbm_device_is_format_supported(egl.gbm, format, flags) == 0  return false;
+    }
+
+    slot.bo = create_slot_bo(egl.gbm, format, modifier, flags, width, height);
+    if slot.bo == null  return false;
+
+    image_ok: bool;
+    slot.image, slot.image_fd, image_ok = create_image_from_gbm_bo(egl.dpy, slot.bo);
+    if !image_ok  return false;
+
+    GL.glGenTextures(1, *slot.tex);
+    GL.glBindTexture(GL.GL_TEXTURE_2D, slot.tex);
+    GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
+    GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
+    GL.glEGLImageTargetTexture2DOES(GL.GL_TEXTURE_2D, slot.image);
+
+    GL.glGenFramebuffers(1, *slot.fbo);
+    GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, slot.fbo);
+    GL.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0,
+        GL.GL_TEXTURE_2D, slot.tex, 0);
+    if GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER) != GL.GL_FRAMEBUFFER_COMPLETE  return false;
+
+    if gbm_bo_get_fd == null || gbm_bo_get_stride == null  return false;
+    fd := gbm_bo_get_fd(slot.bo);
+    if fd < 0  return false;
+
+    slot.fd = fd;
+    slot.stride = gbm_bo_get_stride(slot.bo);
+    slot.offset = ifx gbm_bo_get_offset != null then gbm_bo_get_offset(slot.bo, 0) else 0;
+    planes := ifx gbm_bo_get_plane_count != null then gbm_bo_get_plane_count(slot.bo) else 1;
+    if planes != 1  return false;
+
+    slot.format = format;
+    slot.modifier = modifier;
+    slot.width = width;
+    slot.height = height;
+    slot.bo_backed = true;
+    queue_dmabuf_buffer(batch, dmabuf, *slot.buffer, slot.fd, slot.offset, slot.stride, format, modifier, width, height);
+    return true;
+}
+
+create_slot_bo :: (gbm: Gbm_Device, format: u32, modifier: u64, flags: u32, width: s32, height: s32) -> Gbm_Bo {
+    if modifier == DRM_FORMAT_MOD_INVALID {
+        return gbm_bo_create(gbm, cast(u32) width, cast(u32) height, format, flags);
+    }
+
+    modifiers := u64.[ modifier ];
+    if gbm_bo_create_with_modifiers2 != null {
+        return gbm_bo_create_with_modifiers2(gbm, cast(u32) width, cast(u32) height, format, modifiers.data, modifiers.count, flags);
+    }
+    if gbm_bo_create_with_modifiers != null {
+        return gbm_bo_create_with_modifiers(gbm, cast(u32) width, cast(u32) height, format, modifiers.data, modifiers.count);
+    }
+
+    return gbm_bo_create(gbm, cast(u32) width, cast(u32) height, format, flags);
+}
+
+create_image_from_gbm_bo :: (dpy: EGLDisplay, bo: Gbm_Bo) -> EGLImage, s32, bool {
+    image := eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
+        cast(EGLClientBuffer) bo, null);
+    if image != null  return image, -1, true;
+
+    if gbm_bo_get_fd == null || gbm_bo_get_stride == null || gbm_bo_get_format == null {
+        return null, -1, false;
+    }
+
+    fd := gbm_bo_get_fd(bo);
+    if fd < 0  return null, -1, false;
+
+    width := ifx gbm_bo_get_width != null then gbm_bo_get_width(bo) else DEFAULT_WIDTH;
+    height := ifx gbm_bo_get_height != null then gbm_bo_get_height(bo) else DEFAULT_HEIGHT;
+    format := gbm_bo_get_format(bo);
+    stride := gbm_bo_get_stride(bo);
+    offset := ifx gbm_bo_get_offset != null then gbm_bo_get_offset(bo, 0) else 0;
+    modifier := ifx gbm_bo_get_modifier != null then gbm_bo_get_modifier(bo) else 0;
+
+    if gbm_bo_get_modifier != null {
+        attrs := EGLint.[
+            EGL_WIDTH, cast(EGLint) width,
+            EGL_HEIGHT, cast(EGLint) height,
+            EGL_LINUX_DRM_FOURCC_EXT, cast(EGLint) format,
+            EGL_DMA_BUF_PLANE0_FD_EXT, fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT, cast(EGLint) offset,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT, cast(EGLint) stride,
+            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, cast,trunc(EGLint) modifier,
+            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, cast,trunc(EGLint) (modifier >> 32),
+            EGL_NONE,
+        ];
+        image = eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, null, attrs.data);
+    } else {
+        attrs := EGLint.[
+            EGL_WIDTH, cast(EGLint) width,
+            EGL_HEIGHT, cast(EGLint) height,
+            EGL_LINUX_DRM_FOURCC_EXT, cast(EGLint) format,
+            EGL_DMA_BUF_PLANE0_FD_EXT, fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT, cast(EGLint) offset,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT, cast(EGLint) stride,
+            EGL_NONE,
+        ];
+        image = eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, null, attrs.data);
+    }
+
+    if image == null {
+        close(fd);
+        return null, -1, false;
+    }
+
+    return image, fd, true;
+}
+
+init_slot_mesa :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
+                  batch: *MessageBuilder, format: u32, modifier: u64, width: s32, height: s32) -> bool
 {
     GL.glGenTextures(1, *slot.tex);
     GL.glBindTexture(GL.GL_TEXTURE_2D, slot.tex);
-    GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, WIDTH, HEIGHT, 0,
+    GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, width, height, 0,
         GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, null);
     GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
     GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
@@ -319,27 +499,46 @@ init_slot :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V1,
     fd, stride, offset: s32;
     if eglExportDMABUFImageMESA(egl.dpy, slot.image, *fd, *stride, *offset) != EGL_TRUE  return false;
     slot.fd = fd;
+    slot.stride = cast(u32) stride;
+    slot.offset = cast(u32) offset;
+    slot.format = format;
+    slot.modifier = modifier;
+    slot.width = width;
+    slot.height = height;
 
+    queue_dmabuf_buffer(batch, dmabuf, *slot.buffer, fd, cast(u32) offset, cast(u32) stride, format, modifier, width, height);
+    return true;
+}
+
+queue_dmabuf_buffer :: (batch: *MessageBuilder, dmabuf: *Zwp_Linux_Dmabuf_V1, buffer: *Wl_Buffer,
+                        fd: s32, offset: u32, stride: u32, format: u32, modifier: u64, width: s32, height: s32) {
     params := Zwp_Linux_Buffer_Params_V1.{ id = allocate_id() };
     zwp_linux_dmabuf_v1_create_params(batch, dmabuf, params.id);
     zwp_linux_buffer_params_v1_add(batch, *params,
         fd          = cast(Fd) fd,
         plane_idx   = 0,
-        offset      = cast(u32) offset,
-        stride      = cast(u32) stride,
+        offset      = offset,
+        stride      = stride,
         modifier_hi = cast(u32)(modifier >> 32),
         modifier_lo = cast(u32)(modifier & 0xFFFFFFFF));
 
-    slot.buffer = Wl_Buffer.{ id = allocate_id() };
+    buffer.* = Wl_Buffer.{ id = allocate_id() };
     zwp_linux_buffer_params_v1_create_immed(batch, *params,
-        new_id = slot.buffer.id,
-        width  = WIDTH,
-        height = HEIGHT,
+        new_id = buffer.id,
+        width  = width,
+        height = height,
         format = format,
         flags  = 0);
     zwp_linux_buffer_params_v1_destroy(batch, *params);
+}
 
-    return true;
+destroy_slot :: (slot: *Gl_Slot, egl: EGL_Context) {
+    if slot.fbo != 0  GL.glDeleteFramebuffers(1, *slot.fbo);
+    if slot.tex != 0  GL.glDeleteTextures(1, *slot.tex);
+    if slot.image != null  eglDestroyImageKHR(egl.dpy, slot.image);
+    if slot.bo != null  gbm_bo_destroy(slot.bo);
+    if slot.fd >= 0  close(slot.fd);
+    if slot.image_fd >= 0  close(slot.image_fd);
 }
 
 find_free_slot :: (slots: [] Gl_Slot) -> int {
@@ -491,7 +690,7 @@ compile_shader :: (kind: GL.GLenum, src: string) -> sh: u32, ok: bool {
 
 paint_gl_frame :: (slot: *Gl_Slot, tri: Triangle, t: float) {
     GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, slot.fbo);
-    GL.glViewport(0, 0, WIDTH, HEIGHT);
+    GL.glViewport(0, 0, slot.width, slot.height);
     GL.glClearColor(0.05, 0.05, 0.08, 1.0);   // dark background
     GL.glClear(GL.GL_COLOR_BUFFER_BIT);
 
