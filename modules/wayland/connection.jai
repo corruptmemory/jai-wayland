@@ -72,6 +72,33 @@ wayland_connect :: (conn: *Connection) -> bool {
     return true;
 }
 
+// A free-list ID recycler for short-lived Wayland objects (e.g. wl_callback).
+//
+// Mutter (and libwayland in general) requires client-allocated IDs to be
+// strictly sequential — no gaps. Pre-reserving a block by advancing next_id
+// violates this: the compositor rejects the first message whose new_id skips
+// any value. Id_Cache avoids this by falling back to allocate_id() (sequential)
+// when the free list is empty. Destroyed IDs are returned to the free list via
+// cache_free and reused on the next allocation without touching next_id.
+Id_Cache :: struct {
+    free: [..] u32;
+}
+
+// Allocate an ID: pop from the free list, or fall back to sequential allocation.
+cache_alloc :: (cache: *Id_Cache, conn: *Connection) -> u32 {
+    if cache.free.count > 0 {
+        id := cache.free[cache.free.count - 1];
+        cache.free.count -= 1;
+        return id;
+    }
+    return allocate_id(conn);
+}
+
+// Return a destroyed ID to the free list for reuse.
+cache_free :: (cache: *Id_Cache, id: u32) {
+    array_add(*cache.free, id);
+}
+
 // Close the Wayland connection.
 wayland_disconnect :: (conn: *Connection) {
     if conn.socket_fd >= 0 {

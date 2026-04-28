@@ -136,6 +136,10 @@ allocate_id :: inline () -> u32 {
     return allocate_id(*context.wayland_session.conn);
 }
 
+cache_alloc :: inline (cache: *Id_Cache) -> u32 {
+    return cache_alloc(cache, *context.wayland_session.conn);
+}
+
 wayland_send :: (batch: *MessageBuilder, drain: bool = false) -> bool {
     if !wayland_send(*context.wayland_session.conn, batch)  return false;
     if drain {

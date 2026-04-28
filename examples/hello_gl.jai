@@ -156,8 +156,13 @@ main :: () {
     // --- Paint slot 0 with the initial frame ---
     paint_gl_frame(*slots[0], tri, 0.0);
 
+    // ID recycler for wl_callback objects (fire-once destructors).
+    // Uses sequential allocate_id() when the free list is empty,
+    // then recycles the ID after WL_CALLBACK_DONE via cache_free.
+    frame_cache: Id_Cache;
+
     // --- Ack, attach slot 0, request first frame callback, commit ---
-    frame_callback_id := allocate_id();
+    frame_callback_id := cache_alloc(*frame_cache);
     xdg_surface_ack_configure(*batch, *xdg_surface, configure_serial);
     wl_surface_frame(*batch, *surface, frame_callback_id);
     wl_surface_attach(*batch, *surface, *slots[0].buffer, 0, 0);
@@ -202,7 +207,7 @@ main :: () {
                 win_height = resize_height;
 
                 paint_gl_frame(*slots[0], tri, rotation_angle(rotation_start));
-                frame_callback_id = allocate_id();
+                frame_callback_id = cache_alloc(*frame_cache);
                 xdg_surface_ack_configure(*batch, *xdg_surface, resize_serial);
                 wl_surface_frame(*batch, *surface, frame_callback_id);
                 wl_surface_attach(*batch, *surface, *slots[0].buffer, 0, 0);
@@ -220,7 +225,7 @@ main :: () {
                     slot := *slots[slot_idx];
                     paint_gl_frame(slot, tri, rotation_angle(rotation_start));
 
-                    frame_callback_id = allocate_id();
+                    frame_callback_id = cache_alloc(*frame_cache);
                     wl_surface_frame(*batch, *surface, frame_callback_id);
                     wl_surface_attach(*batch, *surface, *slot.buffer, 0, 0);
                     wl_surface_damage_buffer(*batch, *surface, 0, 0, slot.width, slot.height);
@@ -241,6 +246,7 @@ main :: () {
         // as one or the other. Callback check first because its id set
         // is the most dynamic (allocated fresh every frame).
         if it.object_id == frame_callback_id && it.opcode == WL_CALLBACK_DONE {
+            cache_free(*frame_cache, frame_callback_id);
             frame_requested = false;
             dirty = true;    // continuous animation
             continue;
