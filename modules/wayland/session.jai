@@ -41,7 +41,7 @@ for_expansion :: (session: *WaylandSession, body: Code, flags: For_Flags) #expan
                     err_obj := read_u32(header.payload);
                     err_code := read_u32(header.payload + 4);
                     err_msg, _ := read_string(header.payload + 8);
-                    print("FATAL: wl_display.error object=% code=%: %\n", err_obj, err_code, err_msg);
+                    log("FATAL: wl_display.error object=% code=%: %", err_obj, err_code, err_msg, flags=.ERROR);
                     break bts;
                 } else if header.object_id == session.wm_base.id && header.opcode == XDG_WM_BASE_PING {
                     serial := read_u32(header.payload);
@@ -64,7 +64,7 @@ init_wayland_session :: () -> bool {
     set_allocators(*s.pool);
 
     if !wayland_connect(*s.conn) {
-        print("Could not connect to Wayland compositor.\n");
+        log("Could not connect to Wayland compositor.", flags=.ERROR);
         release(*s.pool);
         free(s);
         return false;
@@ -84,7 +84,7 @@ init_wayland_session :: () -> bool {
     _, wm_ok   := get_global("xdg_wm_base");
 
     if !comp_ok || !shm_ok || !wm_ok {
-        print("Missing required globals\n");
+        log("Missing required globals", flags=.ERROR);
         wayland_disconnect(*s.conn);
         release(*s.pool);
         free(s);

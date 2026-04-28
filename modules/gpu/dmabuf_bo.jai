@@ -48,13 +48,13 @@ create_image_from_gbm_bo :: (dpy: EGLDisplay, bo: Gbm_Bo, fallback_width: s32, f
     image := eglCreateImageKHR(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
         cast(EGLClientBuffer) bo, null);
     if image != null {
-        if verbose  print("BO EGLImage import: EGL_NATIVE_PIXMAP_KHR\n");
+        if verbose  log("BO EGLImage import: EGL_NATIVE_PIXMAP_KHR");
         return image, -1, true;
     }
 
     native_error := eglGetError();
     if verbose {
-        print("BO EGLImage import: EGL_NATIVE_PIXMAP_KHR failed (err=0x%), trying EGL_LINUX_DMA_BUF_EXT\n",
+        log("BO EGLImage import: EGL_NATIVE_PIXMAP_KHR failed (err=0x%), trying EGL_LINUX_DMA_BUF_EXT",
             formatInt(native_error, base=16));
     }
 
@@ -100,7 +100,7 @@ create_image_from_gbm_bo :: (dpy: EGLDisplay, bo: Gbm_Bo, fallback_width: s32, f
 
     if image == null {
         if verbose {
-            print("BO EGLImage import: EGL_LINUX_DMA_BUF_EXT failed (err=0x%)\n",
+            log("BO EGLImage import: EGL_LINUX_DMA_BUF_EXT failed (err=0x%)",
                 formatInt(eglGetError(), base=16));
         }
         close(fd);
@@ -108,7 +108,7 @@ create_image_from_gbm_bo :: (dpy: EGLDisplay, bo: Gbm_Bo, fallback_width: s32, f
     }
 
     if verbose {
-        print("BO EGLImage import: EGL_LINUX_DMA_BUF_EXT fd=% stride=% modifier=0x%\n",
+        log("BO EGLImage import: EGL_LINUX_DMA_BUF_EXT fd=% stride=% modifier=0x%",
             fd, stride, formatInt(modifier, base=16));
     }
     return image, fd, true;

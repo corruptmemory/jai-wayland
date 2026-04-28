@@ -84,13 +84,13 @@ choose_render_node :: (nodes: [] Render_Node_Info) -> Render_Node_Info, bool {
 
 print_render_nodes :: (nodes: [] Render_Node_Info) {
     if !nodes {
-        print("Render nodes: none discovered\n");
+        log("Render nodes: none discovered");
         return;
     }
 
-    print("Render nodes:\n");
+    log("Render nodes:");
     for node: nodes {
-        print("  % vendor=% id=0x%\n",
+        log("  % vendor=% id=0x%",
             node.path,
             vendor_name(node.vendor),
             formatInt(node.vendor_id, base=16, minimum_digits=4));
