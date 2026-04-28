@@ -72,31 +72,50 @@ wayland_connect :: (conn: *Connection) -> bool {
     return true;
 }
 
-// A free-list ID recycler for short-lived Wayland objects (e.g. wl_callback).
+WAYLAND_SERVER_ID_START :: 0xff000000;
+
+// A stateful ID recycler for short-lived Wayland objects (e.g. wl_callback).
 //
 // Mutter (and libwayland in general) requires client-allocated IDs to be
 // strictly sequential — no gaps. Pre-reserving a block by advancing next_id
 // violates this: the compositor rejects the first message whose new_id skips
-// any value. Id_Cache avoids this by falling back to allocate_id() (sequential)
-// when the free list is empty. Destroyed IDs are returned to the free list via
-// cache_free and reused on the next allocation without touching next_id.
+// any value. Id_Cache avoids this by falling back to allocate_id() when all
+// cached entries are live. Destroyed IDs are marked reusable via cache_free and
+// returned on the next allocation without touching next_id.
+Cached_Id :: struct {
+    id:   u32;
+    live: bool;
+}
+
 Id_Cache :: struct {
-    free: [..] u32;
+    entries: [..] Cached_Id;
 }
 
-// Allocate an ID: pop from the free list, or fall back to sequential allocation.
+// Allocate an ID: reuse a dead cached entry, or fall back to sequential allocation.
 cache_alloc :: (cache: *Id_Cache, conn: *Connection) -> u32 {
-    if cache.free.count > 0 {
-        id := cache.free[cache.free.count - 1];
-        cache.free.count -= 1;
-        return id;
+    for * entry: cache.entries {
+        if !entry.live {
+            entry.live = true;
+            return entry.id;
+        }
     }
-    return allocate_id(conn);
+
+    id := allocate_id(conn);
+    array_add(*cache.entries, .{ id = id, live = true });
+    return id;
 }
 
-// Return a destroyed ID to the free list for reuse.
+// Mark a destroyed ID reusable. The ID must belong to this cache and be live.
 cache_free :: (cache: *Id_Cache, id: u32) {
-    array_add(*cache.free, id);
+    for * entry: cache.entries {
+        if entry.id == id {
+            assert(entry.live, "Wayland ID cache double-free: id=%", id);
+            entry.live = false;
+            return;
+        }
+    }
+
+    assert(false, "Wayland ID cache free of unknown id=%", id);
 }
 
 // Close the Wayland connection.
@@ -109,6 +128,9 @@ wayland_disconnect :: (conn: *Connection) {
 
 // Allocate the next client-side object ID.
 allocate_id :: (conn: *Connection) -> u32 {
+    assert(conn.next_id > 1, "Wayland client object ID allocator was not initialized past wl_display id=1");
+    assert(conn.next_id < WAYLAND_SERVER_ID_START, "Wayland client object ID space exhausted");
+
     id := conn.next_id;
     conn.next_id += 1;
     return id;

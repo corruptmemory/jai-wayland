@@ -67,6 +67,43 @@ test_request_arg_structs :: () {
     print("  PASS: test_request_arg_structs\n");
 }
 
+test_allocate_id_bounds :: () {
+    conn: Connection;
+    conn.next_id = 2;
+    assert(allocate_id(*conn) == 2);
+    assert(allocate_id(*conn) == 3);
+
+    conn.next_id = WAYLAND_SERVER_ID_START - 1;
+    assert(allocate_id(*conn) == WAYLAND_SERVER_ID_START - 1);
+    assert(conn.next_id == WAYLAND_SERVER_ID_START);
+    print("  PASS: test_allocate_id_bounds\n");
+}
+
+test_id_cache_reuse :: () {
+    conn: Connection;
+    conn.next_id = 10;
+
+    cache: Id_Cache;
+    first := cache_alloc(*cache, *conn);
+    second := cache_alloc(*cache, *conn);
+
+    assert(first == 10);
+    assert(second == 11);
+    assert(conn.next_id == 12);
+    assert(cache.entries.count == 2);
+    assert(cache.entries[0].live);
+    assert(cache.entries[1].live);
+
+    cache_free(*cache, first);
+    assert(!cache.entries[0].live);
+
+    reused := cache_alloc(*cache, *conn);
+    assert(reused == first);
+    assert(conn.next_id == 12);
+    assert(cache.entries[0].live);
+    print("  PASS: test_id_cache_reuse\n");
+}
+
 main :: () {
     print("Running compilation tests...\n\n");
     print("generated module:\n");
@@ -79,5 +116,7 @@ main :: () {
     test_fd_type();
     test_type_metadata();
     test_request_arg_structs();
+    test_allocate_id_bounds();
+    test_id_cache_reuse();
     print("\nAll tests passed.\n");
 }
