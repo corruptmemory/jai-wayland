@@ -59,7 +59,7 @@ main :: () {
 
     // --- EGL + GL stack ---
     egl: EGL_Context;
-    if !init_gl_stack(*egl) {
+    if !init_gl_stack(*egl ,, allocator = temp) {
         print("Could not initialize EGL/GL\n");
         return;
     }
