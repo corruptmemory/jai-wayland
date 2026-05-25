@@ -52,8 +52,18 @@ build :: () {
           case "hello_gl";
             build_and_run_test("hello_gl", "hello_gl", "examples/hello_gl.jai", "build");
             set_build_options_dc(.{do_output=false});
+          case "headless_vulkan";
+            build_and_run_test("headless_vulkan", "headless_vulkan", "examples/headless_vulkan.jai", "build");
+            set_build_options_dc(.{do_output=false});
+          case "headless_vulkan_dmabuf";
+            build_and_run_test("headless_vulkan_dmabuf", "headless_vulkan_dmabuf", "examples/headless_vulkan_dmabuf.jai", "build");
+            set_build_options_dc(.{do_output=false});
+          case "hello_vulkan_dmabuf";
+            if !compile_vulkan_example_shaders()  exit(1);
+            build_and_run_test("hello_vulkan_dmabuf", "hello_vulkan_dmabuf", "examples/hello_vulkan_dmabuf.jai", "build");
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'hello_dmabuf', 'hello_gl'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf'.\n", arg));
         }
     }
 }
@@ -116,7 +126,32 @@ build_and_run_generate :: (options: Build_Options) {
     set_build_options_dc(.{do_output=false});
 }
 
+compile_vulkan_example_shaders :: () -> bool {
+    make_directory_if_it_does_not_exist("build/shaders", recursive = true);
+
+    specs := Shader_Spec.[
+        .{source = "examples/shaders/hello_vulkan_triangle.vert", output = "build/shaders/hello_vulkan_triangle.vert.spv"},
+        .{source = "examples/shaders/hello_vulkan_triangle.frag", output = "build/shaders/hello_vulkan_triangle.frag.spv"},
+    ];
+
+    for specs {
+        result := run_command("glslc", it.source, "-o", it.output);
+        if result.exit_code != 0 {
+            compiler_report(tprint("Shader compilation failed: glslc % -o %\n", it.source, it.output));
+            return false;
+        }
+    }
+
+    return true;
+}
+
+Shader_Spec :: struct {
+    source: string;
+    output: string;
+}
+
 #import "Basic";
 #import "Compiler";
 #import "File";
+#import "Process";
 Autorun :: #import "Autorun";

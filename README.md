@@ -9,7 +9,7 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 **Key decisions:**
 
 - **No libwayland dependency.** The Wayland wire protocol is simple — structured messages over a Unix socket with fd passing via `sendmsg`/`recvmsg`. No reason to link a C library for that.
-- **No hard-linked shared objects.** Like many OpenGL loaders, we use function pointer tables populated at runtime via `dlopen`. Nothing shows up under `ldd`.
+- **No hard-linked shared objects.** Like many OpenGL and Vulkan loaders, we use function pointer tables populated at runtime via `dlopen`. Nothing shows up under `ldd`.
 - **Code generation from protocol XML.** Wayland protocols are defined in XML files. We parse them and generate Jai bindings — interface structs, opcode constants, and dispatch tables.
 - **Compile-time marshalling.** Request functions use a compile-time `marshal` macro that walks arg struct types via `type_info` and emits specialized serialization code. Zero runtime reflection, zero branches — just raw stores.
 
@@ -57,30 +57,40 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 - 109 tests across 6 test suites (xml, generator, wire, marshal, unmarshal, compile)
 - Tested live against Hyprland compositor on Artix Linux
 
-**Phase 5 (complete, GL path on Mesa):** GPU rendering via OpenGL 3.3 core, end-to-end GL → DMA-BUF → Wayland without any libwayland or libGL linkage.
+**Phase 5 (complete, Mesa + NVIDIA/hybrid):** GPU rendering via OpenGL 3.3 core, end-to-end GL → DMA-BUF → Wayland without any libwayland or libGL linkage.
 
 - **Vendored GPU bindings** — `modules/EGL/`, `modules/gbm/`, `modules/GL/`. Same pattern as the Wayland wire code: types + constants + function-pointer variable declarations in one file, `init_X()` loader in another (`dlopen` + `dlsym`). No `#foreign`, no build-time linkage. We vendor our own minimal GL instead of using Jai's stock GL module because Jai's `glad_core.jai` hard-links `libGL` and its `GL.jai` imports `Window_Type` which pulls in X11 transitively.
-- **EGL setup** — `EGL_PLATFORM_GBM_KHR` on `/dev/dri/renderD128` (the non-privileged render node). GL 3.3 core context, surfaceless (render to FBOs, never bind a surface).
-- **DMA-BUF export** — `eglCreateImageKHR(EGL_GL_TEXTURE_2D_KHR, tex)` wraps a GL texture as an EGLImage. `eglExportDMABUFImageMESA` returns fd + stride + offset. `eglExportDMABUFImageQueryMESA` returns fourcc + modifier.
-- **wl_buffer from DMA-BUF** — `modules/wayland/dmabuf.jai` helper discovers what formats the compositor advertises via `zwp_linux_dmabuf_v1.modifier` events. `zwp_linux_buffer_params_v1.add/create_immed` wraps the DMA-BUF fd as a `wl_buffer`. Attach to `wl_surface` through the existing path.
+- **GPU selection** — `modules/gpu/` discovers DRM render nodes, reads vendor IDs, and supports `JAI_WAYLAND_RENDER_NODE=/dev/dri/renderD129` or `JAI_WAYLAND_GPU_VENDOR=nvidia|intel|amd` overrides. The default policy preserves the first usable render node.
+- **EGL setup** — `EGL_PLATFORM_GBM_KHR` on a non-privileged DRM render node. GL 3.3 core context, surfaceless (render to FBOs, never bind a surface).
+- **Primary DMA-BUF path** — GBM BO-backed render targets: allocate `gbm_bo`, import it as an `EGLImage`, bind it to a GL texture with `glEGLImageTargetTexture2DOES`, render through an FBO, then export the BO fd/stride/offset/modifier to Wayland. Mesa uses `EGL_NATIVE_PIXMAP_KHR`; NVIDIA falls back to `EGL_LINUX_DMA_BUF_EXT` import because proprietary NVIDIA rejects native pixmap import.
+- **Fallback DMA-BUF path** — the older Mesa texture-export route remains available: `eglCreateImageKHR(EGL_GL_TEXTURE_2D_KHR, tex)` plus `EGL_MESA_image_dma_buf_export`.
+- **wl_buffer from DMA-BUF** — `modules/wayland/dmabuf.jai` discovers compositor formats via `zwp_linux_dmabuf_v1` and, when available, `zwp_linux_dmabuf_feedback_v1` per-surface tranches. `hello_gl` filters feedback through GBM device capability before creating `wl_buffer` objects with `zwp_linux_buffer_params_v1.add/create_immed`.
 - **Frame pacing** — `wl_surface.frame` callbacks gate the next render to compositor vsync. `wl_callback.done` clears the `frame_requested` flag and lets the render defer re-fire.
-- **Double-buffered** — two `Gl_Slot` records (each holding `tex` + `fbo` + `EGLImage` + `DMA-BUF fd` + `wl_buffer`) pre-allocated at startup. The render loop rotates between them; `wl_buffer.release` events free slots. Same architecture as the `wl_shm` path in `hello_window.jai`, substituting GL paint for CPU paint.
+- **Double-buffered and resize-safe** — two `Gl_Slot` records (each holding `tex` + `fbo` + `EGLImage` + optional `gbm_bo` + DMA-BUF fd + `wl_buffer`) rotate on `wl_buffer.release`. Resizes retire in-flight slots and destroy them only after their release event arrives.
 - **Input** — the Phase 4 seat/keyboard/pointer/xkb helpers plug directly into the GL render loop unchanged.
 - **`ldd build/hello_gl`** — `libc.so.6` only. Zero hard-linkage to libEGL, libgbm, libGL, libwayland, libX11, libxcb.
+- **Vulkan binding baseline** — `modules/Vulkan/` vendors Jai's stock Vulkan module, with generated commands converted from `#foreign libvulkan` declarations into runtime-loaded `PFN_vk*` function-pointer variables. `init_vulkan()` loads the platform loader with `dlopen` / `LoadLibrary`, then populates global, instance, and device commands through `vkGetInstanceProcAddr` / `vkGetDeviceProcAddr`. Convenience enumeration wrappers are retained with `_Array` suffixes to avoid colliding with raw command pointers.
+- **Vulkan DMA-BUF baseline** — `headless_vulkan_dmabuf.jai` creates a Vulkan image using `VK_EXT_image_drm_format_modifier`, allocates exportable external memory, binds it, and exports the image memory as a DMA-BUF fd via `vkGetMemoryFdKHR`. This is the project-compatible Vulkan presentation direction. `VK_KHR_wayland_surface` expects `libwayland-client` `wl_display*` / `wl_surface*` proxy objects, not jai-wayland wire IDs, so direct WSI swapchains are intentionally not the first path.
+- **Vulkan presentation smoke** — `hello_vulkan_dmabuf.jai` creates a real Wayland window, selects a compositor-compatible DRM modifier from dmabuf surface feedback, renders a rotating RGB triangle through a Vulkan graphics pipeline, releases images to `VK_QUEUE_FAMILY_EXTERNAL`, exports their fds, creates `wl_buffer` objects, and presents them through double-buffered, frame-paced, resize-safe slots. `first.jai` compiles its GLSL shaders with `glslc`. Set `JAI_WAYLAND_VULKAN_FRAMES=N` for bounded live smoke runs.
 - **Examples added:**
-  - `headless_gl.jai` — EGL/GL/gbm smoke test (FBO glClear + readback + DMA-BUF export, no Wayland)
-  - `hello_dmabuf.jai` — prints the compositor's advertised (format, modifier) table
-  - `hello_gl.jai` — rotating RGB triangle in a Wayland window with keyboard + pointer input (the Phase 5 shippable milestone)
-- **Tested live against Hyprland + Mesa radeonsi on AMD.**
+  - `headless_gl.jai` — EGL/GL/gbm smoke test (BO-backed FBO readback + DMA-BUF export, no Wayland)
+  - `headless_vulkan.jai` — Vulkan loader smoke test (no Wayland, no link-time libvulkan)
+  - `headless_vulkan_dmabuf.jai` — Vulkan external-memory / DMA-BUF export smoke test
+  - `hello_dmabuf.jai` — prints the compositor's advertised format/modifier table plus dmabuf feedback snapshots
+  - `hello_gl.jai` — rotating RGB triangle in a resizable Wayland window with keyboard + pointer input (the Phase 5 + NVIDIA shippable milestone)
+  - `hello_vulkan_dmabuf.jai` — rotating Vulkan triangle → DMA-BUF → Wayland presentation smoke test
+- **Tested live against Hyprland + Mesa radeonsi on AMD and on a hybrid Intel iGPU + NVIDIA dGPU laptop.**
 
 **Known gaps (next phases):**
-- **nVidia support** — the current GL path assumes Mesa's `gbm` + `EGL_MESA_image_dma_buf_export`. nVidia's proprietary stack needs a separate code path (likely `EGL_PLATFORM_DEVICE_EXT` + `EGL_NV_stream_*` or a surfaceless fallback). **Not optional** — planned as runtime-conditional logic in `init_egl_extensions()`.
-- **Vulkan WSI**, **explicit fence sync**, **server-allocated object IDs**, **fractional scaling** — see `CLAUDE.md` Next Steps.
+- **Explicit fence sync** — current GL presentation uses `glFinish()` before handing buffers to the compositor. `Gl_Slot` has placeholder fence fd fields for future `EGL_KHR_fence_sync` / `wp_linux_drm_syncobj_v1` work.
+- **Explicit Vulkan/Wayland sync**, **server-allocated object IDs**, **fractional scaling** — see `CLAUDE.md` Next Steps.
 - **Ergonomic "raylib-light" layer** on top of the raw primitives is the eventual target; the current `hello_gl.jai` is the proving ground, not the user-facing API.
 
 ## Building
 
-Requires the Jai compiler (beta 0.2.028+) at `~/jai/jai/`.
+Requires the Jai compiler (beta 0.2.028+) at `~/jai/jai/`. The Vulkan triangle
+example also expects `glslc` in `PATH`; `first.jai` invokes it to compile GLSL
+into SPIR-V under `build/shaders/`.
 
 ```bash
 ./build.sh                     # Build → build/main
@@ -96,11 +106,15 @@ Requires the Jai compiler (beta 0.2.028+) at `~/jai/jai/`.
 ./build.sh - hello_window      # Build and run: resizable double-buffered shm window
 ./build.sh - dump_keymap       # Build and run: xkb keymap diagnostic
 ./build.sh - headless_gl       # Build and run: EGL/GL/gbm + DMA-BUF export smoke test
+./build.sh - headless_vulkan   # Build and run: runtime-loaded Vulkan loader smoke test
+./build.sh - headless_vulkan_dmabuf # Build and run: Vulkan image external-memory / DMA-BUF export smoke test
 ./build.sh - hello_dmabuf      # Build and run: zwp_linux_dmabuf_v1 format discovery
 ./build.sh - hello_gl          # Build and run: GPU-rendered rotating triangle (GL → DMA-BUF → Wayland)
+./build.sh - hello_vulkan_dmabuf # Build and run: Vulkan triangle → DMA-BUF → Wayland window
 ```
 
-The build uses Jai's compile-time metaprogramming via `first.jai` — no external build tools required.
+The build uses Jai's compile-time metaprogramming via `first.jai`; use the
+project wrapper instead of invoking shader compilers or examples by hand.
 
 ## Project Structure
 
@@ -123,9 +137,13 @@ examples/
   hello_screens.jai  — ~30 lines: output discovery (modes, scale, geometry)
   hello_window.jai   — ~270 lines: double-buffered resizable shm window, keyboard + pointer input, XKB keysym translation
   dump_keymap.jai    — ~55 lines: mmap keymap fd, print evdev→keysym mappings
-  headless_gl.jai    — ~150 lines: EGL/GL/gbm smoke test + DMA-BUF export (no Wayland)
-  hello_dmabuf.jai   — ~45 lines: print compositor's advertised (format, modifier) pairs
-  hello_gl.jai       — ~500 lines: GPU-rendered rotating triangle via GL → DMA-BUF → Wayland, double-buffered, frame-paced, keyboard + pointer input
+  headless_gl.jai    — EGL/GL/gbm smoke test + BO-backed DMA-BUF export (no Wayland)
+  headless_vulkan.jai — Vulkan loader smoke test (no Wayland, no libvulkan link)
+  headless_vulkan_dmabuf.jai — Vulkan image + external memory + DMA-BUF fd export smoke test
+  hello_dmabuf.jai   — print compositor format/modifier pairs and dmabuf feedback snapshots
+  hello_gl.jai       — GPU-rendered rotating triangle via GL → DMA-BUF → Wayland, BO-backed, resizable, frame-paced, keyboard + pointer input
+  hello_vulkan_dmabuf.jai — rotating Vulkan triangle via DRM-modifier DMA-BUF in a Wayland window
+  shaders/           — GLSL sources compiled by first.jai for Vulkan examples
 modules/
   wayland/           — Generated Jai bindings (56 protocols, 175 interfaces)
     module.jai       — Module root (#load chain)
@@ -140,13 +158,15 @@ modules/
     input.jai        — Seat-based input: get_seats_info, get_keyboards_info, get_pointers_info
     xkb.jai          — XKB keymap parser (evdev keycode → keysym lookup)
     shm.jai          — memfd_create syscall wrapper
-    dmabuf.jai       — zwp_linux_dmabuf_v1 discovery: get_dmabuf_info, pick_format
+    dmabuf.jai       — zwp_linux_dmabuf_v1 discovery and dmabuf feedback helpers
     wayland/         — Core protocol (wl_display, wl_surface, wl_buffer, etc.)
     xdg_shell/       — XDG shell (xdg_toplevel, xdg_surface, etc.)
     ...              — 54 more protocol directories
-  EGL/               — Runtime-dlopen'd EGL 1.5 bindings (types + core entry points + MESA_image_dma_buf_export)
-  gbm/               — Runtime-dlopen'd libgbm bindings (device creation + DRM fourcc helpers)
+  gpu/               — Render-node selection, GBM BO allocation, EGLImage import helpers
+  EGL/               — Runtime-dlopen'd EGL 1.5 bindings (core + image/dmabuf extension entry points)
+  gbm/               — Runtime-dlopen'd libgbm bindings (device + BO allocation/export helpers)
   GL/                — Runtime-dlopen'd minimal GL 3.3 core bindings (~40 entry points, loaded via eglGetProcAddress)
+  Vulkan/            — Vendored Vulkan bindings with runtime-loaded PFN_vk* command pointers and Linux DRM modifier supplement
 vendor/
   wayland-protocols/   — Vendored protocol XML (core, stable, staging, unstable) — regenerated into modules/wayland/
   reference/           — zig-wayland and wayland-rs sources for reference

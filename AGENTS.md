@@ -6,18 +6,24 @@
 `libwayland-client` and speaks the Wayland wire protocol directly over a Unix
 socket. Shared libraries for GPU work are loaded at runtime with `dlopen` and
 function pointers; do not introduce hard link-time dependencies on Wayland, EGL,
-gbm, GL, X11, or xcb.
+gbm, GL, Vulkan, X11, or xcb.
 
-Current status: phases 1-5 are complete. The Mesa path renders GL -> DMA-BUF ->
-Wayland through `EGL_MESA_image_dma_buf_export`, double-buffered slots, frame
-callbacks, keyboard/pointer input, and XKB keysym translation. NVIDIA/hybrid GPU
-support is planned in `docs/plans/2026-04-25-nvidia-gpu-support.md`.
+Current status: phases 1-5 are complete, including NVIDIA/hybrid GPU support.
+The primary GL path is GBM BO-backed: select a DRM render node, allocate a
+`gbm_bo`, import it as an `EGLImage`, bind it to a GL texture/FBO, export the BO
+fd/stride/offset/modifier, and present it through `zwp_linux_dmabuf_v1`. The
+older Mesa `EGL_MESA_image_dma_buf_export` texture-export path remains as a
+fallback. Current examples include double-buffered slots, frame callbacks,
+keyboard/pointer input, XKB keysym translation, dmabuf feedback, and resizable
+BO-backed GL windows.
 
 ## Required Skill
 
 Before writing or modifying Jai code, use the `jai-language` skill if available.
 The compiler is expected at `~/jai/jai/bin/jai-linux`, with standard library
 modules under `~/jai/jai/modules/`.
+The Vulkan triangle example expects `glslc` in `PATH`; keep shader compilation
+inside `first.jai`.
 
 ## Build And Test
 
@@ -47,8 +53,11 @@ Live compositor / GPU examples:
 ./build.sh - hello_window
 ./build.sh - dump_keymap
 ./build.sh - headless_gl
+./build.sh - headless_vulkan
+./build.sh - headless_vulkan_dmabuf
 ./build.sh - hello_dmabuf
 ./build.sh - hello_gl
+./build.sh - hello_vulkan_dmabuf
 ```
 
 The lone `-` separates Jai compiler arguments from metaprogram arguments. Do not
@@ -70,16 +79,31 @@ repeat it before each target.
   `type_info`.
 - `modules/wayland/session.jai` provides the `WaylandSession` context and
   `for session()` event-loop expansion.
-- `modules/EGL`, `modules/gbm`, and `modules/GL` are low-level runtime-loaded
-  bindings. Keep them free of `#foreign` declarations that force linkage.
+- `modules/gpu` owns render-node discovery/selection, GBM BO allocation, and
+  EGLImage import policy for Mesa, NVIDIA, and hybrid machines.
+- `modules/EGL`, `modules/gbm`, `modules/GL`, and `modules/Vulkan` are
+  low-level runtime-loaded bindings. Keep them free of `#foreign` declarations
+  that force linkage. `modules/Vulkan/linux_drm_format_modifier.jai` supplements
+  the stock Jai Vulkan headers for Linux DMA-BUF export.
 
 ## Core Invariants
 
 - Do not add `libwayland-client` usage.
+- Do not use `VK_KHR_wayland_surface` with jai-wayland object IDs directly: the
+  extension expects real `libwayland-client` `wl_display*` and `wl_surface*`
+  proxy objects, not wire-protocol IDs. Prefer Vulkan external-memory /
+  DMA-BUF export unless an explicit compatibility shim is designed.
 - Do not add hard-linked `#library` / `#foreign` dependencies for GPU or window
   libraries.
 - Preserve the `ldd build/hello_gl` invariant: no `libEGL`, `libgbm`, `libGL`,
-  `libwayland`, `libX11`, or `libxcb`.
+  `libwayland`, `libX11`, or `libxcb`. Preserve the matching
+  `ldd build/headless_vulkan` invariant: no `libvulkan`.
+- `hello_vulkan_dmabuf` is the first live Vulkan presentation smoke: Vulkan
+  renders a rotating triangle into DRM-modifier images, exports them as DMA-BUF,
+  wraps them as Wayland `wl_buffer` objects, and presents them through
+  double-buffered, frame-paced, resize-safe slots. `first.jai` compiles its GLSL
+  shaders with `glslc`; use `JAI_WAYLAND_VULKAN_FRAMES=N` for bounded smoke
+  runs.
 - Application code owns the event loop. Do not introduce callback-driven proxy
   managers or hidden event queues.
 - Requests are message-shaped: build into `MessageBuilder`, then explicitly send.
@@ -141,15 +165,11 @@ For substantial changes, run:
 
 ## Current Roadmap
 
-Primary next work: NVIDIA / hybrid GPU support. Follow
-`docs/plans/2026-04-25-nvidia-gpu-support.md`.
-
 Known future areas:
 
-- GBM BO-backed render targets.
-- `zwp_linux_dmabuf_feedback_v1` support.
 - Explicit sync / syncobj integration.
-- Vulkan WSI or Vulkan DMA-BUF export path.
+- Deeper Vulkan examples beyond the triangle DMA-BUF smoke path.
+- Vulkan WSI compatibility shim, if a future layer needs swapchains.
 - Server-allocated Wayland object IDs.
 - Fractional scaling.
 - Higher-level "raylib-light" ergonomic layer.
