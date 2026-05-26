@@ -101,10 +101,14 @@ repeat it before each target.
 - `modules/Window_Creation`, `modules/Simp`, `modules/GetRect`, and
   `modules/GetRect_LeftHanded` are upstream Jai distribution modules
   vendored verbatim from `~/jai/jai/modules/` for compatibility with
-  upstream graphical examples. Two minimal patches: `modules/X11/module.jai`
-  self-initializes in `init_global_display`, and
+  upstream graphical examples. Three minimal patch sites:
+  `modules/X11/module.jai` self-initializes in `init_global_display`;
   `modules/Simp/backend/gl.jai` uses our `gl_load(glXGetProcAddress)`
-  signature. `./build.sh - invaders` compiles upstream's
+  signature; `modules/Simp/bitmap.jai` and
+  `modules/Sound_Player/cached_decoder.jai` get `init_stb_*()` lazy-init
+  calls at the entry points that consume the runtime-loaded stb_image /
+  stb_image_write / stb_image_resize / stb_vorbis function pointers.
+  `./build.sh - invaders` compiles upstream's
   `~/jai/jai/examples/invaders/source/invaders.jai` against these.
 - `modules/stb_image`, `modules/stb_image_write`, `modules/stb_image_resize`,
   `modules/stb_vorbis`, and `modules/Sound_Player` are runtime-loaded
