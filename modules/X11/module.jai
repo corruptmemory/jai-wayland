@@ -131,8 +131,16 @@ xdnd_context_reset :: (dnd: *Xdnd_Context) {
 
 
 init_global_display :: () {
+    if !init_x11() {
+        log_error("Failed to load libX11 — cannot initialize X display");
+        exit(1);
+    }
+    if !init_glx() {
+        log_error("Failed to load libGLX/libGL — cannot initialize GL stack");
+        exit(1);
+    }
+
     if x_global_display return;
-    assert(init_x11(), "Could not load libX11 at runtime");
 
     old_locale := setlocale(LC_ALL, null);
     old_xmods  := XSetLocaleModifiers(null);
