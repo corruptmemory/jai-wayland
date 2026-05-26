@@ -84,6 +84,7 @@
 
     #load "backend/dispatch.jai";
     #load "backend/x11_dispatch.jai";
+    #load "backend/wayland_dispatch.jai";
     #load "backend/gl.jai";
 } else #if render_api ==  .METAL {
     #import "Metal";
