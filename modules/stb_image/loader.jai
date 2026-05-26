@@ -9,6 +9,11 @@ stb_image_lib: *void;
 init_stb_image :: () -> bool {
     if stbi_load_from_memory != null  return true;
 
+    // stb_image.so references libm symbols (pow, etc.) but has no DT_NEEDED
+    // for libm. dlopen libm with RTLD_GLOBAL first so its symbols are visible
+    // when the lazy bindings fire.
+    ensure_libm_loaded();
+
     // Try in order: cwd-relative (build/), absolute next-to-this loader.jai (#filepath baked at compile time),
     // and finally the unqualified library name in case the user has installed it system-wide.
     stb_image_lib = try_dlopen("modules/stb_image/linux/stb_image.so");
@@ -20,6 +25,14 @@ init_stb_image :: () -> bool {
 }
 
 #scope_file
+
+libm_handle: *void;
+
+ensure_libm_loaded :: () {
+    if libm_handle  return;
+    libm_handle = dlopen("libm.so.6", RTLD_LAZY | RTLD_GLOBAL);
+    if !libm_handle  libm_handle = dlopen("libm.so", RTLD_LAZY | RTLD_GLOBAL);
+}
 
 try_dlopen :: (path: string) -> *void {
     cs := to_c_string(path,, temp);

@@ -8,6 +8,12 @@ stb_vorbis_lib: *void;
 init_stb_vorbis :: () -> bool {
     if stb_vorbis_open_memory != null  return true;
 
+    // stb_vorbis.so has no DT_NEEDED for libm but does call log/cos/etc. at
+    // runtime. With nothing else linking libm into our binary, dlopen'ing
+    // libm with RTLD_GLOBAL first makes its symbols visible to subsequent
+    // dlopen targets via the global symbol scope.
+    ensure_libm_loaded();
+
     stb_vorbis_lib = try_dlopen("modules/stb_vorbis/linux/stb_vorbis.so");
     if !stb_vorbis_lib  stb_vorbis_lib = try_dlopen(tprint("%linux/stb_vorbis.so", #filepath));
     if !stb_vorbis_lib  stb_vorbis_lib = dlopen("stb_vorbis.so", RTLD_LAZY);
@@ -17,6 +23,14 @@ init_stb_vorbis :: () -> bool {
 }
 
 #scope_file
+
+libm_handle: *void;
+
+ensure_libm_loaded :: () {
+    if libm_handle  return;
+    libm_handle = dlopen("libm.so.6", RTLD_LAZY | RTLD_GLOBAL);
+    if !libm_handle  libm_handle = dlopen("libm.so", RTLD_LAZY | RTLD_GLOBAL);
+}
 
 try_dlopen :: (path: string) -> *void {
     cs := to_c_string(path,, temp);

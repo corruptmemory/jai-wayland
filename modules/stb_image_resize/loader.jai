@@ -8,6 +8,11 @@ stb_image_resize_lib: *void;
 init_stb_image_resize :: () -> bool {
     if stbir_resize_uint8 != null  return true;
 
+    // stb_image_resize.so references libm symbols (pow, floor) but has no
+    // DT_NEEDED for libm. dlopen libm with RTLD_GLOBAL first so its symbols
+    // are visible when the lazy bindings fire.
+    ensure_libm_loaded();
+
     stb_image_resize_lib = try_dlopen("modules/stb_image_resize/linux/stb_image_resize.so");
     if !stb_image_resize_lib  stb_image_resize_lib = try_dlopen(tprint("%linux/stb_image_resize.so", #filepath));
     if !stb_image_resize_lib  stb_image_resize_lib = dlopen("stb_image_resize.so", RTLD_LAZY);
@@ -17,6 +22,14 @@ init_stb_image_resize :: () -> bool {
 }
 
 #scope_file
+
+libm_handle: *void;
+
+ensure_libm_loaded :: () {
+    if libm_handle  return;
+    libm_handle = dlopen("libm.so.6", RTLD_LAZY | RTLD_GLOBAL);
+    if !libm_handle  libm_handle = dlopen("libm.so", RTLD_LAZY | RTLD_GLOBAL);
+}
 
 try_dlopen :: (path: string) -> *void {
     cs := to_c_string(path,, temp);
