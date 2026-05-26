@@ -165,9 +165,37 @@ build_and_run_upstream_example :: (
     }
     compiler_end_intercept(w);
 
+    // invaders (and similar upstream examples) compute their data path from
+    // get_path_of_running_executable() — i.e. they look for `data/` next to
+    // the binary, not next to the source. We build the binary into
+    // jai-wayland/build/, so we need to plant a `data` symlink there that
+    // points at the upstream example's real data folder. Idempotent.
+    ensure_upstream_data_symlink(upstream_dir);
+
     binary := tprint("%/build/%", #filepath, executable_name);
     result := run_command(binary, working_directory = upstream_dir);
     if result.exit_code != 0  exit(result.exit_code);
+}
+
+ensure_upstream_data_symlink :: (upstream_dir: string) {
+    src := tprint("%/data", upstream_dir);
+    if !file_exists(src) {
+        // Nothing to symlink; upstream example has no data folder.
+        return;
+    }
+
+    dst := tprint("%/build/data", #filepath);
+    if file_exists(dst) {
+        // Already present (symlink, directory, whatever) — assume good.
+        return;
+    }
+
+    src_c := temp_c_string(src);
+    dst_c := temp_c_string(dst);
+    rc := symlink(src_c, dst_c);
+    if rc != 0 {
+        print("WARNING: could not create symlink % -> % (errno %)\n", dst, src, errno());
+    }
 }
 
 build_tests :: (options: Build_Options) {
@@ -212,6 +240,7 @@ Shader_Spec :: struct {
 #import "Basic";
 #import "Compiler";
 #import "File";
+#import "File_Utilities";
 #import "POSIX";
 #import "Process";
 Autorun :: #import "Autorun";
