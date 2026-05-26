@@ -70,7 +70,7 @@ backend_init :: (info: *Window_Info) {
         }
         #if OS != .ANDROID && OS != .NN_SWITCH2 {
             // @Incomplete: Android/switch2 have separate GLES modules that don't have this modules/GL stuff.
-            gl_load(*gl);
+            gl_load(glXGetProcAddress);
         }
         #if OS != .ANDROID {
             gl_enable_debug_output(break_on_error = true);
