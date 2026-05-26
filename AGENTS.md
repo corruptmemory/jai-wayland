@@ -60,6 +60,7 @@ Live compositor / GPU examples:
 ./build.sh - hello_dmabuf
 ./build.sh - hello_gl
 ./build.sh - hello_vulkan_dmabuf
+./build.sh - invaders
 ```
 
 The lone `-` separates Jai compiler arguments from metaprogram arguments. Do not
@@ -92,7 +93,27 @@ repeat it before each target.
   Xlib and GLX entry points are function-pointer variables loaded by
   `init_x11()` / `init_glx()`. This module is a compatibility backend for
   future vendored `Window_Creation` / `Simp` / `GetRect`, not part of the
-  Wayland wire-protocol implementation.
+  Wayland wire-protocol implementation. Also exports
+  `glx_create_context(window, major, minor)` ported from upstream
+  `~/jai/jai/modules/GL/GL.jai` so vendored Simp's GLX context creation
+  works without vendoring stock GL (which would introduce `#foreign`
+  linkage).
+- `modules/Window_Creation`, `modules/Simp`, `modules/GetRect`, and
+  `modules/GetRect_LeftHanded` are upstream Jai distribution modules
+  vendored verbatim from `~/jai/jai/modules/` for compatibility with
+  upstream graphical examples. Two minimal patches: `modules/X11/module.jai`
+  self-initializes in `init_global_display`, and
+  `modules/Simp/backend/gl.jai` uses our `gl_load(glXGetProcAddress)`
+  signature. `./build.sh - invaders` compiles upstream's
+  `~/jai/jai/examples/invaders/source/invaders.jai` against these.
+- `modules/stb_image`, `modules/stb_image_write`, `modules/stb_image_resize`,
+  `modules/stb_vorbis`, and `modules/Sound_Player` are runtime-loaded
+  image/audio modules needed by Simp + invaders. They replace upstream's
+  `#library` / `#foreign` declarations with `dlopen` + `dlsym`. The four
+  `stb_*` modules also dlopen `libm.so.6` with `RTLD_GLOBAL` so their
+  bundled `.so` files (which call `pow` / `cos` / `floor` without a
+  `DT_NEEDED libm`) can resolve math symbols at runtime, preserving the
+  ldd-clean invariant.
 
 ## Core Invariants
 
@@ -184,7 +205,10 @@ Known future areas:
 - Deeper Vulkan examples beyond the triangle DMA-BUF smoke path.
 - Vulkan WSI compatibility shim, if a future layer needs swapchains.
 - Vendored `Window_Creation`, `Simp`, `GetRect`, and `GetRect_LeftHanded` with
-  Linux runtime backend selection between Wayland and X11.
+  Linux runtime backend selection between Wayland and X11. Phase 6 in
+  progress: upstream `invaders` is playable via `./build.sh - invaders`
+  against our vendored stack on X11 (ldd-clean). Wayland backend dispatch
+  within Window_Creation is the next sub-phase.
 - Server-allocated Wayland object IDs.
 - Fractional scaling.
 - Higher-level "raylib-light" ergonomic layer.
