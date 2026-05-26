@@ -85,6 +85,7 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 - **Tested live against Hyprland + Mesa radeonsi on AMD and on a hybrid Intel iGPU + NVIDIA dGPU laptop.**
 
 **Known gaps (next phases):**
+- **Vendored upstream window/graphics stack (Phase 6, in progress on `upstream-integration`).** `Window_Creation` / `Simp` / `GetRect` / `GetRect_LeftHanded` are vendored under `modules/`. Upstream `invaders` is fully playable against this stack on the X11 backend (sound, keyboard, animation, ldd-clean). **Wayland backend dispatch within `Window_Creation` is the remaining ~70% of the work** — see `docs/plans/2026-05-26-wayland-backend-question.md` for the open design question (the load-bearing decision is how GL works on Wayland under our "no libwayland linkage" thesis).
 - **Explicit fence sync** — current GL presentation uses `glFinish()` before handing buffers to the compositor. `Gl_Slot` has placeholder fence fd fields for future `EGL_KHR_fence_sync` / `wp_linux_drm_syncobj_v1` work.
 - **Explicit Vulkan/Wayland sync**, **server-allocated object IDs**, **fractional scaling** — see `CLAUDE.md` Next Steps.
 - **Ergonomic "raylib-light" layer** on top of the raw primitives is the eventual target; the current `hello_gl.jai` is the proving ground, not the user-facing API.

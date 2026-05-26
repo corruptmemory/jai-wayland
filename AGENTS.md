@@ -212,8 +212,12 @@ Known future areas:
 - Vendored `Window_Creation`, `Simp`, `GetRect`, and `GetRect_LeftHanded` with
   Linux runtime backend selection between Wayland and X11. Phase 6 in
   progress: upstream `invaders` is playable via `./build.sh - invaders`
-  against our vendored stack on X11 (ldd-clean). Wayland backend dispatch
-  within Window_Creation is the next sub-phase.
+  against our vendored stack on X11 (ldd-clean). **Wayland backend dispatch
+  within Window_Creation is the remaining ~70% of the work and the design
+  question is open** — see `docs/plans/2026-05-26-wayland-backend-question.md`.
+  The load-bearing decision is how GL actually works on Wayland under our
+  "no libwayland linkage" thesis (same fundamental incompatibility as
+  `VK_KHR_wayland_surface`).
 - Server-allocated Wayland object IDs.
 - Fractional scaling.
 - Higher-level "raylib-light" ergonomic layer.
