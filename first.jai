@@ -68,8 +68,17 @@ build :: () {
           case "hello_x11_gl";
             build_and_run_test("hello_x11_gl", "hello_x11_gl", "examples/hello_x11_gl.jai", "build");
             set_build_options_dc(.{do_output=false});
+          case "invaders";
+            home := to_string(getenv("HOME"));
+            build_and_run_upstream_example(
+                workspace_name  = "invaders",
+                executable_name = "invaders",
+                upstream_dir    = tprint("%/jai/jai/examples/invaders", home),
+                source_subpath  = "source/invaders.jai",
+            );
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'invaders'.\n", arg));
         }
     }
 }
