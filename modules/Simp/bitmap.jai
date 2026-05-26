@@ -1,5 +1,7 @@
 // Vendored from ~/jai/jai/modules/Simp/bitmap.jai.
-// Verbatim copy.
+// Modified: added init_stb_image()/init_stb_image_write()/
+//           init_stb_image_resize() lazy-init guards at three
+//           consumer entry points. See commit f793b54.
 
 Bitmap :: struct {
     width:  s32;

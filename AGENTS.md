@@ -113,11 +113,12 @@ repeat it before each target.
 - `modules/stb_image`, `modules/stb_image_write`, `modules/stb_image_resize`,
   `modules/stb_vorbis`, and `modules/Sound_Player` are runtime-loaded
   image/audio modules needed by Simp + invaders. They replace upstream's
-  `#library` / `#foreign` declarations with `dlopen` + `dlsym`. The four
-  `stb_*` modules also dlopen `libm.so.6` with `RTLD_GLOBAL` so their
-  bundled `.so` files (which call `pow` / `cos` / `floor` without a
-  `DT_NEEDED libm`) can resolve math symbols at runtime, preserving the
-  ldd-clean invariant.
+  `#library` / `#foreign` declarations with `dlopen` + `dlsym`. The three
+  `stb_*` modules that call libm symbols (stb_image, stb_image_resize,
+  stb_vorbis) also dlopen `libm.so.6` with `RTLD_GLOBAL` so their bundled
+  `.so` files (which call `pow` / `cos` / `floor` without a `DT_NEEDED
+  libm`) can resolve math symbols at runtime, preserving the ldd-clean
+  invariant. (stb_image_write has no libm symbols and skips that step.)
 
 ## Core Invariants
 

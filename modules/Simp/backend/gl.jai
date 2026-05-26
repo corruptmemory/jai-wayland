@@ -1,5 +1,6 @@
 // Vendored from ~/jai/jai/modules/Simp/backend/gl.jai.
-// Verbatim copy.
+// Modified: gl_load() signature swapped from *GL_Procedures to
+//           get-proc-address function. See commit 7a9d296.
 
 #load "gl_screenshot.jai";
 
