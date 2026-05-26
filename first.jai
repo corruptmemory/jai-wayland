@@ -62,8 +62,14 @@ build :: () {
             if !compile_vulkan_example_shaders()  exit(1);
             build_and_run_test("hello_vulkan_dmabuf", "hello_vulkan_dmabuf", "examples/hello_vulkan_dmabuf.jai", "build");
             set_build_options_dc(.{do_output=false});
+          case "x11_smoke";
+            build_and_run_test("x11_smoke", "x11_smoke", "examples/x11_smoke.jai", "build");
+            set_build_options_dc(.{do_output=false});
+          case "hello_x11_gl";
+            build_and_run_test("hello_x11_gl", "hello_x11_gl", "examples/hello_x11_gl.jai", "build");
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl'.\n", arg));
         }
     }
 }

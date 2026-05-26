@@ -72,10 +72,13 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 - **Vulkan binding baseline** — `modules/Vulkan/` vendors Jai's stock Vulkan module, with generated commands converted from `#foreign libvulkan` declarations into runtime-loaded `PFN_vk*` function-pointer variables. `init_vulkan()` loads the platform loader with `dlopen` / `LoadLibrary`, then populates global, instance, and device commands through `vkGetInstanceProcAddr` / `vkGetDeviceProcAddr`. Convenience enumeration wrappers are retained with `_Array` suffixes to avoid colliding with raw command pointers.
 - **Vulkan DMA-BUF baseline** — `headless_vulkan_dmabuf.jai` creates a Vulkan image using `VK_EXT_image_drm_format_modifier`, allocates exportable external memory, binds it, and exports the image memory as a DMA-BUF fd via `vkGetMemoryFdKHR`. This is the project-compatible Vulkan presentation direction. `VK_KHR_wayland_surface` expects `libwayland-client` `wl_display*` / `wl_surface*` proxy objects, not jai-wayland wire IDs, so direct WSI swapchains are intentionally not the first path.
 - **Vulkan presentation smoke** — `hello_vulkan_dmabuf.jai` creates a real Wayland window, selects a compositor-compatible DRM modifier from dmabuf surface feedback, renders a rotating RGB triangle through a Vulkan graphics pipeline, releases images to `VK_QUEUE_FAMILY_EXTERNAL`, exports their fds, creates `wl_buffer` objects, and presents them through double-buffered, frame-paced, resize-safe slots. `first.jai` compiles its GLSL shaders with `glslc`. Set `JAI_WAYLAND_VULKAN_FRAMES=N` for bounded live smoke runs.
+- **X11 compatibility binding baseline** — `modules/X11/` vendors Jai's stock `X11/module.jai` without `X11/sofd`, converts Xlib/GLX `#foreign` calls into runtime-loaded function pointers, and exposes `init_x11()` / `init_glx()` loaders. This is separate from the Wayland implementation and is intended for future vendored `Window_Creation` / `Simp` / `GetRect` Linux backend selection. `x11_smoke.jai` and `hello_x11_gl.jai` verify Xlib/GLX loading and GL rendering without `libX11`, `libGLX`, `libGL`, or `libxcb` under `ldd`. Set `JAI_WAYLAND_X11_GL_FRAMES=N` for bounded `hello_x11_gl` smoke runs.
 - **Examples added:**
   - `headless_gl.jai` — EGL/GL/gbm smoke test (BO-backed FBO readback + DMA-BUF export, no Wayland)
   - `headless_vulkan.jai` — Vulkan loader smoke test (no Wayland, no link-time libvulkan)
   - `headless_vulkan_dmabuf.jai` — Vulkan external-memory / DMA-BUF export smoke test
+  - `x11_smoke.jai` — Xlib/GLX runtime-loader smoke test (no Wayland, no link-time X11/GLX)
+  - `hello_x11_gl.jai` — rotating GL triangle in an X11/GLX window through runtime-loaded Xlib/GLX/GL
   - `hello_dmabuf.jai` — prints the compositor's advertised format/modifier table plus dmabuf feedback snapshots
   - `hello_gl.jai` — rotating RGB triangle in a resizable Wayland window with keyboard + pointer input (the Phase 5 + NVIDIA shippable milestone)
   - `hello_vulkan_dmabuf.jai` — rotating Vulkan triangle → DMA-BUF → Wayland presentation smoke test
@@ -108,6 +111,8 @@ into SPIR-V under `build/shaders/`.
 ./build.sh - headless_gl       # Build and run: EGL/GL/gbm + DMA-BUF export smoke test
 ./build.sh - headless_vulkan   # Build and run: runtime-loaded Vulkan loader smoke test
 ./build.sh - headless_vulkan_dmabuf # Build and run: Vulkan image external-memory / DMA-BUF export smoke test
+./build.sh - x11_smoke         # Build and run: runtime-loaded Xlib/GLX smoke test
+./build.sh - hello_x11_gl      # Build and run: X11/GLX rotating triangle
 ./build.sh - hello_dmabuf      # Build and run: zwp_linux_dmabuf_v1 format discovery
 ./build.sh - hello_gl          # Build and run: GPU-rendered rotating triangle (GL → DMA-BUF → Wayland)
 ./build.sh - hello_vulkan_dmabuf # Build and run: Vulkan triangle → DMA-BUF → Wayland window
@@ -140,6 +145,8 @@ examples/
   headless_gl.jai    — EGL/GL/gbm smoke test + BO-backed DMA-BUF export (no Wayland)
   headless_vulkan.jai — Vulkan loader smoke test (no Wayland, no libvulkan link)
   headless_vulkan_dmabuf.jai — Vulkan image + external memory + DMA-BUF fd export smoke test
+  x11_smoke.jai      — Xlib/GLX runtime-loader smoke test
+  hello_x11_gl.jai   — rotating GL triangle through X11/GLX runtime-loaded bindings
   hello_dmabuf.jai   — print compositor format/modifier pairs and dmabuf feedback snapshots
   hello_gl.jai       — GPU-rendered rotating triangle via GL → DMA-BUF → Wayland, BO-backed, resizable, frame-paced, keyboard + pointer input
   hello_vulkan_dmabuf.jai — rotating Vulkan triangle via DRM-modifier DMA-BUF in a Wayland window
@@ -167,6 +174,7 @@ modules/
   gbm/               — Runtime-dlopen'd libgbm bindings (device + BO allocation/export helpers)
   GL/                — Runtime-dlopen'd minimal GL 3.3 core bindings (~40 entry points, loaded via eglGetProcAddress)
   Vulkan/            — Vendored Vulkan bindings with runtime-loaded PFN_vk* command pointers and Linux DRM modifier supplement
+  X11/               — Vendored Xlib/GLX bindings with runtime-loaded function pointers; no sofd in first pass
 vendor/
   wayland-protocols/   — Vendored protocol XML (core, stable, staging, unstable) — regenerated into modules/wayland/
   reference/           — zig-wayland and wayland-rs sources for reference

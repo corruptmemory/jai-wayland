@@ -55,6 +55,8 @@ Live compositor / GPU examples:
 ./build.sh - headless_gl
 ./build.sh - headless_vulkan
 ./build.sh - headless_vulkan_dmabuf
+./build.sh - x11_smoke
+./build.sh - hello_x11_gl
 ./build.sh - hello_dmabuf
 ./build.sh - hello_gl
 ./build.sh - hello_vulkan_dmabuf
@@ -81,10 +83,16 @@ repeat it before each target.
   `for session()` event-loop expansion.
 - `modules/gpu` owns render-node discovery/selection, GBM BO allocation, and
   EGLImage import policy for Mesa, NVIDIA, and hybrid machines.
-- `modules/EGL`, `modules/gbm`, `modules/GL`, and `modules/Vulkan` are
-  low-level runtime-loaded bindings. Keep them free of `#foreign` declarations
-  that force linkage. `modules/Vulkan/linux_drm_format_modifier.jai` supplements
-  the stock Jai Vulkan headers for Linux DMA-BUF export.
+- `modules/EGL`, `modules/gbm`, `modules/GL`, `modules/Vulkan`, and
+  `modules/X11` are low-level runtime-loaded bindings. Keep them free of
+  `#foreign` declarations that force linkage.
+  `modules/Vulkan/linux_drm_format_modifier.jai` supplements the stock Jai
+  Vulkan headers for Linux DMA-BUF export.
+- `modules/X11` vendors Jai's stock `X11/module.jai` without `X11/sofd`.
+  Xlib and GLX entry points are function-pointer variables loaded by
+  `init_x11()` / `init_glx()`. This module is a compatibility backend for
+  future vendored `Window_Creation` / `Simp` / `GetRect`, not part of the
+  Wayland wire-protocol implementation.
 
 ## Core Invariants
 
@@ -98,6 +106,11 @@ repeat it before each target.
 - Preserve the `ldd build/hello_gl` invariant: no `libEGL`, `libgbm`, `libGL`,
   `libwayland`, `libX11`, or `libxcb`. Preserve the matching
   `ldd build/headless_vulkan` invariant: no `libvulkan`.
+- Preserve the `ldd build/x11_smoke` invariant: no `libX11`, `libGLX`,
+  `libGL`, or `libxcb`.
+- Preserve the matching `ldd build/hello_x11_gl` invariant: no `libX11`,
+  `libGLX`, `libGL`, or `libxcb`. Use `JAI_WAYLAND_X11_GL_FRAMES=N` for
+  bounded live smoke runs.
 - `hello_vulkan_dmabuf` is the first live Vulkan presentation smoke: Vulkan
   renders a rotating triangle into DRM-modifier images, exports them as DMA-BUF,
   wraps them as Wayland `wl_buffer` objects, and presents them through
@@ -170,6 +183,8 @@ Known future areas:
 - Explicit sync / syncobj integration.
 - Deeper Vulkan examples beyond the triangle DMA-BUF smoke path.
 - Vulkan WSI compatibility shim, if a future layer needs swapchains.
+- Vendored `Window_Creation`, `Simp`, `GetRect`, and `GetRect_LeftHanded` with
+  Linux runtime backend selection between Wayland and X11.
 - Server-allocated Wayland object IDs.
 - Fractional scaling.
 - Higher-level "raylib-light" ergonomic layer.
