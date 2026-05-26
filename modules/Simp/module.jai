@@ -1,5 +1,7 @@
 // Vendored from ~/jai/jai/modules/Simp/module.jai.
-// Verbatim copy.
+// Modified: added #load directives for backend/dispatch.jai (the context-
+//           based dispatch infrastructure). See
+//           docs/plans/2026-05-26-context-dispatch-stage1-design.md.
 
 //
 // This is a simple framework for drawing graphics that you can use
@@ -78,6 +80,7 @@
         #import "GL";
     }
 
+    #load "backend/dispatch.jai";
     #load "backend/gl.jai";
 } else #if render_api ==  .METAL {
     #import "Metal";
