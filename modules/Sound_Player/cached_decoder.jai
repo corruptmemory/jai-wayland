@@ -225,7 +225,12 @@ deinit :: (using decoder: *Cached_Decoder) {
  */
 
 
-create_ogg_decoder :: (data: *Sound_Data, _page_size_in_samples: s64) -> *Cached_Decoder { 
+create_ogg_decoder :: (data: *Sound_Data, _page_size_in_samples: s64) -> *Cached_Decoder {
+    if !init_stb_vorbis() {
+        log_error("Failed to load stb_vorbis runtime library.");
+        return null;
+    }
+
     d := New(Cached_Ogg_Decoder);
 
     assert(data != null);
