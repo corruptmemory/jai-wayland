@@ -1,6 +1,8 @@
 // Vendored from ~/jai/jai/modules/Simp/module.jai.
 // Modified: added #load directives for backend/dispatch.jai (the context-
-//           based dispatch infrastructure). See
+//           based dispatch infrastructure) and backend/x11_dispatch.jai
+//           (the X11/GLX dispatcher with the relocated GLX code from
+//           gl.jai). See
 //           docs/plans/2026-05-26-context-dispatch-stage1-design.md.
 
 //
@@ -81,6 +83,7 @@
     }
 
     #load "backend/dispatch.jai";
+    #load "backend/x11_dispatch.jai";
     #load "backend/gl.jai";
 } else #if render_api ==  .METAL {
     #import "Metal";
