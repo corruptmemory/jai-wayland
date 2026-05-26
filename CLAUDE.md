@@ -4,22 +4,22 @@
 
 Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire protocol directly, uses runtime dlopen for any shared libraries, and generates bindings from Wayland protocol XML specs.
 
-**Current status:** Phases 1-5 complete, plus NVIDIA/hybrid GPU support. GL rendering works end-to-end on Mesa (AMD / Intel) and NVIDIA. The primary path is GBM BO-backed: allocate a `gbm_bo`, import it as an `EGLImage` (trying `EGL_NATIVE_PIXMAP_KHR` first, falling back to `EGL_LINUX_DMA_BUF_EXT` for NVIDIA which rejects native pixmap), bind to a GL texture, render to an FBO, export the BO's fd/stride/offset/modifier and hand off to the compositor via `zwp_linux_dmabuf_v1`. The older Mesa `EGL_MESA_image_dma_buf_export` texture-export path is kept as a fallback. Format/modifier selection uses `zwp_linux_dmabuf_feedback_v1` per-surface tranches (filtered through GBM device capability) when available, falling back to the global format list. Validated on a hybrid Intel iGPU + NVIDIA dGPU laptop. Also working: seat-based input API, XKB keysym translation, resizable windows (shm and BO-backed GL), compositor-driven resize with in-flight buffer retirement.
+**Current status:** Phases 1-5 complete, plus NVIDIA/hybrid GPU support, plus a Vulkan DMA-BUF presentation path (`hello_vulkan_dmabuf`), plus a runtime-loaded X11/GLX backend (`hello_x11_gl` — for the future vendored window/graphics stack, NOT part of the Wayland path). GL rendering works end-to-end on Mesa (AMD / Intel) and NVIDIA. The primary path is GBM BO-backed: allocate a `gbm_bo`, import it as an `EGLImage` (trying `EGL_NATIVE_PIXMAP_KHR` first, falling back to `EGL_LINUX_DMA_BUF_EXT` for NVIDIA which rejects native pixmap), bind to a GL texture, render to an FBO, export the BO's fd/stride/offset/modifier and hand off to the compositor via `zwp_linux_dmabuf_v1`. The older Mesa `EGL_MESA_image_dma_buf_export` texture-export path is kept as a fallback. Format/modifier selection uses `zwp_linux_dmabuf_feedback_v1` per-surface tranches (filtered through GBM device capability) when available, falling back to the global format list. Validated on a hybrid Intel iGPU + NVIDIA dGPU laptop. Also working: seat-based input API, XKB keysym translation, resizable windows (shm and BO-backed GL), compositor-driven resize with in-flight buffer retirement.
 
 **`ldd build/hello_gl`** shows only `libc.so.6` (plus vdso + ld-linux). libwayland, libEGL, libgbm, libGL, libX11, libxcb, libXau, libXdmcp are **all** runtime-dlopen'd — zero build-time linkage to any of them. The "no external library linkage" thesis holds uniformly across the Wayland wire-protocol path AND the GPU-facing path.
 
-**Known gaps / next up:** Explicit fence sync (currently `glFinish()` — coarse but correct). Vulkan WSI. Server-allocated object IDs (0xFF000000+ range). Fractional scaling.
+**Known gaps / next up:** Explicit fence sync (currently `glFinish()` — coarse but correct). Deeper Vulkan examples beyond the triangle DMA-BUF smoke. Vendored `Window_Creation`/`Simp`/`GetRect`/`GetRect_LeftHanded` with Linux runtime backend selection between Wayland and X11 (the reason `modules/X11/` exists). Server-allocated object IDs (0xFF000000+ range). Fractional scaling.
 
 ## Build Commands
 
 ```bash
 ./build.sh              # Build main → build/main
 ./build.sh - test       # Build and run 22 XML/protocol tests
-./build.sh - gen_test   # Build and run 36 generator tests
+./build.sh - gen_test   # Build and run 35 generator tests
 ./build.sh - wire_test  # Build and run 22 wire protocol tests
 ./build.sh - marshal_test  # Build and run 9 marshal macro tests
 ./build.sh - unmarshal_test  # Build and run 12 unmarshal macro tests
-./build.sh - compile_test  # Build and run 8 compilation smoke tests (imports generated module)
+./build.sh - compile_test  # Build and run 11 compilation smoke tests (imports generated module)
 ./build.sh - generate   # Regenerate modules/wayland/ from protocol XML
 ./build.sh - hello_globals  # Build and run hello_globals example (live compositor)
 ./build.sh - hello_screens  # Build and run hello_screens example (output discovery)
@@ -28,6 +28,11 @@ Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire
 ./build.sh - headless_gl    # Build and run headless_gl example (EGL/GL/gbm + DMA-BUF export smoke test)
 ./build.sh - hello_dmabuf   # Build and run hello_dmabuf example (zwp_linux_dmabuf_v1 format discovery)
 ./build.sh - hello_gl       # Build and run hello_gl example (rotating triangle via GL → DMA-BUF → Wayland)
+./build.sh - headless_vulkan         # Build and run headless_vulkan example (Vulkan instance + device + queue smoke)
+./build.sh - headless_vulkan_dmabuf  # Build and run headless_vulkan_dmabuf example (Vulkan → DRM modifier image → DMA-BUF export)
+./build.sh - hello_vulkan_dmabuf     # Build and run hello_vulkan_dmabuf example (live Vulkan triangle → DMA-BUF → Wayland; needs glslc; JAI_WAYLAND_VULKAN_FRAMES=N for bounded runs)
+./build.sh - x11_smoke               # Build and run x11_smoke example (runtime-loaded Xlib basic window)
+./build.sh - hello_x11_gl            # Build and run hello_x11_gl example (runtime-loaded Xlib + GLX rotating triangle; JAI_WAYLAND_X11_GL_FRAMES=N for bounded runs)
 ```
 
 Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to create compiler workspaces. The `-` separates compiler args from metaprogram args.
@@ -82,6 +87,10 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 
 **Why vendor GL instead of using Jai's GL module:** Jai's `~/jai/jai/modules/GL/` declares `gl_lib :: #library,system "libGL"` with unconditional `#foreign gl_lib` procedure declarations (even with the `gl_load` function-pointer path available, the foreign decls force link-time resolution). It also `#import "Window_Type"` which on Linux pulls in X11 transitively. Both violate the project's "no external library linkage" thesis. Our vendored replacement loads everything through `eglGetProcAddress` at runtime.
 
+**Vulkan bindings** (`modules/Vulkan/`) — Jai's stock Vulkan module preserved (`module.jai`, `generated_linux.jai`, `loader.jai`), plus `linux_drm_format_modifier.jai` which supplements the headers with the Linux DMA-BUF / DRM-format-modifier extension structs (`VkImageDrmFormatModifierListCreateInfoEXT`, `VkImageDrmFormatModifierExplicitCreateInfoEXT`, `VkMemoryGetFdInfoKHR`, etc.) needed for Vulkan→DMA-BUF export. All Vulkan entry points are loaded at runtime through `loader.jai` — no link-time dependency on `libvulkan`. **Critical design constraint:** the project does NOT use `VK_KHR_wayland_surface`; that extension expects real libwayland-client `wl_display*`/`wl_surface*` proxy pointers, not bare wire-protocol IDs. Vulkan presentation is done via DMA-BUF export wrapped as a Wayland `wl_buffer` — the same final step as the GL path, with Vulkan rendering as the front end.
+
+**X11 bindings** (`modules/X11/`) — Jai's stock `X11/module.jai` vendored *without* the `sofd` file-dialog helper, with Xlib and GLX entry points converted to function-pointer variables loaded by `init_x11()` / `init_glx()`. This module is **not** part of the Wayland wire-protocol implementation — it's a compatibility backend for a future vendored `Window_Creation`/`Simp`/`GetRect` that will pick Wayland or X11 at runtime. `ldd build/x11_smoke` and `ldd build/hello_x11_gl` must show no `libX11`, `libGLX`, `libGL`, or `libxcb`.
+
 **Client API** (`modules/wayland/registry.jai`, `session.jai`, `shm.jai`, `dmabuf.jai`):
 - `session.jai` — `WaylandSession` struct (Connection, ReceiveBuffer, globals, bound objects). Lives in `#add_context wayland_session: *WaylandSession;`. `init_wayland_session()` connects, discovers globals, binds compositor/wm_base. `for_expansion` on `*WaylandSession` iterates incoming messages, handles ping/pong and `wl_display.error` transparently (uses `defer` for message consume so `continue` is safe in loop bodies), yields `WaylandMessageHeader`, exposes `recv: *ReceiveBuffer` via backtick binding (for `unmarshal` Fd support). Context-based convenience overloads: `allocate_id()`, `wayland_send(*batch, drain=)`, `session()`, `connection()`, `registry()`, `compositor()`, `wm_base()`, `globals()`.
 - `registry.jai` — `discover_globals(conn)` performs get_registry + sync roundtrip using MessageBuilder/ReceiveBuffer, returns `[] Global_Info` + registry ID. Context-based overload stores into session. `find_global(globals, name)` / `find_global(name)` lookups. `init_display(conn)` creates wl_display proxy (always ID 1).
@@ -90,6 +99,7 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 - `input.jai` — Seat-based input discovery. `Seat_Info` (seat, name, capabilities), `Keyboard_Info` (seat_index, keyboard, keymap_fd, keymap_size), `Pointer_Info` (seat_index, pointer). `get_seats_info()` enumerates seats and their capabilities. `get_keyboards_info(seats)` / `get_pointers_info(seats)` acquire wl_keyboard / wl_pointer for seats advertising the respective capability; keyboards receive the keymap event during acquisition. `get_keyboard_event(header, keyboards, recv)` / `get_pointer_event(header, pointers, recv)` match an incoming message against the known input objects and unmarshal the appropriate event tagged union — for clean event loops that route messages by object ID.
 - `xkb.jai` — XKB keymap parser. `parse_keymap_fd(fd, size)` mmaps the compositor's keymap fd and parses the xkb text format into a `Keymap` (`[768] Keymap_Entry`, each entry holds up to 4 keysyms per level). Two-phase parse: `xkb_keycodes` section maps xkb names (`AD01`, `AE02`) to xkb numbers, then `xkb_symbols` section maps names to keysyms; the result is keyed by evdev keycode (xkb_number - 8). `keymap_get_keysym(keymap, evdev_keycode, level)` looks up a keysym at shift level 0 or 1. `keysym_is_ascii(keysym)` flags printable-ASCII keysyms. This replaces hardcoded evdev scancodes with layout-independent keysym handling.
 - `dmabuf.jai` — zwp_linux_dmabuf_v1 discovery and feedback helper. `Format_Modifier`, `Dmabuf_Info` structs. `get_dmabuf_info()` binds the dmabuf global, does a sync roundtrip, collects all (format, modifier) pairs the compositor advertises via `.modifier` (v3+) or legacy `.format` events; sets `feedback_supported = true` if protocol version ≥ 4. `pick_format(info, preferred_fourcc)` picks a pair preferring `DRM_FORMAT_MOD_LINEAR` > `DRM_FORMAT_MOD_INVALID` > any tiled. `Dmabuf_Feedback_Tranche`, `Dmabuf_Feedback_Info` structs for v4+ feedback. `get_default_dmabuf_feedback(dmabuf)` / `get_surface_dmabuf_feedback(dmabuf, surface)` request and collect a `zwp_linux_dmabuf_feedback_v1` snapshot: mmaps the format-table fd (16-byte entries: u32 format + u32 padding + u64 modifier), walks tranche events (`TRANCHE_TARGET_DEVICE`, `TRANCHE_FORMATS` index list, `TRANCHE_FLAGS`, `TRANCHE_DONE`, `DONE`). `pick_format_from_feedback(feedback, fourcc)` returns the first matching entry in compositor tranche order. Modifier constants `DRM_FORMAT_MOD_LINEAR` (0) and `DRM_FORMAT_MOD_INVALID` (`0x00ffffffffffffff`) are exported.
+- `type_registry.jai` — Generator-emitted compile-time map from `*Type_Info` → `(interface_name: string, version: u32)`. Lets bind/registry code do reflective lookups (e.g. `wl_registry.bind` needs the interface name as a wire string). Bridges Jai's compile-time type identity with Wayland's stringly-typed interface registry. Auto-generated — do not edit.
 - **Design: no inversion of control.** Application owns the event loop via `for session() { ... }`, switches on object IDs, decodes events with `unmarshal`/`unmarshal_event` or inline `read_u32`/`read_string`. No callbacks, no dispatch tables, no event queues.
 - **Message-shaped API:** Requests are batched into a `MessageBuilder` (string builder pattern), sent explicitly with `wayland_send`. No hidden flush state.
 - Wire read helpers: `read_string(src) -> string, u32` and `read_array(src) -> [] u8, u32` — mirrors of write_string/write_array.
@@ -102,15 +112,20 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 - `headless_gl.jai` — diagnostic. Uses `modules/gpu` for render node selection (respects `JAI_WAYLAND_RENDER_NODE` / `JAI_WAYLAND_GPU_VENDOR`). Creates gbm_device, EGL display on `EGL_PLATFORM_GBM_KHR`, GL 3.3 core context. Probes GBM BO creation and EGLImage import (both `EGL_NATIVE_PIXMAP_KHR` and `EGL_LINUX_DMA_BUF_EXT` paths). Runs BO-backed FBO clear/readback to verify the path works before touching Wayland. Also exercises the original Mesa texture-export path (`EGL_MESA_image_dma_buf_export` + optional mmap-and-verify for LINEAR modifiers). No Wayland connection — pure EGL/GL/gbm smoke test.
 - `hello_dmabuf.jai` — diagnostic. Prints the grouped (format, modifier) table the compositor advertises via zwp_linux_dmabuf_v1, then (if protocol v4+) prints default and per-surface `zwp_linux_dmabuf_feedback_v1` snapshots with tranche target device, flags, and sample format/modifier entries. Useful for debugging format negotiation.
 - `hello_gl.jai` — ~800 lines. **The Phase 5 + NVIDIA shippable milestone.** Uses `modules/gpu` for render node selection. **Two rendering paths** per `Gl_Slot`: primary is GBM BO-backed (BO → EGLImage → GL texture → FBO; Mesa uses `EGL_NATIVE_PIXMAP_KHR`, NVIDIA uses `EGL_LINUX_DMA_BUF_EXT` fallback); fallback is the older Mesa texture-export path. Format/modifier selection uses per-surface dmabuf feedback (filtered through `supports_bo_format_modifier`) when available, falling back to the global list. Advertises the actual BO format/modifier (from `gbm_bo_get_{format,modifier}`) not the requested values — required for NVIDIA tiled modifiers. **Compositor-driven resize**: when xdg configure arrives at a new size, in-flight slots are retired to `retired_slots` and destroyed on their `wl_buffer.release`; new slots are allocated at the new size. **Frame-paced** via `wl_surface.frame` callbacks. Keyboard: r/g/b flip schemes, q quits. Pointer: click prints coords, cycles scheme. **Wire-protocol gotcha:** `wl_callback.done` and `wl_buffer.release` both have opcode 0 on the wire — event routing MUST match on both object_id AND opcode, never opcode alone.
+- `headless_vulkan.jai` — ~110 lines. Vulkan smoke: load the loader, create an instance, enumerate physical devices, create a logical device + queue. No rendering, no DMA-BUF — just proves the runtime-loaded Vulkan stack works without `libvulkan` at link time.
+- `headless_vulkan_dmabuf.jai` — ~540 lines. Vulkan + DMA-BUF smoke. Allocates a `VkImage` with `VkImageDrmFormatModifierListCreateInfoEXT`, queries the chosen modifier and plane layout, exports the backing `VkDeviceMemory` as a DMA-BUF fd via `vkGetMemoryFdKHR`. Pure Vulkan, no Wayland — verifies the export path before wiring it up to a compositor.
+- `hello_vulkan_dmabuf.jai` — ~1230 lines. **The Vulkan presentation milestone.** Renders a rotating triangle into DRM-modifier-backed `VkImage`s, exports each as a DMA-BUF, wraps as a Wayland `wl_buffer`, presents through double-buffered frame-paced resize-safe slots. Shaders are GLSL compiled to SPIR-V by `glslc` invoked from `first.jai` at build time (see `examples/shaders/`). Use `JAI_WAYLAND_VULKAN_FRAMES=N` for bounded smoke runs.
+- `x11_smoke.jai` — ~40 lines. Opens a runtime-loaded Xlib display, creates a basic window, pumps events briefly. Proves the X11 module's `dlopen`+`dlsym` pattern works — `ldd build/x11_smoke` must show no `libX11`/`libxcb`.
+- `hello_x11_gl.jai` — ~390 lines. Runtime-loaded Xlib + GLX rotating triangle. Use `JAI_WAYLAND_X11_GL_FRAMES=N` for bounded live smoke runs. Same "no link-time libGL/libX11/libGLX/libxcb" invariant as the Wayland path.
 
 **Tests:**
 - `tests/xml_test.jai`: 22 tests (pull parser, entities, protocol parsing)
-- `tests/generator_test.jai`: 36 tests (naming, enums, events, requests, assembly, end-to-end)
+- `tests/generator_test.jai`: 35 tests (naming, enums, events, requests, assembly, end-to-end)
 - `tests/wire_test.jai`: 22 tests (primitive writers/readers, header pack/unpack, string/array read/write, MessageBuilder queueing, ReceiveBuffer peek/consume/pop_fd)
 - `tests/marshal_test.jai`: 9 tests (fixed args, fd, string, array, Fixed, empty, constructors — all target MessageBuilder)
 - `tests/unmarshal_test.jai`: 12 tests (round-trip fixed/string/array/Fixed/fd/empty, *void, *Interface temp alloc, tagged union dispatch with real Wl_Output_Event)
-- `tests/compile_test.jai`: 8 tests (imports generated module, verifies types/Fd/arg structs/version defaults compile)
-- **Total: 109 tests across 6 test suites**
+- `tests/compile_test.jai`: 11 tests (imports generated module, verifies types/Fd/arg structs/version defaults compile)
+- **Total: 111 tests across 6 test suites**
 
 ## Jai Toolchain
 
@@ -132,6 +147,9 @@ Jai compiler expected at `~/jai/jai/`. Standard library at `~/jai/jai/modules/`.
 - **Dogfood the convenience API:** Code inside the wayland module (output.jai, input.jai) should use session.jai convenience functions (`globals()`, `registry()`, `allocate_id()`, `for session()`, `wayland_send(*batch)`) rather than reaching into `context.wayland_session` directly.
 - **Opcodes are per-interface, not global.** Every Wayland interface restarts opcode numbering at 0. `wl_buffer.release`, `wl_callback.done`, `wl_output.geometry`, `wl_seat.capabilities`, `wl_keyboard.keymap`, and `wl_surface.enter` are *all* opcode 0 on the wire. Generated constants like `WL_BUFFER_RELEASE` and `WL_CALLBACK_DONE` both literally equal 0. When routing incoming messages in a `for session()` loop, match on `(object_id, opcode)` — matching on opcode alone silently catches events from other interfaces and swallows them. This bit the first GL render loop before we disambiguated.
 - **Jai operator precedence: `cast` binds looser than `<<`.** `cast(u32) b << 8` parses as `cast(u32) (b << 8)` — the shift happens on `u8` first and overflows. For fourcc packing and similar bit-assembly, wrap each cast+shift in explicit parens: `((cast(u32) b) << 8)`. The `gbm_fourcc` helper in `modules/gbm/gbm.jai` has an in-code comment warning about this — copy the pattern.
+- **`VK_KHR_wayland_surface` is unusable here.** That extension expects real libwayland-client `wl_display*` and `wl_surface*` proxy pointers, not bare wire-protocol object IDs. The project therefore never uses Vulkan WSI; Vulkan presentation goes through DMA-BUF export wrapped as a `wl_buffer`. This is a permanent design constraint, not a TODO.
+- **`Id_Cache` for short-lived object IDs.** Replaces the earlier `Reuse_Block` design. First allocation is always sequential (preserves contiguous-ID invariant); subsequent allocations reuse a cached ID only after `cache_free` marks the prior object dead following its destructor event. Used for frame callback IDs in `hello_gl`/`hello_vulkan_dmabuf`.
+- **Modules log, they don't print.** Code inside `modules/` uses Jai's standard `log` facility (`log("...")`, `log_error("...")`) rather than raw `print`. Examples still use `print` for direct user-facing output. Don't reintroduce `print` calls inside module files.
 
 ## Wire Protocol Design
 
@@ -170,15 +188,18 @@ These edge cases were discovered during the compilation smoke test against all 5
 - `docs/plans/2026-04-03-code-generator-design.md` — Phase 2 code generator design (hybrid approach: typed stubs + shared marshal core)
 - `docs/plans/2026-04-03-code-generator-impl.md` — Phase 2 implementation plan (12 tasks)
 - `docs/plans/2026-04-04-wire-protocol-impl.md` — Phase 3 wire protocol implementation plan (11 tasks)
+- `docs/plans/2026-04-05-phase4-client-api.md` — Phase 4 client API design (session/registry/discovery + `for session()` event loop pattern)
 - `docs/plans/2026-04-07-noise-reduction-design.md` — Message-shaped API redesign: Connection/MessageBuilder/ReceiveBuffer split
 - `docs/plans/2026-04-07-noise-reduction-impl.md` — Noise reduction implementation plan (10 tasks)
+- `docs/plans/2026-04-17-double-buffering-impl.md` — Double-buffered shm + dmabuf slot implementation plan
 - `docs/plans/2026-04-18-rendering-gl-impl.md` — Phase 5 GL rendering implementation plan (11 tasks, including Task 2.5 amendment for vendoring GL bindings)
 - `docs/plans/2026-04-25-nvidia-gpu-support.md` — NVIDIA/hybrid GPU support plan (7 tasks). **Complete.** Tasks 1–5: render node discovery, GBM BO bindings, EGLImage from BO, Wayland buffer creation from BO, dmabuf feedback API. Task 6: fence fd placeholder fields on `Gl_Slot`. Task 7: `Gl_Backend` enum + `choose_gl_backend()` function API replacing the env-var hack.
 
 ## Next Steps
 
 1. **Explicit fence sync** — currently using `glFinish()` before DMA-BUF export. Fences (`EGL_KHR_fence_sync` + `wp_linux_drm_syncobj_v1`) would release the CPU sooner. `Gl_Slot.acquire_fence_fd` / `.release_fence_fd` are placeholder fields ready for this.
-2. **Vulkan WSI** — alternative to GL for the same end goal. Would use `VK_KHR_wayland_surface` if we accept libwayland linkage (we don't) — more likely need a DMA-BUF-out-of-Vulkan pattern equivalent to the current GL path.
-3. **Ergonomic layer on top of the raw primitives** — the real payoff: a "raylib-light" API with Jai Simp+GetRect flavor that hides the Wayland/GL setup behind `frame_begin() / draw_things() / frame_end()`. Keep the low-level API unchanged; the layer wraps, doesn't replace. Its own phase (Phase 6+).
-4. **Server-allocated objects** — Handle `new_id` args in events (e.g., wl_data_device.data_offer, tablet hotplug). IDs from 0xFF000000+ range.
-5. **Fractional scaling** — `wp_fractional_scale_v1` protocol for non-integer scale factors (1.25, 1.5).
+2. **Deeper Vulkan examples** beyond the triangle DMA-BUF smoke (`hello_vulkan_dmabuf`). The export pipeline is proven; next is more involved rendering (textures, depth, MSAA, multi-pass) on top.
+3. **Vulkan WSI compatibility shim** — if a future ergonomic layer needs swapchains, a shim that pretends to be `VK_KHR_wayland_surface` while routing through DMA-BUF could let third-party Vulkan code work. Open question whether this is worth the complexity vs. just exposing the DMA-BUF export path directly.
+4. **Vendored `Window_Creation`, `Simp`, `GetRect`, `GetRect_LeftHanded`** with Linux runtime backend selection between Wayland and X11. This is why `modules/X11/` exists. Effectively the "raylib-light with Jai Simp+GetRect flavor" goal, framed against existing Jai module names. Keeps the low-level API unchanged; the layer wraps, doesn't replace. Its own phase (Phase 6+).
+5. **Server-allocated objects** — Handle `new_id` args in events (e.g., wl_data_device.data_offer, tablet hotplug). IDs from 0xFF000000+ range.
+6. **Fractional scaling** — `wp_fractional_scale_v1` protocol for non-integer scale factors (1.25, 1.5).
