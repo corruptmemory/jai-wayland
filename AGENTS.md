@@ -119,6 +119,27 @@ repeat it before each target.
   `.so` files (which call `pow` / `cos` / `floor` without a `DT_NEEDED
   libm`) can resolve math symbols at runtime, preserving the ldd-clean
   invariant. (stb_image_write has no libm symbols and skips that step.)
+- **Backend dispatch infrastructure** (Stage 1 of Phase 6):
+  - `modules/Window_Type.jai` — vendored with Linux branch rewritten as a
+    tagged union (`union wtype: Window_Tag { .X11 ,, x11: X11.Window;
+    .Wayland ,, wayland: Wayland_Window_State }`). Defines `operator ==`
+    overloads (Window_Type ↔ Window_Type and Window_Type ↔ X11.Window).
+    `Window_Creation/module.jai` re-exports them via
+    `operator == :: WT.operator==;` so importers of Window_Creation can
+    compare values without explicitly importing Window_Type.
+  - `modules/Simp/backend/dispatch.jai` — `Simp_Op_Args` tagged union,
+    `Simp_Backend_Dispatch` function-pointer type, `#add_context
+    simp_dispatch`.
+  - `modules/Simp/backend/x11_dispatch.jai` — `simp_x11_dispatch`; X11/GLX
+    paths relocated out of `backend/gl.jai`'s inline `#if OS == .LINUX`
+    branches.
+  - `modules/Simp/backend/wayland_dispatch.jai` — Stage 2 stub.
+  - `modules/Window_Creation/linux_init.jai` — new file (not vendored).
+    `init_linux_window()` pushes the backend dispatch into context. Called
+    lazily on first `create_window` invocation.
+  - `modules/Input/` — vendored upstream Input module; `x11.jai` patched
+    to construct `Window_Type` values explicitly (required for tagged-union
+    shape).
 
 ## Core Invariants
 
@@ -210,14 +231,17 @@ Known future areas:
 - Deeper Vulkan examples beyond the triangle DMA-BUF smoke path.
 - Vulkan WSI compatibility shim, if a future layer needs swapchains.
 - Vendored `Window_Creation`, `Simp`, `GetRect`, and `GetRect_LeftHanded` with
-  Linux runtime backend selection between Wayland and X11. Phase 6 in
-  progress: upstream `invaders` is playable via `./build.sh - invaders`
-  against our vendored stack on X11 (ldd-clean). **Wayland backend dispatch
-  within Window_Creation is the remaining ~70% of the work and the design
-  question is open** — see `docs/plans/2026-05-26-wayland-backend-question.md`.
-  The load-bearing decision is how GL actually works on Wayland under our
-  "no libwayland linkage" thesis (same fundamental incompatibility as
-  `VK_KHR_wayland_surface`).
+  Linux runtime backend selection between Wayland and X11. **Phase 6 Stage 1
+  complete on `upstream-integration`: context-based backend dispatch wired
+  through vendored Simp; invaders runs identically through
+  `context.simp_dispatch` instead of inline `#if OS == .LINUX` branches in
+  Simp; ldd-clean preserved.** Stage 2 (Wayland dispatcher implementation)
+  is the remaining work — see `docs/plans/2026-05-26-context-dispatch-stage1-design.md`
+  for the architecture this established and
+  `docs/plans/2026-05-26-wayland-backend-question.md` for the Stage-2
+  Layer-3 decision. The load-bearing decision is how GL actually works on
+  Wayland under our "no libwayland linkage" thesis (same fundamental
+  incompatibility as `VK_KHR_wayland_surface`).
 - Server-allocated Wayland object IDs.
 - Fractional scaling.
 - Higher-level "raylib-light" ergonomic layer.

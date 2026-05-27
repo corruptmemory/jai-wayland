@@ -1016,6 +1016,38 @@ EOF
 )"
 ```
 
+### Task 7 scope-expansion note
+
+In addition to Steps 2-5 above, the commit (`e78d3f3`) included three
+additional changes inside `linux.jai`, all required to keep invaders
+compiling under the tagged-union `Window_Type`:
+
+1. `create_window` return type changed from `Window` (raw X11.Window u64)
+   to `Window_Type`. Aligns with Windows/macOS backends, where `HWND ≡
+   Window_Type` and `*NSWindow ≡ Window_Type` on their respective
+   platforms. Required so that callers like invaders can feed the
+   returned value directly into `Simp.set_render_target`, which after
+   Task 1 takes `Window_Type`.
+2. `get_dimensions(win)` signature changed to take `Window_Type` and
+   unwrap `.x11` internally before handing off to `XGetWindowAttributes`.
+   Invaders' call site passes the `Window_Type` returned from
+   `create_window`.
+3. Re-declared `operator ==` overloads at `Window_Creation`'s module
+   scope, because Jai's namespaced import (`WT :: #import "Window_Type"`)
+   doesn't propagate operator overloads to importers of
+   `Window_Creation`. Without these the `it.window == window`
+   comparison inside invaders failed to resolve.
+
+The Task 9 docs-commit follow-up (this commit) replaced point 3 with a
+single-line `operator == :: WT.operator==;` re-export inside
+`Window_Creation/module.jai`. Re-exporting the operator value reference
+from the WT namespace is sufficient — the duplicate `operator ==`
+definitions in `linux.jai` were removed. `Window_Type` and
+`INVALID_WINDOW` are also re-exported from `module.jai` alongside the
+operator, so importers of `Window_Creation` get all three (type,
+sentinel, comparison) without needing to `#import "Window_Type"`
+themselves.
+
 ---
 
 ## Phase 7 — Validation
