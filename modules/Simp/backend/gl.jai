@@ -1,6 +1,12 @@
 // Vendored from ~/jai/jai/modules/Simp/backend/gl.jai.
-// Modified: gl_load() signature swapped from *GL_Procedures to
-//           get-proc-address function. See commit 7a9d296.
+// Modified: (a) gl_load() signature swapped from *GL_Procedures to
+//               get-proc-address function. See commit 7a9d296.
+//           (b) Four #if OS == .LINUX branches in backend_init/
+//               backend_set_render_target/backend_resize_render_target/
+//               swap_buffers replaced with context.simp_dispatch calls.
+//               The X11/GLX-specific logic relocated verbatim to
+//               modules/Simp/backend/x11_dispatch.jai. See
+//               docs/plans/2026-05-26-context-dispatch-stage1-design.md.
 
 #load "gl_screenshot.jai";
 
@@ -29,8 +35,6 @@ backend_init :: (info: *Window_Info) {
             the_hdc_for_pixel_format_cloning = hdc;
             info.msaa = chosen_msaa;
             info.specific.hdc     = hdc;
-        } else #if OS == .LINUX {
-            the_gl_context, the_gl_fbc, info.msaa = glx_create_context(info.window, MINIMUM_GL_MAJOR_VERSION, MINIMUM_GL_MINOR_VERSION);
         } else #if OS == .MACOS {
             the_gl_context, info.msaa = nsgl_create_context(MINIMUM_GL_MAJOR_VERSION, MINIMUM_GL_MINOR_VERSION, wanted_msaa=info.wanted_msaa);
             autorelease(the_gl_context);
@@ -39,6 +43,12 @@ backend_init :: (info: *Window_Info) {
             the_gl_context = egl_info.context_;
         } else #if OS == .NN_SWITCH2 {
             the_gl_context, the_egl_display, the_egl_surface, info.msaa = egl_create_context(info.window, info.wanted_msaa);
+        } else #if OS == .LINUX {
+            // Linux: per-backend context + window setup is performed by the
+            // dispatch call below (BACKEND_INIT), which also handles
+            // glXCreateWindow and glXMakeCurrent in one step. We keep
+            // do_first_time_init = true so the post-init gl_load /
+            // glGenVertexArrays / backend_init_shaders ceremony runs.
         } else {
             #assert false;
         }
@@ -55,15 +65,17 @@ backend_init :: (info: *Window_Info) {
     }
 
     #if OS == .LINUX {
-        // Make dumb wrapper window.
-        // Must happen before glGen*, because we make current.
-        glx_window := glXCreateWindow(x_global_display, the_gl_fbc, info.window, null);
-        info.specific.glx_window = glx_window;
+        // Dispatches to the active Linux backend (X11 or Wayland) for
+        // context creation, window-surface setup, and make-current. The
+        // backend internally decides whether do_first_time_init applies
+        // based on the_gl_context, matching the previous inline behavior.
+        args := Simp_Op_Args.{ op = .BACKEND_INIT };
+        context.simp_dispatch(*args, info);
     }
 
     if do_first_time_init {
         // @Cleanup: Windows and Android make current during egl/wgl_create_context, Linux and mac don't. Which is correct?
-        #if OS == .LINUX  glXMakeCurrent(x_global_display, glx_window, the_gl_context);
+        // Linux make-current is performed by the dispatcher above.
         #if OS == .MACOS  NSOpenGLContext.makeCurrentContext(the_gl_context);
 
         #if OS == .NN_SWITCH2 {
@@ -182,10 +194,12 @@ is_supported :: (tf: Texture_Format) -> bool {
     return get_ogl_format(tf) != GL_INVALID_ENUM;
 }
 
-#scope_file
-
+// Module-scoped so backend dispatchers (e.g. x11_dispatch.jai) can use them
+// when creating the GLX context. Originally #scope_file in upstream.
 MINIMUM_GL_MAJOR_VERSION :: 3;
 MINIMUM_GL_MINOR_VERSION :: 3;
+
+#scope_file
 
 set_vertex_format_to_XCNUU :: (shader: *Shader) {
 //    using extensions;
@@ -309,13 +323,16 @@ swap_buffers :: (window: Window_Type, vsync := true) {  // @Incomplete: Have som
         dc := GetDC(window);
         SwapBuffers(dc);
     } else #if OS == .LINUX {
+        // find_window_info / null-check stays here in gl.jai: the dispatcher's
+        // SWAP_BUFFERS case dereferences info.specific.glx_window directly,
+        // so we must guarantee info is non-null before dispatching.
         info := find_window_info(window);
-        if (!info) || !info.specific.glx_window {
+        if !info {
             log_error("Simp: Attempt to swap_buffers on a previously unseen window!\n");
             return;
         }
-
-        glXSwapBuffers(x_global_display, info.specific.glx_window);
+        args := Simp_Op_Args.{ op = .SWAP_BUFFERS, swap_buffers = .{ vsync = vsync } };
+        context.simp_dispatch(*args, info);
     } else #if OS == .MACOS {
         // On macOS, OpenGL buffer swapping is done on the context, not on the view.
         // So we can only swap for the active window. (And you need to swap before switching to another view).
@@ -907,11 +924,11 @@ backend_set_render_target :: (info: *Window_Info) {
             success := wglMakeCurrent(info.specific.hdc, the_gl_context);
             errno := GetLastError();
         } else #if OS == .LINUX {
-            display := x_global_display;
-            XLockDisplay(display);
-            success := glXMakeCurrent(display, info.specific.glx_window, the_gl_context);
-            if !success log_error("glxMakeCurrent failed! (glx_window %, context%)\n", info.specific.glx_window, the_gl_context);
-            XUnlockDisplay(display);
+            // The info.backend_initted_for_this_window guard above stays in
+            // gl.jai (backend-agnostic); the dispatcher just performs the
+            // make-current step.
+            args := Simp_Op_Args.{ op = .BACKEND_SET_RENDER_TARGET };
+            context.simp_dispatch(*args, info);
         } else #if OS == .MACOS {
             // Get the GL view from the window.
             // This relies on this window having a content view with OpenGL support (eg. as created by Window_Creation).
