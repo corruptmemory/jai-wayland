@@ -2,9 +2,7 @@
 // Modified: (a) create_window calls init_linux_window() at its top to
 //               lazy-initialize context-based backend dispatch.
 //           (b) parent parameter default changed from None (X11 s64) to
-//               INVALID_WINDOW (Window_Type tagged-union sentinel; this
-//               file references it as WT.INVALID_WINDOW since module.jai
-//               re-exports only Window_Type, not INVALID_WINDOW).
+//               INVALID_WINDOW (Window_Type tagged-union sentinel).
 //               In-body parent usages updated accordingly with .x11
 //               extractions or tagged-union comparison.
 //           (c) Return type of create_window changed from Window (the
@@ -17,11 +15,6 @@
 //           (d) get_dimensions(win) likewise changed to accept
 //               Window_Type and unwrap .x11 internally before handing
 //               off to XGetWindowAttributes.
-//           (e) Window_Type's operator == overloads re-declared at
-//               Window_Creation's module scope so anonymous importers
-//               of Window_Creation see them (Window_Type itself is
-//               namespace-imported by module.jai, which doesn't
-//               propagate operator overloads).
 //           See docs/plans/2026-05-26-context-dispatch-stage1-design.md.
 
 
@@ -31,29 +24,6 @@
 // and a window pointer, thus is enough to uniquely identify a window.
 //
 #import "X11";
-
-// Re-declare the Window_Type equality operators at Window_Creation's
-// module scope. Window_Type lives in its own module and module.jai
-// imports it under a namespace alias (`WT :: #import "Window_Type"`),
-// which doesn't propagate operator overloads. Callers like invaders do
-// `#import "Window_Creation"` only and have no direct dependency on
-// Window_Type, so without these aliases their `window_a == window_b`
-// comparisons fail to find any matching overload. Defining the
-// operators here (in a file loaded by Window_Creation) puts them in
-// Window_Creation's module scope and lets anonymous importers see them.
-operator == :: (a: Window_Type, b: Window_Type) -> bool {
-    if a.wtype != b.wtype  return false;
-    if a.wtype == {
-        case .X11;     return a.x11 == b.x11;
-        case .Wayland; return true;  // Wayland_Window_State is empty in Stage 1.
-    }
-    return false;
-}
-
-operator == :: (a: Window_Type, b: Window) -> bool {
-    // `Window` here is X11's u64 (anonymous-imported from X11 above).
-    return a.wtype == .X11 && a.x11 == b;
-}
 
 window_minimized := false;
 
@@ -129,7 +99,7 @@ toggle_fullscreen :: (win: Window, desire_fullscreen: bool, saved: *Saved_Window
     }
 }
 
-create_window :: (width: int, height: int, window_name: string, window_x := 0, window_y := 0, parent: Window_Type = WT.INVALID_WINDOW, background_color_rgb := DEFAULT_WINDOW_CREATION_COLOR, wanted_msaa: s32 = DEFAULT_MSAA) -> Window_Type {
+create_window :: (width: int, height: int, window_name: string, window_x := 0, window_y := 0, parent: Window_Type = INVALID_WINDOW, background_color_rgb := DEFAULT_WINDOW_CREATION_COLOR, wanted_msaa: s32 = DEFAULT_MSAA) -> Window_Type {
     if !context.simp_dispatch  init_linux_window();
     if !x_global_display
         init_global_display();
@@ -143,7 +113,7 @@ create_window :: (width: int, height: int, window_name: string, window_x := 0, w
     // struct after Task 1's tagged-union refactor; the upstream version
     // could reassign because Window_Type was a scalar u64 alias).
     parent_local := parent;
-    if parent_local == WT.INVALID_WINDOW { parent_local = .{ wtype = .X11, x11 = root }; }
+    if parent_local == INVALID_WINDOW { parent_local = .{ wtype = .X11, x11 = root }; }
 
     screen := DefaultScreen(d);
 
