@@ -4,7 +4,10 @@
 // into context. Called lazily on first create_window invocation.
 // See docs/plans/2026-05-26-context-dispatch-stage1-design.md.
 
-#import "Simp";  // for simp_x11_dispatch / simp_wayland_dispatch
+#import "Simp";  // for simp_x11_dispatch / simp_wayland_dispatch.
+                 // Note: Simp also imports Window_Creation, but Jai resolves
+                 // the cycle cleanly because neither side needs the other
+                 // at file/load scope.
 
 running_wayland :: () -> bool {
     // Stage 1: unconditionally X11.
