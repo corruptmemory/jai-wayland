@@ -1,12 +1,17 @@
 // Vendored from ~/jai/jai/modules/Window_Creation/module.jai.
-// Verbatim copy.
+// Modified: added #load "linux_init.jai" in the Linux branch for the
+//           context-dispatch init ceremony (running_wayland +
+//           init_linux_window). See
+//           docs/plans/2026-05-26-context-dispatch-stage1-design.md.
 
 // Platform-independent window creation routines.
 #module_parameters (DEFAULT_MSAA: s32 = 4);
 
 #if OS == {
     case .WINDOWS; #load "windows.jai";
-    case .LINUX;   #load "linux.jai";
+    case .LINUX;
+        #load "linux.jai";
+        #load "linux_init.jai";
     case .MACOS;   #load "macos.jai";
     case .PS5;     #load "ps5.jai";
     case .NN_SWITCH2;   #load "nintendo.jai";
