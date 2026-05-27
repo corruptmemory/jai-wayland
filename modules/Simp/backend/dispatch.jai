@@ -26,6 +26,10 @@ Simp_Op_Args :: union op: Simp_Op_Tag {
     .SWAP_BUFFERS                 ,, swap_buffers          : Swap_Buffers_Args;
 }
 
-Simp_Backend_Dispatch :: #type (args: *Simp_Op_Args, info: *Window_Info) -> void;
+// Note: no explicit `-> void` — Jai's implicit-no-return signature matches
+// what simp_x11_dispatch / simp_wayland_dispatch are declared with. Spelling
+// it as `-> void` causes a type mismatch when assigning the procs into the
+// context field.
+Simp_Backend_Dispatch :: #type (args: *Simp_Op_Args, info: *Window_Info);
 
 #add_context simp_dispatch: Simp_Backend_Dispatch;

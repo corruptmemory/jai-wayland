@@ -1,9 +1,13 @@
 // Vendored from ~/jai/jai/modules/Simp/module.jai.
-// Modified: added #load directives for backend/dispatch.jai (the context-
-//           based dispatch infrastructure) and backend/x11_dispatch.jai
-//           (the X11/GLX dispatcher with the relocated GLX code from
-//           gl.jai). See
-//           docs/plans/2026-05-26-context-dispatch-stage1-design.md.
+// Modified: (a) added #load directives for backend/dispatch.jai (the
+//               context-based dispatch infrastructure) and
+//               backend/x11_dispatch.jai (the X11/GLX dispatcher with
+//               the relocated GLX code from gl.jai). See
+//               docs/plans/2026-05-26-context-dispatch-stage1-design.md.
+//           (b) get_render_dimensions's Linux branch unwraps window.x11
+//               for XGetGeometry since Window_Type is now a tagged
+//               union. See Task 6A in
+//               docs/plans/2026-05-26-context-dispatch-stage1-impl.md.
 
 //
 // This is a simple framework for drawing graphics that you can use
@@ -304,7 +308,10 @@ get_render_dimensions :: (window: Window_Type) -> (width: s32, height: s32) {
         width, height: u32;
         border_width, depth_return: u32;
 
-        status := XGetGeometry(x_global_display, window, *root, *x, *y, *width, *height, *border_width, *depth_return);
+        // window is a tagged Window_Type; XGetGeometry wants a raw
+        // X11.Window. Stage 1 only ever takes the X11 path here, so
+        // unwrap .x11 directly. Stage 2 will branch on .wtype.
+        status := XGetGeometry(x_global_display, window.x11, *root, *x, *y, *width, *height, *border_width, *depth_return);
         return cast(s32) width, cast(s32) height;
     } else #if OS == .MACOS {
         view := NSWindow.contentView(window);

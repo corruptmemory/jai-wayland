@@ -2,6 +2,11 @@
 // X11/GLX dispatcher for vendored Simp. Body relocated verbatim from
 // modules/Simp/backend/gl.jai's #if OS == .LINUX branches.
 // See docs/plans/2026-05-26-context-dispatch-stage1-design.md.
+//
+// Modified: info.window is now a tagged Window_Type; .x11 extractions
+//           added where the value flows into GLX/XLib APIs that want a
+//           raw X11.Window. See Task 6A in
+//           docs/plans/2026-05-26-context-dispatch-stage1-impl.md.
 
 #scope_export
 
@@ -20,12 +25,15 @@ simp_x11_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             do_first_time_init := false;
             if !the_gl_context {
                 do_first_time_init = true;
-                the_gl_context, the_gl_fbc, info.msaa = glx_create_context(info.window, MINIMUM_GL_MAJOR_VERSION, MINIMUM_GL_MINOR_VERSION);
+                // info.window is a tagged Window_Type now (X11 | Wayland); the
+                // X11 dispatcher only ever sees the X11 variant, so unwrap
+                // .x11 for the GLX/XLib calls that want a raw X11.Window.
+                the_gl_context, the_gl_fbc, info.msaa = glx_create_context(info.window.x11, MINIMUM_GL_MAJOR_VERSION, MINIMUM_GL_MINOR_VERSION);
             }
 
             // Make dumb wrapper window.
             // Must happen before glGen*, because we make current.
-            glx_window := glXCreateWindow(x_global_display, the_gl_fbc, info.window, null);
+            glx_window := glXCreateWindow(x_global_display, the_gl_fbc, info.window.x11, null);
             info.specific.glx_window = glx_window;
 
             if do_first_time_init {

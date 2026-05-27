@@ -40,6 +40,26 @@
     INVALID_WINDOW : Window_Type : .{ wtype = .X11, x11 = 0 };
     // X11 Window 0 is None — valid sentinel for X11. Stage 2 may want
     // to revisit if Wayland needs a different sentinel for its variant.
+
+    // Equality overloads. Consumers (Simp, Input) treated the old
+    // u64-alias Window_Type as a plain comparable value. The tagged
+    // union is not comparable by default, so we have to provide these
+    // explicitly. Two flavors:
+    //   * Window_Type <-> Window_Type : tag-aware comparison.
+    //   * Window_Type <-> X11.Window  : convenience for callers that
+    //     already hold an X11.Window (e.g. Input's per-event lookup).
+    operator == :: (a: Window_Type, b: Window_Type) -> bool {
+        if a.wtype != b.wtype  return false;
+        if a.wtype == {
+            case .X11;     return a.x11 == b.x11;
+            case .Wayland; return true;  // Wayland_Window_State is empty in Stage 1.
+        }
+        return false;
+    }
+
+    operator == :: (a: Window_Type, b: X11.Window) -> bool {
+        return a.wtype == .X11 && a.x11 == b;
+    }
 } else #if OS == .MACOS {
     #scope_module;
     ObjC :: #import "Objective_C/AppKit";

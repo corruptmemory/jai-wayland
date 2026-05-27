@@ -7,6 +7,10 @@
 //               The X11/GLX-specific logic relocated verbatim to
 //               modules/Simp/backend/x11_dispatch.jai. See
 //               docs/plans/2026-05-26-context-dispatch-stage1-design.md.
+//           (c) Simp_Op_Args constructions updated to the Jai 0.2.029
+//               tagged-union literal form (each must initialize the
+//               selected variant field, even when the variant is empty).
+//               See modules/Simp/backend/dispatch.jai for the union def.
 
 #load "gl_screenshot.jai";
 
@@ -69,7 +73,7 @@ backend_init :: (info: *Window_Info) {
         // context creation, window-surface setup, and make-current. The
         // backend internally decides whether do_first_time_init applies
         // based on the_gl_context, matching the previous inline behavior.
-        args := Simp_Op_Args.{ op = .BACKEND_INIT };
+        args := Simp_Op_Args.{ op = .BACKEND_INIT, init = .{} };
         context.simp_dispatch(*args, info);
     }
 
@@ -927,7 +931,7 @@ backend_set_render_target :: (info: *Window_Info) {
             // The info.backend_initted_for_this_window guard above stays in
             // gl.jai (backend-agnostic); the dispatcher just performs the
             // make-current step.
-            args := Simp_Op_Args.{ op = .BACKEND_SET_RENDER_TARGET };
+            args := Simp_Op_Args.{ op = .BACKEND_SET_RENDER_TARGET, set_render_target = .{} };
             context.simp_dispatch(*args, info);
         } else #if OS == .MACOS {
             // Get the GL view from the window.
