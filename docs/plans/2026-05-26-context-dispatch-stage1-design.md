@@ -38,14 +38,59 @@ upstream stack. Stage 1 + Stage 2 together complete that goal.
   Their bifurcation comes in Stage 2 — either via a separate
   `#add_context wc_dispatch` or via direct tag dispatch off `Window_Type`. We
   defer that decision.
-- **Input module polymorphism.** Stock `Input` already works on X11 via
-  path-order resolution against our vendored runtime-loaded X11 module.
-  Nothing changes for input in Stage 1. Vendoring decision is deferred to
-  Stage 2.
+- **Input module polymorphism.** Vendoring stock `Input` and patching its
+  Linux backend is now part of Stage 1 (see below — this changed after Task 1
+  surfaced an Input-vs-tagged-union-Window_Type incompatibility). But
+  Input *polymorphism* (a Wayland event-pump backend) remains Stage 2 work.
+  Stage 1's Input vendor patches only the type compatibility — the X11
+  event-pump body stays as upstream wrote it.
 - **Touching upstream invaders source.** Ever. Same constraint as
   upstream-integration.
 - **Changing the behavior of existing project examples** (`hello_gl`,
   `hello_x11_gl`, `headless_gl`, etc.). They remain unaffected.
+
+## Mid-execution scope revision: Input must be vendored
+
+The original design (above) said "Input module polymorphism is deferred to
+Stage 2; stock Input works on X11 via path-order resolution." That deferral
+assumed Window_Type's shape change in Task 1 wouldn't matter to Input. **It
+does.** Upstream `~/jai/jai/modules/Input/x11.jai:813` does
+`record.window = hwnd` — assigns a `u64` (`X11.Window`) to a `Window_Type`
+field. When Window_Type was a u64 alias, this was a no-op assignment.
+After Task 1 made Window_Type a tagged union, the assignment fails type-check
+because Jai forbids `operator =` overloads.
+
+The discovery came during Task 7's invaders build attempt. The cleanest
+resolution is to vendor `Input/` into `modules/Input/` and patch its
+`x11.jai` line 813 to construct a `Window_Type` value instead of assigning
+the bare handle. This preserves the design intent of Window_Type as a
+tagged union while keeping Input's X11 backend functional in Stage 1.
+
+A second category of collateral fixes also surfaced during Task 7's attempt:
+Jai 0.2.029 tagged-union literal syntax strictness (`X.{ op = .Y }` is no
+longer valid; needs `X.{ op = .Y, y = .{} }`), `.x11` extractions wherever
+`info.window` is consumed as a `u64` (in Simp's backend code), and
+`operator ==` overloads on `Window_Type` for both same-type and cross-type
+comparison against `X11.Window`. All of these are consequences of Task 1's
+tagged-union conversion and need to be handled before invaders compiles.
+
+The impl plan has been amended with two new tasks before the original Task 7:
+
+- **New Task 6.5 — Harden Window_Type conversion.** Add `operator ==`
+  overloads, fix Jai 0.2.029 tagged-union literal syntax in `Simp_Op_Args`
+  constructions, add `.x11` extractions where `info.window` flows through
+  to `X11.Window`-typed APIs, drop the explicit `-> void` on
+  `Simp_Backend_Dispatch` (which mismatches Jai's implicit-no-return
+  convention).
+
+- **New Task 6.6 — Vendor Input module + patch x11.jai.** Copy
+  `~/jai/jai/modules/Input/` verbatim into `modules/Input/`, then patch
+  `x11.jai:813` (and any sibling sites) to handle Window_Type as a tagged
+  union.
+
+After 6.5 + 6.6 land, the original Task 7 (lazy init in create_window +
+`parent = None` → `INVALID_WINDOW`) becomes tractable and the invaders
+build can proceed.
 
 ## Approach
 
@@ -361,10 +406,12 @@ When Stage 1 lands, the remaining work to complete the integration goal:
    dispatch (small switch in each function) or via a separate
    `#add_context wc_dispatch`. Probably the former — Window_Creation's
    polymorphic surface is small.
-3. **Input.** Vendor stock `Input` module with a `wayland.jai` backend (and
-   a `#add_context input_pump`), OR provide an external bridge that pumps
-   Wayland events into `Input.add_event` from outside the module. Decision
-   point — leaning toward vendoring for symmetry with Simp.
+3. **Input polymorphism.** Stage 1 vendored `Input/` for type compatibility
+   only. Stage 2 adds a `wayland.jai` backend (and a `#add_context
+   input_pump` or equivalent), routing through the same context-dispatch
+   pattern Simp uses. The existing X11 event-pump in Stage 1's vendored
+   Input stays as the X11 dispatcher; the Wayland version drains our
+   wire-protocol message queue and feeds `Input.events_this_frame`.
 4. **Flip `running_wayland()` to real detection.** Probably
    `to_string(getenv("WAYLAND_DISPLAY")).count > 0` is enough.
 

@@ -602,6 +602,267 @@ EOF
 
 ---
 
+## Phase 6.5 — Mid-Execution Scope Expansion (Discovered During Task 7's First Attempt)
+
+The first attempt at Task 7 surfaced an architectural gap that the design
+plan didn't anticipate: Task 1's tagged-union `Window_Type` is structurally
+incompatible with upstream's stock `Input` module, which writes
+`record.window = hwnd` (assigning `X11.Window` u64 to a `Window_Type` field).
+Jai forbids `operator =` overloads, so this can only be fixed by vendoring
+and patching upstream Input.
+
+Two new tasks (6A and 6B) handle the discovered work. They must complete
+before the original Task 7 can succeed.
+
+### Task 6A: Harden Window_Type tagged-union conversion across consumers
+
+**Files:**
+- Modify: `modules/Window_Type.jai` (add `operator ==` overloads)
+- Modify: `modules/Simp/backend/dispatch.jai` (drop explicit `-> void` on `Simp_Backend_Dispatch`)
+- Modify: `modules/Simp/backend/gl.jai` (tagged-union literal syntax for Jai 0.2.029)
+- Modify: `modules/Simp/backend/x11_dispatch.jai` (`info.window.x11` extractions)
+- Modify: `modules/Simp/module.jai` (`info.window.x11` extraction in `get_render_dimensions`'s Linux branch)
+
+**Step 1: Add `operator ==` overloads to Window_Type**
+
+Tagged unions in Jai don't get implicit equality. Upstream code does both
+same-type comparison (`it.window == window` in Simp) and cross-type
+comparison (`it.window == hwnd` in Input, where `hwnd: X11.Window`). Both
+need overloads.
+
+In `modules/Window_Type.jai` inside the Linux branch, add after the
+`Window_Type :: union ...` declaration:
+
+```jai
+operator == :: (a: Window_Type, b: Window_Type) -> bool {
+    if a.wtype != b.wtype  return false;
+    if a.wtype == {
+        case .X11;     return a.x11 == b.x11;
+        case .Wayland; return true;  // Wayland_Window_State is empty in Stage 1
+    }
+    return false;
+}
+
+operator == :: (a: Window_Type, b: X11.Window) -> bool {
+    return a.wtype == .X11 && a.x11 == b;
+}
+```
+
+**Step 2: Fix `Simp_Backend_Dispatch` return-type annotation**
+
+In `modules/Simp/backend/dispatch.jai`, the current declaration is:
+```jai
+Simp_Backend_Dispatch :: #type (args: *Simp_Op_Args, info: *Window_Info) -> void;
+```
+
+The functions `simp_x11_dispatch` and `simp_wayland_dispatch` declared in
+Tasks 3 and 4 use Jai's implicit-no-return convention (no `-> void`).
+The explicit `-> void` here mismatches them, breaking assignment of the
+function pointers to `context.simp_dispatch` in `init_linux_window`. Drop it:
+
+```jai
+Simp_Backend_Dispatch :: #type (args: *Simp_Op_Args, info: *Window_Info);
+```
+
+**Step 3: Fix Jai 0.2.029 tagged-union literal syntax in gl.jai**
+
+Jai 0.2.029 requires tagged-union struct literals to have either 0 or 2
+field assignments — never 1 (no implicit defaulting of the variant field).
+`Simp_Op_Args.{ op = .BACKEND_INIT }` is no longer valid; must become
+`Simp_Op_Args.{ op = .BACKEND_INIT, init = .{} }`.
+
+In `modules/Simp/backend/gl.jai`, locate each Simp_Op_Args construction
+(Task 5 added them) and update:
+
+```jai
+// Before:
+args := Simp_Op_Args.{ op = .BACKEND_INIT };
+// After:
+args := Simp_Op_Args.{ op = .BACKEND_INIT, init = .{} };
+
+// Before:
+args := Simp_Op_Args.{ op = .BACKEND_SET_RENDER_TARGET };
+// After:
+args := Simp_Op_Args.{ op = .BACKEND_SET_RENDER_TARGET, set_render_target = .{} };
+
+// The .SWAP_BUFFERS construction already has two fields (op + swap_buffers)
+// and may be fine as-is. Verify.
+```
+
+**Step 4: `.x11` extractions where `info.window` flows to `X11.Window`-typed APIs**
+
+In `modules/Simp/backend/x11_dispatch.jai`, several call sites pass
+`info.window` to GLX/XLib functions that expect `X11.Window` (u64).
+With Window_Type now a tagged union, these need `.x11` extraction:
+
+```jai
+// Before (BACKEND_INIT case):
+glx_window := glXCreateWindow(x_global_display, the_gl_fbc, info.window, null);
+// After:
+glx_window := glXCreateWindow(x_global_display, the_gl_fbc, info.window.x11, null);
+```
+
+Audit `x11_dispatch.jai` for any other `info.window` usage and apply
+the same fix.
+
+Also in `modules/Simp/module.jai`'s `get_render_dimensions` function,
+the Linux branch passes `window` directly to `XGetGeometry`. That `window`
+is the `Window_Type` parameter — needs `.x11`:
+
+```jai
+// Before:
+XGetGeometry(x_global_display, window, ..., *width, *height, ...);
+// After:
+XGetGeometry(x_global_display, window.x11, ..., *width, *height, ...);
+```
+
+**Step 5: Build sanity check**
+
+```bash
+./build.sh - test
+```
+
+Expected: all tests pass. The collateral fixes should produce no behavioral
+change — they're entirely about making the post-Task-1 code well-typed
+against the tagged-union Window_Type.
+
+```bash
+./build.sh - hello_x11_gl 2>&1 | tail -3
+```
+
+Expected: compile clean. (Will auto-run — see the prelude in the impl plan
+about minimizing visible runs. Use `JAI_WAYLAND_X11_GL_FRAMES=10` if you
+want it to exit fast.)
+
+**Step 6: Commit**
+
+```bash
+git add modules/Window_Type.jai modules/Simp/backend/dispatch.jai modules/Simp/backend/gl.jai modules/Simp/backend/x11_dispatch.jai modules/Simp/module.jai
+git commit -m "$(cat <<'EOF'
+patch: harden tagged-union Window_Type across Simp consumers
+
+Task 1 made Window_Type a tagged union but didn't anticipate the
+ripple effects on consumers that read/write/compare Window_Type as
+if it were the upstream u64 alias. This commit applies the collateral
+fixes:
+
+- modules/Window_Type.jai: operator == overloads (same-type and
+  cross-type against X11.Window) for the equality checks Simp and
+  Input use.
+- modules/Simp/backend/dispatch.jai: drop explicit `-> void` on
+  Simp_Backend_Dispatch, which mismatched simp_x11_dispatch's and
+  simp_wayland_dispatch's implicit-no-return signatures.
+- modules/Simp/backend/gl.jai: Jai 0.2.029 tagged-union literal
+  syntax — `Simp_Op_Args.{ op = .X }` is invalid; needs
+  `Simp_Op_Args.{ op = .X, x = .{} }`. Applied to BACKEND_INIT and
+  BACKEND_SET_RENDER_TARGET construction sites.
+- modules/Simp/backend/x11_dispatch.jai: `.x11` extractions where
+  info.window is consumed as X11.Window by GLX/XLib APIs.
+- modules/Simp/module.jai: same `.x11` extraction in
+  get_render_dimensions's Linux branch.
+
+These changes preserve all observable behavior; they only make the
+post-Task-1 code well-typed against the new tagged-union Window_Type.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 6B: Vendor `Input/` module + patch x11.jai for tagged-union Window_Type
+
+**Files:**
+- Create: `modules/Input/module.jai` (vendored from upstream verbatim)
+- Create: `modules/Input/x11.jai` (vendored + patched at line 813)
+- Create: any other `Input/*.jai` files present upstream — copy verbatim
+
+**Step 1: List upstream Input files**
+
+```bash
+ls ~/jai/jai/modules/Input/
+```
+
+Expected: `module.jai` + per-OS files (`x11.jai`, `windows.jai`, `macos.jai`, `android.jai`). Maybe others. We vendor whatever's there.
+
+**Step 2: Vendor all files verbatim with the standard provenance header**
+
+For each `.jai` file:
+
+```jai
+// Vendored from ~/jai/jai/modules/Input/<filename>.jai.
+// Verbatim copy.
+```
+
+EXCEPT for `x11.jai`, which gets a "Modified" header (see Step 3).
+
+Apply the per-file CRLF detection convention established in upstream-integration's
+Task 3.
+
+**Step 3: Patch `x11.jai`**
+
+In `~/jai/jai/modules/Input/x11.jai`, locate the offending site (around
+line 813 per Task 7's first attempt). The current code:
+
+```jai
+record: Window_Resize_Record;
+record.window = hwnd;
+```
+
+(or similar — `hwnd` is `X11.Window` u64; `record.window` is `Window_Type`.)
+
+Patch to construct a Window_Type value:
+
+```jai
+record: Window_Resize_Record;
+record.window = .{ wtype = .X11, x11 = hwnd };
+```
+
+Audit for any other `Window_Type` assignments that need the same treatment.
+Search for `record.window =`, `.window =`, or similar patterns within Input.
+
+Update the file's provenance header to "Modified" with a description.
+
+**Step 4: Sanity build**
+
+```bash
+./build.sh - test
+./build.sh - hello_x11_gl 2>&1 | tail -3   # may compile examples that pull Input
+```
+
+Expected: build passes. invaders still won't compile yet (Task 7's lazy-init
++ `None` fix isn't done), but the Input vendoring should not regress anything.
+
+**Step 5: Commit**
+
+```bash
+git add modules/Input/
+git commit -m "$(cat <<'EOF'
+vendor: Input/ module + patch x11.jai for tagged-union Window_Type
+
+Input is vendored into modules/Input/ to allow patching its x11
+backend's `record.window = hwnd` assignment, which assumed Window_Type
+was a u64 alias. After Stage 1 Task 1 made Window_Type a tagged union,
+this assignment fails type-check. The patch constructs a Window_Type
+value explicitly:
+
+  record.window = .{ wtype = .X11, x11 = hwnd };
+
+All other Input files (module.jai, per-OS variants) are verbatim
+copies. Only x11.jai is patched.
+
+This vendoring was originally planned for Stage 2 but was promoted to
+Stage 1 once the type-incompatibility was discovered during Task 7's
+first attempt. See docs/plans/2026-05-26-context-dispatch-stage1-design.md.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ### Task 7: Lazy-init `create_window` to call `init_linux_window`
 
 **Files:**
@@ -615,7 +876,37 @@ grep -n 'create_window\b' modules/Window_Creation/linux.jai
 
 Find the definition (`create_window :: (...) -> Window {`).
 
-**Step 2: Insert the lazy-init at the top of the body**
+Also find any usages of `None` as a `Window_Type` value (currently in upstream the signature is `parent: Window_Type = None` and inside the body `if parent == None then parent = root;`). With Window_Type now a tagged union, `None` (X11's `s64` constant = 0) is not a valid Window_Type literal. These need updating.
+
+**Step 2: Fix `parent: Window_Type = None`**
+
+Change the parameter default:
+```jai
+// Before:
+parent: Window_Type = None
+// After:
+parent: Window_Type = INVALID_WINDOW
+```
+
+`INVALID_WINDOW` is `.{ wtype = .X11, x11 = 0 }` (defined in Window_Type.jai per Task 1) — semantically identical to the old `None`.
+
+Inside the body, locate `if parent == None then parent = root;`. Update either:
+- Via the operator == overload (Task 6A): `if parent == INVALID_WINDOW { parent = .{ wtype = .X11, x11 = root }; }`
+- OR by extracting `.x11` explicitly: `if parent.x11 == 0 { parent = .{ wtype = .X11, x11 = root }; }`
+
+Both work. The first reads more naturally; the second is more defensive against future Window_Type shape changes.
+
+Also: any other `parent` usage inside the body that passes it to X11 APIs (e.g., `XCreateColormap(d, parent, ...)`) needs `.x11` extraction since `parent` is now a Window_Type:
+```jai
+// Before:
+cmap := XCreateColormap(d, parent, vi.visual, AllocNone);
+// After:
+cmap := XCreateColormap(d, parent.x11, vi.visual, AllocNone);
+```
+
+Audit the function body for all `parent` references and apply consistently.
+
+**Step 3: Insert the lazy-init at the top of the body**
 
 Use Edit. The body currently starts with something like:
 
@@ -640,18 +931,33 @@ create_window :: (width: int, height: int, window_name: string, ...) -> Window {
 
 This makes `create_window` idempotent on dispatch init: first call invokes init_linux_window which sets the dispatch; subsequent calls find the dispatch already set and skip. Apps don't need to remember to call init_linux_window explicitly.
 
-**Step 3: Update the file's "Modified" header**
+**Step 4: Update the linux_init.jai cycle comment (Task 6 code-review follow-up)**
+
+Task 6's code review flagged that `modules/Window_Creation/linux_init.jai`'s `#import "Simp"` deserves a comment explaining the known-but-benign import cycle. Update the import comment:
+
+```jai
+#import "Simp";  // for simp_x11_dispatch / simp_wayland_dispatch.
+                 // Note: Simp also imports Window_Creation, but Jai resolves
+                 // the cycle cleanly because neither side needs the other
+                 // at file/load scope.
+```
+
+**Step 5: Update linux.jai's "Modified" header**
 
 `modules/Window_Creation/linux.jai` is currently verbatim from upstream (no patches in upstream-integration). This commit makes it patched. Update the header:
 
 ```jai
 // Vendored from ~/jai/jai/modules/Window_Creation/linux.jai.
-// Modified: create_window calls init_linux_window() at its top to lazy-
-//           initialize context-based backend dispatch. See
-//           docs/plans/2026-05-26-context-dispatch-stage1-design.md.
+// Modified: (a) create_window calls init_linux_window() at its top to
+//               lazy-initialize context-based backend dispatch.
+//           (b) parent parameter default changed from None (X11 s64)
+//               to INVALID_WINDOW (Window_Type tagged-union sentinel).
+//               In-body parent usages updated accordingly with .x11
+//               extractions or tagged-union comparison.
+//           See docs/plans/2026-05-26-context-dispatch-stage1-design.md.
 ```
 
-**Step 4: Build invaders and verify it runs**
+**Step 6: Build invaders and verify it runs**
 
 ```bash
 ./build.sh - invaders 2>&1 | tail -30
@@ -663,7 +969,7 @@ If compile fails: the dispatch wiring has a flaw. Most likely a type or scope er
 
 If runtime fails: most likely the relocation in Task 3 lost something. Triage by comparing the X11 GLX behavior before/after. `gdb build/invaders` (with CWD set to upstream invaders) will pinpoint the crash.
 
-**Step 5: Also verify existing examples still work**
+**Step 7: Also verify existing examples still work**
 
 ```bash
 ./build.sh - hello_x11_gl 2>&1 | tail -5
@@ -680,22 +986,30 @@ ldd build/hello_gl | grep -vE 'libc\.so\.6|linux-vdso|ld-linux'   # expect empty
 
 `hello_gl` uses our X11 module directly too, not Simp. Also should be unaffected.
 
-**Step 6: Commit**
+**Step 8: Commit**
 
 ```bash
-git add modules/Window_Creation/linux.jai
+git add modules/Window_Creation/linux.jai modules/Window_Creation/linux_init.jai
 git commit -m "$(cat <<'EOF'
-patch(Window_Creation): lazy-init backend dispatch in create_window
+patch(Window_Creation): lazy-init dispatch + fix parent=None for tagged Window_Type
 
 create_window now calls init_linux_window() at its top if
 context.simp_dispatch hasn't been pushed yet. Idempotent — second call
 to create_window finds the dispatch set and skips re-init. Apps don't
 need to call init_linux_window explicitly.
 
-invaders should now run identically to its pre-Stage-1 behavior — same
-ldd cleanliness, same play feel — but its execution path goes through
-context.simp_dispatch instead of inline #if OS == .LINUX branches in
-Simp. Validates Stage 1's architecture.
+Also fixes the parent parameter default from None (X11 s64 0) to
+INVALID_WINDOW (Window_Type tagged-union sentinel — same semantic
+meaning, type-compatible after Task 1's conversion). In-body parent
+usages updated with .x11 extractions where they flow to X11 APIs.
+
+Also adds a comment to linux_init.jai noting the Simp <-> Window_Creation
+import cycle is intentional and benign (Task 6 code review follow-up).
+
+invaders should now compile AND run identically to its pre-Stage-1
+behavior — same ldd cleanliness, same play feel — but its execution
+path goes through context.simp_dispatch instead of inline
+#if OS == .LINUX branches in Simp. Validates Stage 1's architecture.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 EOF
