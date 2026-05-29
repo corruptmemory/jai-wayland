@@ -1,6 +1,10 @@
 
 #run,stallable build();
 
+// Set by the `compile_only` CLI flag. When true, build_and_run_* compile the
+// target but skip running it — turns GUI targets into headless compile gates.
+compile_only_flag := false;
+
 build :: () {
     set_working_directory(#filepath);
     options := get_build_options();
@@ -13,6 +17,14 @@ build :: () {
 
     for arg: args {
         if arg == {
+          case "compile_only";
+            // Build-only switch: compile the target workspace(s) but skip the
+            // Autorun/run step. Must appear BEFORE the target in the arg list,
+            // e.g. `./build.sh - compile_only invaders`. Lets GUI targets
+            // (invaders, hello_*) serve as headless compile gates without
+            // launching a window that never exits. CLI flag, not env var,
+            // per project preference.
+            compile_only_flag = true;
           case "test";
             build_tests(options);
           case "gen_test";
@@ -78,7 +90,7 @@ build :: () {
             );
             set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'invaders'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'invaders'.\n", arg));
         }
     }
 }
@@ -123,7 +135,7 @@ build_and_run_test :: (workspace_name: string, executable_name: string, test_fil
         }
     }
     compiler_end_intercept(w);
-    Autorun.run_build_result_of_workspace(w);
+    if !compile_only_flag  Autorun.run_build_result_of_workspace(w);
 }
 
 upstream_import_path :: () -> [] string {
@@ -171,6 +183,8 @@ build_and_run_upstream_example :: (
     // jai-wayland/build/, so we need to plant a `data` symlink there that
     // points at the upstream example's real data folder. Idempotent.
     ensure_upstream_data_symlink(upstream_dir);
+
+    if compile_only_flag  return;
 
     binary := tprint("%/build/%", #filepath, executable_name);
     result := run_command(binary, working_directory = upstream_dir);
