@@ -1148,6 +1148,12 @@ backend_texture_destroy :: (texture: *Texture) {
         // wl_buffer.release is matched inside wl_block_on_frame. Empty in Slice 1
         // (no resize); populated by the Slice-2 resize path.
         wl_retired:     [..] Wl_Gl_Slot;
+
+        // Set when the compositor sends xdg_toplevel.close (e.g. Hyprland's
+        // killactive / Super+Q) — observed in the swap-path event drain. The app
+        // reads it via Simp.window_should_close and exits. (Slice-3 entry: real
+        // input via the Input module comes later; this is just the close signal.)
+        wl_close_requested: bool;
     }
 } else #if OS == .MACOS {
     Backend_Platform_Specific :: struct {

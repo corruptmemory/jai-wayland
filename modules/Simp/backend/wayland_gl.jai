@@ -487,8 +487,13 @@ wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
 // Inherent to the block-on-callback model; could show as a one-frame stall or a
 // briefly-stuck slot under a compositor that coalesces releases with callbacks.
 // Revisit if the resize slice (Task 10) sees slot starvation.
+// `close_requested` is set to true (and the wait ends) if the compositor sends
+// xdg_toplevel.close for `xdg_toplevel_id` while we're blocked — the app then
+// sees it via Simp.window_should_close and exits. Pass 0 for xdg_toplevel_id to
+// disable close detection.
 wl_block_on_frame :: (frame_callback_id: u32, slots: [] Wl_Gl_Slot,
-                      retired: *[..] Wl_Gl_Slot, egl: Wl_Egl_State) {
+                      retired: *[..] Wl_Gl_Slot, egl: Wl_Egl_State,
+                      xdg_toplevel_id: u32, close_requested: *bool) {
     // `for :Wl.for_expansion` names the iterator explicitly: the WaylandSession
     // for_expansion lives in the `Wl` module and is NOT merged into Simp's scope
     // by our named import, so a bare `for Wl.session()` can't find the overload
@@ -497,6 +502,14 @@ wl_block_on_frame :: (frame_callback_id: u32, slots: [] Wl_Gl_Slot,
     for :Wl.for_expansion Wl.session() {
         // wl_callback.done for the frame we most recently requested — done.
         if it.object_id == frame_callback_id && it.opcode == Wl.WL_CALLBACK_DONE {
+            break;
+        }
+
+        // xdg_toplevel.close — compositor/user asked the window to close (opcode 1,
+        // distinct from the opcode-0 pair below, but match object_id too). Record
+        // it and stop waiting; the app checks window_should_close and exits.
+        if xdg_toplevel_id != 0 && it.object_id == xdg_toplevel_id && it.opcode == Wl.XDG_TOPLEVEL_CLOSE {
+            close_requested.* = true;
             break;
         }
 

@@ -142,7 +142,8 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             // Block until this frame callback fires, routing wl_buffer.release events
             // back to their owning slots. wl_retired carries slots from a prior resize
             // whose buffers the compositor still holds (empty in Slice 1).
-            wl_block_on_frame(frame_callback_id, s.wl_slots, *s.wl_retired, s.wl_egl);
+            wl_block_on_frame(frame_callback_id, s.wl_slots, *s.wl_retired, s.wl_egl,
+                              info.window.wayland.xdg_toplevel, *s.wl_close_requested);
 
             // CALLER CONTRACT (wl_block_on_frame doc comment): the helper does NOT
             // recycle the frame-callback id. Recycle it here, or we leak a new id

@@ -67,6 +67,13 @@ main :: () {
 
         Simp.swap_buffers(window);  // present current slot, block on frame, rotate.
 
+        // Quit cleanly when the compositor asks (Super+Q → killactive →
+        // xdg_toplevel.close). Without this the window ignores the close request.
+        if Simp.window_should_close(window) {
+            print("hello_simp: close requested — exiting\n");
+            break;
+        }
+
         frame += 1;
         if frame_limit > 0 && frame >= frame_limit  break;
     }

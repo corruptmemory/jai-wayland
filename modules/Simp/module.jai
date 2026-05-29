@@ -361,6 +361,21 @@ Pixel_Read :: struct {
 #load "immediate.jai";
 #load "font.jai";
 
+// True if the compositor has asked this window to close. On Wayland that is an
+// xdg_toplevel.close event (e.g. Hyprland's killactive / Super+Q), observed in
+// the swap-path event drain and recorded on the Window_Info. On X11 window-close
+// arrives through the Input module instead, so this is always false there;
+// Slice 3 will unify both backends behind Input.
+window_should_close :: (window: Window_Type) -> bool {
+    #if OS == .LINUX {
+        if window.wtype == .Wayland {
+            info := find_window_info(window);
+            return info != null && info.specific.wl_close_requested;
+        }
+    }
+    return false;
+}
+
 #scope_module
 find_window_info :: (window: Window_Type) -> *Window_Info {
     for * window_infos  if it.window == window  return it;
