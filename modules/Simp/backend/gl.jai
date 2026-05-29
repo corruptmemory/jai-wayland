@@ -922,6 +922,23 @@ backend_update_texture :: (texture: *Texture, bitmap: *Bitmap) {
 }
 
 
+// The handle Simp binds as "the window's framebuffer". On X11/GLX this is the
+// GLX drawable — framebuffer 0, what glXSwapBuffers presents. On Wayland there
+// is no window-system default framebuffer; we render into the current BO-backed
+// slot's FBO and export it (design doc §2). X11 is the degenerate case (0), not
+// a special case — which is why this generalizes the old hardcoded bind rather
+// than branching on the backend at the call site.
+window_framebuffer :: (info: *Window_Info) -> GLuint {
+    #if OS == .LINUX {
+        if info.window.wtype == .Wayland {
+            if info.specific.wl_current >= 0
+                return cast(GLuint) info.specific.wl_slots[info.specific.wl_current].fbo;
+            return 0;  // before the first slot exists — harmless
+        }
+    }
+    return 0;
+}
+
 backend_set_render_target :: (info: *Window_Info) {
     if info.backend_initted_for_this_window {
         #if OS == .WINDOWS {
@@ -953,7 +970,7 @@ backend_set_render_target :: (info: *Window_Info) {
     }
 
     glViewport(0, 0, xx info.window_width, xx info.window_height);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, window_framebuffer(info));
 
     // glDrawBuffer is not a thing in GLES.
     #if !IS_GLES  glDrawBuffer(GL_BACK);

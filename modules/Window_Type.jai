@@ -25,11 +25,19 @@
         Wayland;
     }
 
-    // Stage 1 placeholder. Stage 2 populates this with EGL_Context +
-    // wl_surface/xdg_surface refs + BO slot state. The struct exists
-    // now so the tagged union compiles; it is never instantiated in
-    // Stage 1 (running_wayland() always returns false).
+    // Window IDENTITY for the Wayland backend — the analogue of X11.Window.
+    // Holds the compositor object IDs that name this window's surface stack.
+    // Created by Window_Creation.create_window (Stage 2 Task 6). NOTE: the GL
+    // backend state (EGL ctx, GBM, BO slots) does NOT live here — it lives in
+    // Simp's Window_Info.specific, exactly as glx_window does for X11. See
+    // docs/plans/2026-05-29-wayland-backend-design.md §1.
     Wayland_Window_State :: struct {
+        surface:      u32;    // wl_surface id
+        xdg_surface:  u32;    // xdg_surface id
+        xdg_toplevel: u32;    // xdg_toplevel id
+        width:        s32;    // last configured size
+        height:       s32;
+        configured:   bool;   // has the first xdg configure arrived?
     }
 
     Window_Type :: union wtype: Window_Tag {
@@ -52,7 +60,7 @@
         if a.wtype != b.wtype  return false;
         if a.wtype == {
             case .X11;     return a.x11 == b.x11;
-            case .Wayland; return true;  // Wayland_Window_State is empty in Stage 1.
+            case .Wayland; return a.wayland.surface == b.wayland.surface;  // wl_surface id is the window's identity
         }
         return false;
     }
