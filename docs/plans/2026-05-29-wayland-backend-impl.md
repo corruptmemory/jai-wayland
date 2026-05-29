@@ -22,6 +22,17 @@ This stage is **integration-validated, not unit-tested**, and the plan is honest
 - Where a pure check is cheap (`window_framebuffer` tag logic), the plan adds an assertion. Where it would require standing up a Simp-importing display-backed test harness, the plan relies on the functional gate instead — building that harness is not worth its cost here.
 - **Per task:** implement → build the relevant target → confirm expected output → commit. Use @superpowers:verification-before-completion before claiming any task done: paste the actual build/run output, don't assert success.
 
+**Compile gate command (important):** `build.sh` builds *and runs* every target, and `invaders` (the only Simp-compiling target) is a GUI game with no frame cap. Use the **`compile_only`** flag for all "does it compile?" gates — it builds the workspace and skips the run:
+```
+./build.sh - compile_only invaders     # headless compile check of the whole Simp module
+ldd build/invaders                       # inspects the binary; no run needed, always safe
+```
+Jai type-checks every `#load`ed file in a module regardless of which OS branch executes, so `compile_only invaders` is a *real* gate on `wayland_gl.jai` + `wayland_dispatch.jai` even while the X11 path is what would run.
+
+**Two gate classes:**
+- **Compile / ldd / regression-suite gates** — headless, safe to run autonomously: `./build.sh - compile_only <target>`, `ldd build/<target>`, `./build.sh - test`/`- compile_test`.
+- **Functional / observation gates** — require the live Hyprland session and a human watching (triangle appears? invaders plays? resize artifacts?). These are **checkpoints batched for when the user is present** — do not block autonomous progress on them, but do not claim them passed without the user's confirmation.
+
 **Branch:** work continues on `upstream-integration` (where the design doc was committed). Frequent commits per task.
 
 ---
