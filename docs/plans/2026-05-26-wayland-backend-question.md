@@ -1,8 +1,18 @@
 # Wayland Backend for Vendored Window_Creation — Open Design Question
 
-> **Status:** OPEN. Pending digestion. This is NOT a decided design — it is the
-> articulation of an architectural question that needs more thought before a
-> design plan can be written.
+> **Status: SUPERSEDED by `docs/plans/2026-05-29-wayland-backend-design.md`.**
+> This doc's central uncertainty — Layer 3, "how does GL work on Wayland under
+> our no-libwayland thesis?" — no longer exists: `examples/hello_gl.jai` is a
+> complete, Mesa+NVIDIA-validated implementation of Option B. Options A, C, and
+> D are dead (see the superseding doc's "Why this supersedes" section). Retained
+> for provenance — it records *why* A/C/D were rejected, which is worth not
+> re-litigating.
+>
+> ---
+>
+> *Original status (historical):* OPEN. Pending digestion. This is NOT a decided
+> design — it is the articulation of an architectural question that needs more
+> thought before a design plan can be written.
 
 ## Context
 
