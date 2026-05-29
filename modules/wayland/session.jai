@@ -38,6 +38,13 @@ for_expansion :: (session: *WaylandSession, body: Code, flags: For_Flags) #expan
     // A body `break` is remapped (#insert below) to break this named outer
     // loop, which is a normal early exit and must NOT set connection_lost.
     while drain_loop := true {
+        // Once the connection is dead, re-entering `for session()` must be a cheap
+        // no-op rather than spinning on a closed socket (wayland_receive would
+        // return 0 immediately every call). connection_lost is terminal — never
+        // reset — so this also makes every later drain inert. The upcoming event
+        // pump (Slice 3) relies on this to poll safely after a disconnect.
+        if session.connection_lost  break;
+
         // Process already-buffered messages BEFORE blocking on the socket: only
         // call wayland_receive (which blocks) once the buffer has no full message.
         msg, size := receive_peek_message(`recv);
