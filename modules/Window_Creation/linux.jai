@@ -25,6 +25,20 @@
 //
 #import "X11";
 
+// Wayland module, named-imported so the wire-protocol API is namespaced.
+// Module-scope constant: declared in THIS file only within Window_Creation
+// (linux_init.jai / module.jai do not import wayland). Used by the Wayland
+// arm of create_window below. The `for :Wl.for_expansion` form is required
+// to resolve the WaylandSession for_expansion through the named import.
+//
+// NAME-based (not #import,dir) is REQUIRED: Simp's wayland_gl.jai also imports
+// wayland, and both must share ONE instance (wayland declares `#add_context
+// wayland_session` — two instances ⇒ conflicting context types). Jai dedups
+// modules by import spelling; name-based dedups across modules regardless of
+// each file's location, whereas dir-based paths ("../wayland" vs Simp's
+// "../../wayland") can never string-match. Resolves via the build import_path.
+Wl :: #import "wayland";
+
 window_minimized := false;
 
 Saved_Window_Info :: struct {
@@ -101,6 +115,11 @@ toggle_fullscreen :: (win: Window, desire_fullscreen: bool, saved: *Saved_Window
 
 create_window :: (width: int, height: int, window_name: string, window_x := 0, window_y := 0, parent: Window_Type = INVALID_WINDOW, background_color_rgb := DEFAULT_WINDOW_CREATION_COLOR, wanted_msaa: s32 = DEFAULT_MSAA) -> Window_Type {
     if !context.simp_dispatch  init_linux_window();
+
+    #if OS == .LINUX {
+        if running_wayland()  return create_window_wayland(width, height, window_name);
+    }
+
     if !x_global_display
         init_global_display();
 
@@ -195,6 +214,90 @@ create_window :: (width: int, height: int, window_name: string, window_x := 0, w
 
     XUnlockDisplay(d);
     return .{ wtype = .X11, x11 = win };
+}
+
+// Wayland arm of create_window. Creates the compositor surface stack
+// (wl_surface / xdg_surface / xdg_toplevel), commits, then blocks until the
+// first xdg configure to learn the initial size. Ported from
+// examples/hello_gl.jai:99-127. This builds ONLY the window identity; the GL
+// backend state (EGL ctx, GBM, BO slots) is created later in Simp's
+// BACKEND_INIT, exactly as the X11 path leaves GL to Simp.
+//
+// Slice 1 has no teardown hook: the WaylandSession created here is leaked at
+// process exit. That is acceptable for now — end_wayland_session is a Stage-2
+// follow-up once window destruction has a home.
+create_window_wayland :: (width: int, height: int, window_name: string) -> Window_Type {
+    if !Wl.session() {
+        if !Wl.init_wayland_session() {
+            log_error("create_window_wayland: could not initialize Wayland session\n");
+            return INVALID_WINDOW;
+        }
+    }
+
+    // Surface / xdg role creation. allocate_id() is called immediately before
+    // the request that creates each object so IDs go out contiguously and in
+    // monotonically increasing order on the wire (compositor requirement).
+    batch: Wl.MessageBuilder;
+
+    surface := Wl.Wl_Surface.{ id = Wl.allocate_id() };
+    Wl.wl_compositor_create_surface(*batch, Wl.compositor(), surface.id);
+
+    xdg_surface := Wl.Xdg_Surface.{ id = Wl.allocate_id() };
+    Wl.xdg_wm_base_get_xdg_surface(*batch, Wl.wm_base(), xdg_surface.id, *surface);
+
+    toplevel := Wl.Xdg_Toplevel.{ id = Wl.allocate_id() };
+    Wl.xdg_surface_get_toplevel(*batch, *xdg_surface, toplevel.id);
+
+    if window_name  Wl.xdg_toplevel_set_title(*batch, *toplevel, window_name);
+    Wl.wl_surface_commit(*batch, *surface);
+    Wl.wayland_send(*batch);
+
+    // Wait for the initial configure. xdg_toplevel.configure carries the
+    // suggested size (may be 0x0, meaning "you decide"); xdg_surface.configure
+    // carries the serial we must ack and terminates the configure sequence.
+    // wm_base ping/pong and wl_display.error are handled by the for_expansion.
+    win_width:  s32 = cast(s32) width;
+    win_height: s32 = cast(s32) height;
+    configure_serial: u32 = 0;
+    // Named iterator: the WaylandSession for_expansion lives in the `Wl`
+    // module and is not merged into this scope by the named import.
+    for :Wl.for_expansion Wl.session() {
+        if it.object_id == toplevel.id && it.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
+            args: Wl.Xdg_Toplevel_Configure_Args;
+            Wl.unmarshal(*args, it.payload, recv);
+            if args.width > 0 && args.height > 0 {
+                win_width  = args.width;
+                win_height = args.height;
+            }
+        } else if it.object_id == xdg_surface.id && it.opcode == Wl.XDG_SURFACE_CONFIGURE {
+            configure_serial = Wl.read_u32(it.payload);
+            break;
+        }
+    }
+
+    if configure_serial == 0 {
+        log_error("create_window_wayland: did not receive xdg_surface.configure\n");
+        return INVALID_WINDOW;
+    }
+
+    // Ack the configure so the compositor lets us map content.
+    ack_batch: Wl.MessageBuilder;
+    Wl.xdg_surface_ack_configure(*ack_batch, *xdg_surface, configure_serial);
+    Wl.wayland_send(*ack_batch);
+
+    log("create_window_wayland: configured window %x%\n", win_width, win_height);
+
+    return .{
+        wtype = .Wayland,
+        wayland = .{
+            surface      = surface.id,
+            xdg_surface  = xdg_surface.id,
+            xdg_toplevel = toplevel.id,
+            width        = win_width,
+            height       = win_height,
+            configured   = true,
+        },
+    };
 }
 
 get_dimensions :: (win: Window_Type, right_handed: bool) -> (x: s32, y: s32, width: s32, height: s32, success := true) {

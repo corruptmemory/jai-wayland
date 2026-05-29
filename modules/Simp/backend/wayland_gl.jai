@@ -23,7 +23,16 @@
 
 #scope_module
 
-Wl  :: #import,dir "../../wayland";
+// `wayland` is NAME-based (not #import,dir) on purpose: Window_Creation ALSO
+// imports wayland, and the two modules must share ONE instance — wayland
+// declares `#add_context wayland_session`, so two instances give context.
+// wayland_session conflicting types. Jai dedups modules by import SPELLING:
+// name-based `#import "wayland"` dedups across modules (location-independent),
+// but `#import,dir "../../wayland"` here could never string-match Window_
+// Creation's `#import,dir "../wayland"`. Name-based resolves via the build's
+// import_path (modules/ first — see first.jai). EGL/Gbm/Gpu stay dir-based:
+// only Simp imports them, so no cross-module dedup is needed.
+Wl  :: #import "wayland";
 EGL :: #import,dir "../../EGL";
 Gbm :: #import,dir "../../gbm";
 Gpu :: #import,dir "../../gpu";
