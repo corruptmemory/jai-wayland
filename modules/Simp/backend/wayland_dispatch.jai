@@ -44,6 +44,9 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
                 log_error("Simp Wayland: compositor does not advertise zwp_linux_dmabuf_v1");
                 return;
             }
+            // Borrows get_dmabuf_info's `supported` dynamic-array storage (copied
+            // by header — backing is shared, not owned). Fine while nothing frees
+            // it; the Slice-2 resize reuse must not double-free it.
             s.wl_dmabuf_info = dmabuf_info;
 
             surface := Wl.Wl_Surface.{ id = info.window.wayland.surface };
@@ -65,6 +68,13 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
                 if !wl_slot_init(slot, s.wl_egl, *s.wl_dmabuf_info.dmabuf, *batch,
                                  s.wl_format, s.wl_modifier, info.window_width, info.window_height, backend) {
                     log_error("Simp Wayland: failed to initialize slot %", i);
+                    // NOTE: an earlier slot's batched create messages are abandoned
+                    // unsent here, yet allocate_id() already advanced the session's
+                    // next_id for them — leaving a hole in the contiguous client-ID
+                    // stream. Tolerable only because this leaves wl_initted false, so
+                    // SWAP/SET_RENDER_TARGET no-op (guards below) and the window is
+                    // dead. If slot init ever becomes recoverable, this must roll
+                    // next_id back or the session is unusable.
                     return;
                 }
             }
@@ -74,6 +84,11 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             s.wl_initted = true;
 
         case .BACKEND_SET_RENDER_TARGET;
+            // Fail safe if BACKEND_INIT bailed: gl.jai marks the window initted
+            // regardless of dispatch outcome, so without this guard a failed init
+            // would make-current a half-built context. wl_initted is the reader
+            // that makes the flag meaningful.
+            if !s.wl_initted  return;
             // ONLY make the EGL context current. The FBO bind happens in gl.jai via
             // window_framebuffer(info); do NOT bind here. (Mirrors how the X11
             // dispatcher only does glXMakeCurrent and lets gl.jai bind framebuffer 0.)
@@ -91,6 +106,10 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             // gl.jai. See docs/plans/2026-05-29-wayland-backend-design.md.
 
         case .SWAP_BUFFERS;
+            // Fail safe if BACKEND_INIT bailed: the slots are uninitialized
+            // (wl_current still -1, slot.buffer.id 0), so attaching would commit a
+            // null buffer. Skip rather than corrupt the surface.
+            if !s.wl_initted  return;
             slot := *s.wl_slots[s.wl_current];
 
             // Coarse GPU sync before handing the BO to the compositor — same as
