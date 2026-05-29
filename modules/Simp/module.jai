@@ -304,14 +304,18 @@ get_render_dimensions :: (window: Window_Type) -> (width: s32, height: s32) {
 
         return cast(s32)(c.right - c.left), cast(s32)(c.bottom - c.top);
     } else #if OS == .LINUX {
+        if window.wtype == .Wayland {
+            // Wayland has no XGetGeometry. The window's size is the last size the
+            // compositor configured, captured in create_window_wayland (and
+            // updated on resize in Slice 2).
+            return window.wayland.width, window.wayland.height;
+        }
         root: Window;
         x, y: s32;
         width, height: u32;
         border_width, depth_return: u32;
 
-        // window is a tagged Window_Type; XGetGeometry wants a raw
-        // X11.Window. Stage 1 only ever takes the X11 path here, so
-        // unwrap .x11 directly. Stage 2 will branch on .wtype.
+        // window is a tagged Window_Type; XGetGeometry wants a raw X11.Window.
         status := XGetGeometry(x_global_display, window.x11, *root, *x, *y, *width, *height, *border_width, *depth_return);
         return cast(s32) width, cast(s32) height;
     } else #if OS == .MACOS {

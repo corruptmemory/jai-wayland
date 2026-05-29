@@ -60,13 +60,19 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             log("Simp Wayland: using format=0x% modifier=0x%",
                 formatInt(format, base=16), formatInt(modifier, base=16));
 
-            // Allocate the double-buffered slots at the current window size. Buffer-
-            // creation messages batch into one send (multiple slots share a batch).
+            // Allocate the double-buffered slots at the configured window size.
+            // IMPORTANT: read the size from info.window.wayland, NOT
+            // info.window_width — set_render_target calls backend_init BEFORE
+            // update_window populates info.window_width, so it is still 0 here. The
+            // .wayland fields carry the size captured at create_window_wayland's
+            // first configure. (Buffer-creation messages batch into one send.)
+            init_w := info.window.wayland.width;
+            init_h := info.window.wayland.height;
             backend := wl_choose_gl_backend();
             batch: Wl.MessageBuilder;
             for * slot, i: s.wl_slots {
                 if !wl_slot_init(slot, s.wl_egl, *s.wl_dmabuf_info.dmabuf, *batch,
-                                 s.wl_format, s.wl_modifier, info.window_width, info.window_height, backend) {
+                                 s.wl_format, s.wl_modifier, init_w, init_h, backend) {
                     log_error("Simp Wayland: failed to initialize slot %", i);
                     // NOTE: an earlier slot's batched create messages are abandoned
                     // unsent here, yet allocate_id() already advanced the session's

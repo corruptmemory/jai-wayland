@@ -87,7 +87,15 @@ backend_init :: (info: *Window_Info) {
         }
         #if OS != .ANDROID && OS != .NN_SWITCH2 {
             // @Incomplete: Android/switch2 have separate GLES modules that don't have this modules/GL stuff.
-            gl_load(glXGetProcAddress);
+            #if OS == .LINUX {
+                // X11/GLX loads GL via glXGetProcAddress after make-current. The
+                // Wayland backend already did gl_load(eglGetProcAddress) in its
+                // BACKEND_INIT (wl_egl_init), and glXGetProcAddress is null on a
+                // Wayland session (init_glx never ran) — calling it would segfault.
+                if info.window.wtype == .X11  gl_load(glXGetProcAddress);
+            } else {
+                gl_load(glXGetProcAddress);
+            }
         }
         #if OS != .ANDROID {
             gl_enable_debug_output(break_on_error = true);
