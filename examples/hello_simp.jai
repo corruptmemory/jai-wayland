@@ -36,6 +36,11 @@ main :: () {
     window := create_window(window_name = "hello_simp", width = WIDTH, height = HEIGHT);
     Simp.set_render_target(window);  // ONCE — triggers Simp BACKEND_INIT.
 
+    // The compositor may give us a different size than requested (Hyprland tiles
+    // it), so drive the quad geometry off the actual render size, not the
+    // requested constants. Slice 1 has no resize, so query once.
+    win_w, win_h := Simp.get_render_dimensions(window);
+
     frame_limit := frame_limit_from_env();
     if frame_limit > 0  print("hello_simp: bounded run, % frame(s)\n", frame_limit);
     else                print("hello_simp: running until killed (JAI_WAYLAND_SIMP_FRAMES=N to bound)\n");
@@ -53,10 +58,10 @@ main :: () {
 
         Simp.set_shader_for_color();
         Simp.immediate_begin();
-        cx := cast(float) WIDTH  * 0.5;
-        cy := cast(float) HEIGHT * 0.5;
-        hw := cast(float) WIDTH  * 0.25;
-        hh := cast(float) HEIGHT * 0.25;
+        cx := cast(float) win_w * 0.5;
+        cy := cast(float) win_h * 0.5;
+        hw := cast(float) win_w * 0.25;
+        hh := cast(float) win_h * 0.25;
         Simp.immediate_quad(cx - hw, cy - hh, cx + hw, cy + hh, .{r, g, b, 1.0});
         Simp.immediate_flush();
 
