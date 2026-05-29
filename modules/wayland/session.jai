@@ -8,6 +8,15 @@ WaylandSession :: struct {
     compositor: Wl_Compositor;
     wm_base: Xdg_Wm_Base;
     globals: [..] Global_Info;
+    // Persistent receive buffer: messages read from the socket but not yet
+    // peeked/consumed survive across `for session()` calls. A fresh local
+    // buffer per call would silently drop any message that was coalesced into
+    // the same socket read as the message a loop body broke on.
+    recv: ReceiveBuffer;
+    // Set true once the socket is closed (wayland_receive <= 0) or the
+    // compositor sends wl_display.error. The drain exits; consumers can check
+    // this after their loop to detect disconnection.
+    connection_lost: bool;
 }
 
 #add_context wayland_session: *WaylandSession;
@@ -20,39 +29,56 @@ WaylandMessageHeader :: struct {
 }
 
 for_expansion :: (session: *WaylandSession, body: Code, flags: For_Flags) #expand {
-    {
-        _recv: ReceiveBuffer;
-        `recv := *_recv;
-        while bts := wayland_receive(*session.conn, *_recv) {
-            if bts <= 0 break;
-            msg, size := receive_peek_message(*_recv);
-            while msg != null {
-                header: WaylandMessageHeader;
-                header.object_id, header.opcode, header.msg_size = unpack_header(msg);
-                header.payload = msg + HEADER_SIZE;
+    // Drain the PERSISTENT receive buffer owned by the session, not a fresh
+    // local one. Leftover (already-read-but-not-peeked) messages survive across
+    // `for session()` calls. Keep the backtick binding named `recv` — existing
+    // loop bodies call unmarshal(*args, it.payload, recv) and read_u32(it.payload).
+    `recv := *session.recv;
 
-                // defer ensures consume runs even if body uses 'continue'
-                defer {
-                    receive_consume_message(*_recv, header.msg_size);
-                    msg, size = receive_peek_message(*_recv);
-                }
+    // A body `break` is remapped (#insert below) to break this named outer
+    // loop, which is a normal early exit and must NOT set connection_lost.
+    while drain_loop := true {
+        // Process already-buffered messages BEFORE blocking on the socket: only
+        // call wayland_receive (which blocks) once the buffer has no full message.
+        msg, size := receive_peek_message(`recv);
+        if msg == null {
+            bts := wayland_receive(*session.conn, `recv);
+            if bts <= 0 {
+                session.connection_lost = true;
+                break;
+            }
+            msg, size = receive_peek_message(`recv);
+        }
 
-                if header.object_id == 1 && header.opcode == WL_DISPLAY_ERROR {
-                    err_obj := read_u32(header.payload);
-                    err_code := read_u32(header.payload + 4);
-                    err_msg, _ := read_string(header.payload + 8);
-                    log("FATAL: wl_display.error object=% code=%: %", err_obj, err_code, err_msg, flags=.ERROR);
-                    break bts;
-                } else if header.object_id == session.wm_base.id && header.opcode == XDG_WM_BASE_PING {
-                    serial := read_u32(header.payload);
-                    ping_batch: MessageBuilder;
-                    xdg_wm_base_pong(*ping_batch, *session.wm_base, serial);
-                    wayland_send(*session.conn, *ping_batch);
-                } else {
-                    `it := header;
-                    `it_index := 0;
-                    #insert(break=break bts) body;
-                }
+        while msg != null {
+            header: WaylandMessageHeader;
+            header.object_id, header.opcode, header.msg_size = unpack_header(msg);
+            header.payload = msg + HEADER_SIZE;
+
+            // defer ensures the current message is consumed even if the body
+            // uses 'continue' or 'break'. Re-peeks so the inner loop advances.
+            // Leftover (un-peeked) messages stay in session.recv for next call.
+            defer {
+                receive_consume_message(`recv, header.msg_size);
+                msg, size = receive_peek_message(`recv);
+            }
+
+            if header.object_id == 1 && header.opcode == WL_DISPLAY_ERROR {
+                err_obj := read_u32(header.payload);
+                err_code := read_u32(header.payload + 4);
+                err_msg, _ := read_string(header.payload + 8);
+                log("FATAL: wl_display.error object=% code=%: %", err_obj, err_code, err_msg, flags=.ERROR);
+                session.connection_lost = true;
+                break drain_loop;
+            } else if header.object_id == session.wm_base.id && header.opcode == XDG_WM_BASE_PING {
+                serial := read_u32(header.payload);
+                ping_batch: MessageBuilder;
+                xdg_wm_base_pong(*ping_batch, *session.wm_base, serial);
+                wayland_send(*session.conn, *ping_batch);
+            } else {
+                `it := header;
+                `it_index := 0;
+                #insert(break=break drain_loop) body;
             }
         }
     }
