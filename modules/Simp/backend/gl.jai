@@ -1096,7 +1096,16 @@ backend_texture_destroy :: (texture: *Texture) {
     }
 
     Window_Info_Platform_Specific :: struct {
-        glx_window: GLXWindow;
+        glx_window: GLXWindow;          // X11 path (unchanged)
+
+        // Wayland path. Populated by simp_wayland_dispatch's BACKEND_INIT (Task 5).
+        // Mirrors how glx_window is Simp's per-window X11 backend handle.
+        // SIMP_WL_SLOT_COUNT / Wl_Egl_State / Wl_Gl_Slot are defined in
+        // backend/wayland_gl.jai, loaded into this same module scope.
+        wl_egl:        Wl_Egl_State;    // EGL display/context + GBM device + drm fd
+        wl_slots:      [SIMP_WL_SLOT_COUNT] Wl_Gl_Slot;
+        wl_current:    s32 = -1;        // index of the slot currently being rendered
+        wl_initted:    bool;
     }
 } else #if OS == .MACOS {
     Backend_Platform_Specific :: struct {
