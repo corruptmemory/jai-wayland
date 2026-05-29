@@ -28,6 +28,14 @@ EGL :: #import,dir "../../EGL";
 Gbm :: #import,dir "../../gbm";
 Gpu :: #import,dir "../../gpu";
 
+// POSIX is used bare here (open/close/O_RDWR/O_CLOEXEC for the dmabuf/keymap
+// fds). No Simp file imports it directly — today it arrives only transitively
+// through the Linux branch's anonymous X11 import. Import it explicitly so this
+// file's dependency surface is self-evident and survives a future refactor of
+// that transitive path. (Basic — log/to_string/temp_c_string — is ambient
+// throughout Simp; same-module imports dedup, so this adds no collision risk.)
+#import "POSIX";
+
 // Double-buffered, matching hello_gl. The compositor scans out slot N while we
 // render slot N+1; wl_buffer.release marks a slot free again.
 SIMP_WL_SLOT_COUNT :: 2;
@@ -456,6 +464,20 @@ wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
 //
 // `retired` carries slots from a prior resize whose buffers are still held by
 // the compositor; their release events are matched here too. May be empty.
+//
+// CALLER CONTRACT (Task 5 dispatcher): this helper does NOT recycle the frame
+// callback id. The reference recycled it inline (hello_gl.jai:249,
+// cache_free(*frame_cache, ...)); that ownership now belongs to the caller,
+// since the Id_Cache lives in the dispatcher. After this returns, the caller
+// MUST cache_free the frame_callback_id, or it will leak a new id every frame.
+//
+// KNOWN LIMITATION (matches the reference — not introduced by the port): on the
+// frame-callback `done`, we `break` out of the whole `for session()`. Any
+// wl_buffer.release that was buffered in the SAME socket read after the `done`
+// is then abandoned, leaving that slot wrongly in_flight until a later drain.
+// Inherent to the block-on-callback model; could show as a one-frame stall or a
+// briefly-stuck slot under a compositor that coalesces releases with callbacks.
+// Revisit if the resize slice (Task 10) sees slot starvation.
 wl_block_on_frame :: (frame_callback_id: u32, slots: [] Wl_Gl_Slot,
                       retired: *[..] Wl_Gl_Slot, egl: Wl_Egl_State) {
     for Wl.session() {
