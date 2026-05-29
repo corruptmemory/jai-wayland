@@ -480,13 +480,19 @@ wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
 // since the Id_Cache lives in the dispatcher. After this returns, the caller
 // MUST cache_free the frame_callback_id, or it will leak a new id every frame.
 //
-// KNOWN LIMITATION (matches the reference — not introduced by the port): on the
-// frame-callback `done`, we `break` out of the whole `for session()`. Any
-// wl_buffer.release that was buffered in the SAME socket read after the `done`
-// is then abandoned, leaving that slot wrongly in_flight until a later drain.
-// Inherent to the block-on-callback model; could show as a one-frame stall or a
-// briefly-stuck slot under a compositor that coalesces releases with callbacks.
-// Revisit if the resize slice (Task 10) sees slot starvation.
+// KNOWN LIMITATION — MUST be fixed in the Slice-3 event pump before invaders
+// (Slice 4) leans on a long-running loop. On the frame-callback `done` we `break`
+// out of `for session()`, whose ReceiveBuffer is LOCAL (session.jai:24) and
+// discarded on exit. A wl_buffer.release the compositor coalesced into the SAME
+// socket read as the `done` is therefore read from the socket but never consumed,
+// and Wayland does not re-send it — so that slot stays in_flight PERMANENTLY (not
+// just one frame). With 2 slots, one stuck slot makes wl_find_free_slot return -1,
+// wl_current stops advancing, and the next frame re-commits a buffer the
+// compositor may still be scanning out → tearing/corruption. It did not surface on
+// the Hyprland smoke tests (that compositor didn't coalesce this way), but it is
+// order-dependent. The correct fix is a persistent, session-level ReceiveBuffer so
+// leftover messages survive across drains — exactly the pump Slice 3 builds.
+//
 // Event signals the swap-path drain collects while blocked. The dispatcher acts
 // on them after wl_block_on_frame returns (set the close flag; apply a new size).
 // Consolidates what would otherwise be a growing list of out-params and is the

@@ -122,7 +122,15 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             for * slot, i: s.wl_slots {
                 if !wl_slot_init(slot, s.wl_egl, *s.wl_dmabuf_info.dmabuf, *alloc_batch,
                                  s.wl_format, s.wl_modifier, new_w, new_h, backend) {
-                    log_error("Simp Wayland: resize slot % realloc failed (%x%)", i, new_w, new_h);
+                    // Realloc failed mid-loop: old slots are already retired and some
+                    // new-slot create messages sit unsent in alloc_batch while
+                    // allocate_id() advanced next_id (the contiguous-ID hazard, same as
+                    // BACKEND_INIT). Mark the window dead so SWAP / SET_RENDER_TARGET
+                    // no-op via their wl_initted guards rather than attaching a
+                    // half-built / null buffer to the live surface. Recovery would
+                    // require rolling next_id back.
+                    log_error("Simp Wayland: resize slot % realloc failed (%x%) — window disabled", i, new_w, new_h);
+                    s.wl_initted = false;
                     return;
                 }
             }

@@ -37,7 +37,7 @@ backend_draw_immediate_vertices :: (num_vertices: int) {
 backend_set_texture :: (shader: *Shader, texture: *Texture) {
 }
 
-backend_resize_render_target :: (info: Window_Info) {
+backend_resize_render_target :: (info: *Window_Info) {
 }
 
 backend_flush :: () {
