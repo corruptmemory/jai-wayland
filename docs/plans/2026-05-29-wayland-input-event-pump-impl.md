@@ -1,5 +1,12 @@
 # Wayland Input + Event Pump (Slice 3) Implementation Plan
 
+> **STATUS (2026-05-29): PAUSED after Tasks 1–4.** Tasks 5–8 are deferred pending a
+> Wayland abstraction layer — see `docs/plans/2026-05-29-slice3-pause-abstraction-pivot.md`.
+> The bottom-up Simp↔Input stitching hit the wall the repackaging vision predicted;
+> the abstraction (register objects-of-interest + pump → stable events) must come
+> first. Tasks 5–8 below predate that scaffold and should be revisited after the
+> abstraction's event model is fixed — likely much smaller then.
+>
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (or subagent-driven-development) to implement task-by-task.
 > Before writing/modifying ANY Jai code, invoke the `jai-language` skill (project CLAUDE.md mandate).
 
