@@ -506,6 +506,11 @@ wl_pump :: (blocking: bool) {
     if !s.wl_initted  return;
     session := context.wayland_session;
 
+    // CAUTION (for Slice 5's input sink): `info`/`s` are pointers into the
+    // window_infos [..] array, fetched once. Nothing may add a window during the
+    // drain below — find_or_add_window_info can array_add and reallocate, which
+    // would dangle these. Input handling must not create windows.
+
     while true {
         if session.connection_lost  break;
 
@@ -537,6 +542,10 @@ wl_pump :: (blocking: bool) {
             msg, size = Wl.receive_peek_message(*session.recv);
         }
 
+        // KEEP IN SYNC with session.jai for_expansion: the wl_display.error +
+        // wm_base ping/pong handling below is duplicated from it (the pump needs
+        // its own drain for the blocking/non-blocking control the shared loop can't
+        // give). A later repackaging consolidates both into one event router.
         if header.object_id == 1 && header.opcode == Wl.WL_DISPLAY_ERROR {
             err_obj := Wl.read_u32(header.payload);
             err_code := Wl.read_u32(header.payload + 4);
@@ -553,26 +562,12 @@ wl_pump :: (blocking: bool) {
             // The frame we're pacing on — stop the blocking wait (do NOT recycle
             // the id here; SWAP_BUFFERS owns that, see its cache_free).
             done = true;
-        } else if header.opcode == Wl.WL_BUFFER_RELEASE {
-            // Mark the owning slot (or retired slot) free. object_id MUST match a
-            // known slot buffer — opcode 0 alone is ambiguous (see wire gotcha).
-            matched := false;
-            obj_id := header.object_id;
-            for * s.wl_slots  if it.buffer.id == obj_id {
-                it.in_flight = false;
-                matched = true;
-                break;
-            }
-            if !matched {
-                release_batch: Wl.MessageBuilder;
-                if wl_release_retired_slot(*release_batch, *s.wl_retired, obj_id, s.wl_egl) {
-                    Wl.wayland_send(*release_batch);
-                }
-                // else: not our release event — some other opcode-0 event on an
-                // object we don't own. Drop it (defer consumes it).
-            }
         } else if header.object_id == info.window.wayland.xdg_surface && header.opcode == Wl.XDG_SURFACE_CONFIGURE {
             // Ack the serial — the protocol REQUIRES every configure be acked.
+            // MUST be matched (object_id, opcode), and MUST come before the
+            // wl_buffer.release catch-all below: configure / release / callback.done
+            // are ALL opcode 0, so an opcode-only release branch would swallow this
+            // (CLAUDE.md wire gotcha — never match opcode alone).
             serial := Wl.read_u32(header.payload);
             ack_batch: Wl.MessageBuilder;
             xs := Wl.Xdg_Surface.{ id = info.window.wayland.xdg_surface };
@@ -595,9 +590,31 @@ wl_pump :: (blocking: bool) {
             s.wl_close_requested = true;
             context.wl_window_closed = true;
         } else {
-            // Not one of our render events — hand the raw message to Input's sink
-            // (if registered) so it can classify keyboard/pointer/seat events.
-            if context.wl_input_sink  context.wl_input_sink(header, *session.recv);
+            // Catch-all = the opcode-0 COLLISION ZONE. wl_buffer.release,
+            // wl_keyboard.keymap, wl_pointer.enter, wl_seat.capabilities are ALL
+            // opcode 0 (key/motion/button use other opcodes); only object_id
+            // disambiguates. A slot/retired buffer's ONLY event is release, so: if
+            // object_id is one of OUR buffers it's a release (free the slot);
+            // otherwise hand the raw message to Input's sink — including the
+            // opcode-0 input events (keymap!) that a release-by-opcode branch would
+            // have wrongly swallowed, breaking keysym setup.
+            handled := false;
+            obj_id := header.object_id;
+            if header.opcode == Wl.WL_BUFFER_RELEASE {
+                for * s.wl_slots  if it.buffer.id == obj_id {
+                    it.in_flight = false;
+                    handled = true;
+                    break;
+                }
+                if !handled {
+                    release_batch: Wl.MessageBuilder;
+                    if wl_release_retired_slot(*release_batch, *s.wl_retired, obj_id, s.wl_egl) {
+                        Wl.wayland_send(*release_batch);
+                        handled = true;
+                    }
+                }
+            }
+            if !handled && context.wl_input_sink  context.wl_input_sink(header, *session.recv);
         }
 
         if blocking && done  break;

@@ -26,7 +26,10 @@ Wl_Pump :: #type (blocking: bool);
 // recv is the CONCRETE Default_ReceiveBuffer (not the bare polymorphic
 // ReceiveBuffer) — a context-field function-pointer type cannot mention a
 // polymorphic type. session.recv instantiates to exactly this type.
-Wl_Input_Sink :: #type (header: WaylandMessageHeader, recv: *Default_ReceiveBuffer) -> bool;  // returns: did the sink consume this message?
+// Fire-and-forget (no return): the pump consumes the message unconditionally
+// (its defer), and only forwards a message here AFTER ruling out its own render
+// objects — so the sink can't "decline" a message back to the pump.
+Wl_Input_Sink :: #type (header: WaylandMessageHeader, recv: *Default_ReceiveBuffer);
 
 // Set true by the pump on xdg_toplevel.close. A decoupled close signal: the pump
 // (Simp) also sets its own per-window close flag, but Input reads THIS to emit a

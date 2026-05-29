@@ -111,7 +111,7 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
 
             // Retire current slots (the compositor may still hold an in-flight
             // buffer; those go to wl_retired and are torn down on their
-            // wl_buffer.release inside wl_block_on_frame), then reallocate fresh
+            // wl_buffer.release inside wl_pump), then reallocate fresh
             // slots at the new size, reusing the negotiated format/modifier.
             retire_batch: Wl.MessageBuilder;
             wl_retire_slots(*retire_batch, *s.wl_retired, s.wl_slots, s.wl_egl);
