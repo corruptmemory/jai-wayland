@@ -1154,14 +1154,14 @@ backend_texture_destroy :: (texture: *Texture) {
         wl_format:      u32;             // chosen DRM fourcc
         wl_modifier:    u64;             // chosen DRM modifier
 
-        // Frame-callback id recycler. cache_alloc per swap, cache_free after the
-        // wl_callback.done drains (the wl_block_on_frame caller contract) — keeps
-        // the client-id stream contiguous instead of leaking an id every frame.
+        // Frame-callback id recycler. cache_alloc per swap, cache_free after
+        // wl_pump(true) returns (the SWAP_BUFFERS caller contract) — keeps the
+        // client-id stream contiguous instead of leaking an id every frame.
         wl_frame_cache: Wl.Id_Cache;
 
         // Slots from a prior resize whose buffers the compositor still holds; their
-        // wl_buffer.release is matched inside wl_block_on_frame. Empty in Slice 1
-        // (no resize); populated by the Slice-2 resize path.
+        // wl_buffer.release is matched inside wl_pump. Empty in Slice 1 (no resize);
+        // populated by the Slice-2 resize path.
         wl_retired:     [..] Wl_Gl_Slot;
 
         // Set when the compositor sends xdg_toplevel.close (e.g. Hyprland's
@@ -1169,6 +1169,12 @@ backend_texture_destroy :: (texture: *Texture) {
         // reads it via Simp.window_should_close and exits. (Slice-3 entry: real
         // input via the Input module comes later; this is just the close signal.)
         wl_close_requested: bool;
+
+        // The frame-callback id the current blocking wl_pump is pacing on.
+        // SWAP_BUFFERS allocates it (cache_alloc), stores it here, then calls
+        // wl_pump(true); the pump breaks its blocking wait when wl_callback.done
+        // for this id arrives. Set back to 0 (and cache_free'd) by SWAP after.
+        wl_pending_frame_callback: u32;
     }
 } else #if OS == .MACOS {
     Backend_Platform_Specific :: struct {

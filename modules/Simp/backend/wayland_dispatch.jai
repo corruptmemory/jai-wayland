@@ -157,10 +157,13 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             // wl_surface.frame, attach the slot's wl_buffer, damage the full surface,
             // commit, and send. The frame-callback id comes from the per-window
             // Id_Cache so it recycles (first alloc sequential, later allocs reuse a
-            // dead entry) — see the cache_free below.
+            // dead entry) — see the cache_free below. We stash it in
+            // s.wl_pending_frame_callback so wl_pump(true) knows which callback to
+            // pace on (the pump only takes `blocking` — it derives the rest).
             surface := Wl.Wl_Surface.{ id = info.window.wayland.surface };
             batch: Wl.MessageBuilder;
             frame_callback_id := Wl.cache_alloc(*s.wl_frame_cache);
+            s.wl_pending_frame_callback = frame_callback_id;
             Wl.wl_surface_frame(*batch, *surface, frame_callback_id);
             Wl.wl_surface_attach(*batch, *surface, *slot.buffer, 0, 0);
             Wl.wl_surface_damage_buffer(*batch, *surface, 0, 0, slot.width, slot.height);
@@ -168,29 +171,19 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             Wl.wayland_send(*batch);
             slot.in_flight = true;
 
-            // Block until this frame callback fires, routing wl_buffer.release events
-            // back to their owning slots and collecting close/resize signals. The
-            // drain also acks any xdg_surface.configure. wl_retired carries slots
-            // from a prior resize whose buffers the compositor still holds.
-            signals: Wl_Frame_Signals;
-            wl_block_on_frame(frame_callback_id, s.wl_slots, *s.wl_retired, s.wl_egl,
-                              info.window.wayland.xdg_toplevel, info.window.wayland.xdg_surface,
-                              *signals);
-            if signals.close_requested  s.wl_close_requested = true;
-            // Record a configured size change on Simp's Window_Type copy — the
-            // source get_render_dimensions reads for Wayland. The actual slot
-            // realloc happens via the app's next update_window -> backend_resize ->
-            // BACKEND_RESIZE_RENDER_TARGET, so the X11 update_window pattern works
-            // unchanged on Wayland too.
-            if signals.have_new_size {
-                info.window.wayland.width  = signals.new_width;
-                info.window.wayland.height = signals.new_height;
-            }
+            // Block until this frame callback fires. wl_pump drains the persistent
+            // session buffer, routing wl_buffer.release back to slots, acking
+            // xdg_surface.configure, recording configure size / close on the live
+            // Window_Info directly, and forwarding any input messages to the Input
+            // sink. It stops the blocking wait on our wl_pending_frame_callback.
+            wl_pump(true);
 
-            // CALLER CONTRACT (wl_block_on_frame doc comment): the helper does NOT
-            // recycle the frame-callback id. Recycle it here, or we leak a new id
-            // every frame.
+            // CALLER CONTRACT: the pump does NOT recycle the frame-callback id.
+            // Recycle it here, or we leak a new id every frame. Clear the pending
+            // field so a stray late wl_callback.done can't be mistaken for a live
+            // frame on the next pump.
             Wl.cache_free(*s.wl_frame_cache, frame_callback_id);
+            s.wl_pending_frame_callback = 0;
 
             // Rotate to a non-in-flight slot for the next frame's render. If both are
             // in flight (no release arrived during the block), keep the current slot;

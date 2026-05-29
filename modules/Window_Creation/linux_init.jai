@@ -22,6 +22,10 @@ running_wayland :: () -> bool {
 init_linux_window :: () {
     if running_wayland() {
         context.simp_dispatch = simp_wayland_dispatch;
+        // Register the unified event pump (Slice 3). Input calls it via
+        // context.wl_pump; Simp's swap path calls wl_pump directly (same module).
+        // wl_pump lives in Simp (backend/wayland_gl.jai), which this file imports.
+        context.wl_pump = wl_pump;
     } else {
         context.simp_dispatch = simp_x11_dispatch;
     }

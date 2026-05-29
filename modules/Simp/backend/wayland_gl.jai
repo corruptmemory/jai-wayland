@@ -456,125 +456,150 @@ wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
     return -1;
 }
 
-// --- Frame-callback drain (extracted from hello_gl's render loop) ---
+// --- Unified event pump (Slice 3: replaces wl_block_on_frame) ---
 
-// Block draining the session until the frame callback we requested fires,
-// while routing wl_buffer.release events back to their owning slots. This is
-// the synchronous core of SWAP_BUFFERS (design §3): vsync-equivalent pacing.
-//
-// Extracted from hello_gl.jai's main render loop (the wl_callback.done /
-// wl_buffer.release routing at lines 248-272). The dispatcher (Task 5) requests
-// the frame callback + commit and then calls this to wait for the callback.
-//
-// WIRE GOTCHA: WL_CALLBACK_DONE and WL_BUFFER_RELEASE are BOTH opcode 0 —
-// different interfaces, same opcode byte. We MUST disambiguate by object_id
-// before treating an opcode-0 message as either one. Callback check is first
-// because its id set is the most dynamic (allocated fresh every frame).
-//
-// `retired` carries slots from a prior resize whose buffers are still held by
-// the compositor; their release events are matched here too. May be empty.
-//
-// CALLER CONTRACT (Task 5 dispatcher): this helper does NOT recycle the frame
-// callback id. The reference recycled it inline (hello_gl.jai:249,
-// cache_free(*frame_cache, ...)); that ownership now belongs to the caller,
-// since the Id_Cache lives in the dispatcher. After this returns, the caller
-// MUST cache_free the frame_callback_id, or it will leak a new id every frame.
-//
-// KNOWN LIMITATION — MUST be fixed in the Slice-3 event pump before invaders
-// (Slice 4) leans on a long-running loop. On the frame-callback `done` we `break`
-// out of `for session()`, whose ReceiveBuffer is LOCAL (session.jai:24) and
-// discarded on exit. A wl_buffer.release the compositor coalesced into the SAME
-// socket read as the `done` is therefore read from the socket but never consumed,
-// and Wayland does not re-send it — so that slot stays in_flight PERMANENTLY (not
-// just one frame). With 2 slots, one stuck slot makes wl_find_free_slot return -1,
-// wl_current stops advancing, and the next frame re-commits a buffer the
-// compositor may still be scanning out → tearing/corruption. It did not surface on
-// the Hyprland smoke tests (that compositor didn't coalesce this way), but it is
-// order-dependent. The correct fix is a persistent, session-level ReceiveBuffer so
-// leftover messages survive across drains — exactly the pump Slice 3 builds.
-//
-// Event signals the swap-path drain collects while blocked. The dispatcher acts
-// on them after wl_block_on_frame returns (set the close flag; apply a new size).
-// Consolidates what would otherwise be a growing list of out-params and is the
-// seed of the Slice-3 event pump.
-Wl_Frame_Signals :: struct {
-    close_requested: bool;   // xdg_toplevel.close seen
-    have_new_size:   bool;   // an xdg_toplevel.configure carried a usable (>0) size
-    new_width:       s32;
-    new_height:      s32;
-}
+// wl_pump is exported (not #scope_module like the helpers above) because
+// Window_Creation/linux_init.jai registers it as context.wl_pump so the Input
+// backend can call it. It's the last symbol in this file, so the export scope
+// runs to EOF — nothing below needs module scope restored.
+#scope_export
 
-// Collects close / resize signals while waiting for the frame callback, and acks
-// every xdg_surface.configure inline (required by the protocol). Pass 0 for an id
-// to disable that detection. Caller acts on `signals` after return.
-wl_block_on_frame :: (frame_callback_id: u32, slots: [] Wl_Gl_Slot,
-                      retired: *[..] Wl_Gl_Slot, egl: Wl_Egl_State,
-                      xdg_toplevel_id: u32, xdg_surface_id: u32,
-                      signals: *Wl_Frame_Signals) {
-    // `for :Wl.for_expansion` names the iterator explicitly: the WaylandSession
-    // for_expansion lives in the `Wl` module and is NOT merged into Simp's scope
-    // by our named import, so a bare `for Wl.session()` can't find the overload
-    // (it falls through to Hash_Table's). hello_gl gets away with a bare `for`
-    // because it imports wayland anonymously. See modules/wayland/session.jai.
-    for :Wl.for_expansion Wl.session() {
-        // wl_callback.done for the frame we most recently requested — done.
-        if it.object_id == frame_callback_id && it.opcode == Wl.WL_CALLBACK_DONE {
-            break;
+// wl_pump is THE single drain of the persistent session buffer. It dispatches
+// render events (frame callback / wl_buffer.release / xdg_*.configure /
+// xdg_toplevel.close) to Simp's per-window slot/size/close state DIRECTLY, and
+// forwards every OTHER message to context.wl_input_sink so the Input backend can
+// classify it. Registered as context.wl_pump (see Window_Creation/linux_init.jai)
+// so Input can call it too; both Input's update_window_events and Simp's
+// swap_buffers funnel through this one function.
+//
+// blocking=true  — block (reading the socket as needed) until the frame callback
+//                  in s.wl_pending_frame_callback fires. Vsync-equivalent pacing
+//                  used by SWAP_BUFFERS.
+// blocking=false — drain only what is already buffered and return. Used by Input's
+//                  update_window_events to poll without stalling.
+//
+// MANUAL drain (NOT `for session()`): the blocking-until-frame-callback vs.
+// non-blocking-drain-buffered control flow is exactly what the for_expansion can't
+// express. As a consequence this REPLICATES for_expansion's ping/pong +
+// wl_display.error handling (~12 lines). That duplication is accepted for this
+// first draft (a later repackaging consolidates it); it matches session.jai's
+// for_expansion logic exactly.
+//
+// WIRE GOTCHA: WL_CALLBACK_DONE and WL_BUFFER_RELEASE are BOTH opcode 0 — different
+// interfaces, same opcode byte. We MUST disambiguate by object_id before treating
+// an opcode-0 message as either one. The frame-callback check is first because its
+// id set is the most dynamic (allocated fresh every frame).
+//
+// The persistent session.recv (session.jai) is what makes this correct across
+// calls: a wl_buffer.release the compositor coalesced into the same socket read as
+// the frame `done` is NOT discarded when we stop the blocking wait — it stays
+// buffered and the next pump call (blocking or not) consumes it. This is the fix
+// for the stuck-slot hazard the old local-buffer wl_block_on_frame documented.
+wl_pump :: (blocking: bool) {
+    // Derive per-window state internally (the contract only passes `blocking`).
+    // current_window_info is a COPY; use its .window key to look up the LIVE
+    // *Window_Info so the configure/close writes below mutate the real record.
+    info := find_window_info(context.simp.current_window_info.window);
+    if !info  return;
+    #if OS == .LINUX  if info.window.wtype != .Wayland  return;
+    s := *info.specific;
+    if !s.wl_initted  return;
+    session := context.wayland_session;
+
+    while true {
+        if session.connection_lost  break;
+
+        msg, size := Wl.receive_peek_message(*session.recv);
+        if msg == null {
+            // Nothing buffered. Non-blocking: we've drained all we had — return.
+            // Blocking: read the socket (this is the only blocking point) and re-peek.
+            if !blocking  break;
+            bts := Wl.wayland_receive(*session.conn, *session.recv);
+            if bts <= 0 { session.connection_lost = true; break; }
+            msg, size = Wl.receive_peek_message(*session.recv);
+            if msg == null  continue;
         }
 
-        if xdg_toplevel_id != 0 && it.object_id == xdg_toplevel_id {
-            // xdg_toplevel.close — compositor/user asked the window to close.
-            // Record it and stop waiting; the app checks window_should_close.
-            if it.opcode == Wl.XDG_TOPLEVEL_CLOSE {
-                signals.close_requested = true;
-                break;
-            }
-            // xdg_toplevel.configure — carries the suggested size (0x0 means
-            // "you decide" — ignore those). Keep waiting for the frame callback;
-            // the resize is applied by the app's next update_window.
-            if it.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
-                args: Wl.Xdg_Toplevel_Configure_Args;
-                Wl.unmarshal(*args, it.payload, recv);
-                if args.width > 0 && args.height > 0 {
-                    signals.have_new_size = true;
-                    signals.new_width  = args.width;
-                    signals.new_height = args.height;
-                }
-                continue;
-            }
+        header: Wl.WaylandMessageHeader;
+        header.object_id, header.opcode, header.msg_size = Wl.unpack_header(msg);
+        header.payload = msg + Wl.HEADER_SIZE;
+
+        // done=true stops the blocking wait after this message is consumed (the
+        // frame we're pacing on arrived, the connection died, etc.). Ignored when
+        // !blocking — there the loop ends when the buffer empties.
+        done := false;
+
+        // defer-consume mirrors for_expansion: the handlers/input-sink read
+        // header.payload first, THEN we advance past the message and re-peek, so
+        // a `continue` can never skip consumption.
+        defer {
+            Wl.receive_consume_message(*session.recv, header.msg_size);
+            msg, size = Wl.receive_peek_message(*session.recv);
         }
 
-        // xdg_surface.configure — ack the serial (the protocol REQUIRES every
-        // configure be acked, resize or not). The size from xdg_toplevel.configure
-        // above is applied separately by the caller.
-        if xdg_surface_id != 0 && it.object_id == xdg_surface_id && it.opcode == Wl.XDG_SURFACE_CONFIGURE {
-            serial := Wl.read_u32(it.payload);
-            ack_batch: Wl.MessageBuilder;
-            xs := Wl.Xdg_Surface.{ id = xdg_surface_id };
-            Wl.xdg_surface_ack_configure(*ack_batch, *xs, serial);
-            Wl.wayland_send(*ack_batch);
-            continue;
-        }
-
-        // wl_buffer.release — mark the owning slot available. Requires the
-        // object_id to match a known slot buffer (see wire gotcha above).
-        if it.opcode == Wl.WL_BUFFER_RELEASE {
+        if header.object_id == 1 && header.opcode == Wl.WL_DISPLAY_ERROR {
+            err_obj := Wl.read_u32(header.payload);
+            err_code := Wl.read_u32(header.payload + 4);
+            err_msg, _ := Wl.read_string(header.payload + 8);
+            log("FATAL: wl_display.error object=% code=%: %", err_obj, err_code, err_msg, flags=.ERROR);
+            session.connection_lost = true;
+            done = true;
+        } else if header.object_id == session.wm_base.id && header.opcode == Wl.XDG_WM_BASE_PING {
+            serial := Wl.read_u32(header.payload);
+            ping_batch: Wl.MessageBuilder;
+            Wl.xdg_wm_base_pong(*ping_batch, *session.wm_base, serial);
+            Wl.wayland_send(*session.conn, *ping_batch);
+        } else if header.object_id == s.wl_pending_frame_callback && header.opcode == Wl.WL_CALLBACK_DONE {
+            // The frame we're pacing on — stop the blocking wait (do NOT recycle
+            // the id here; SWAP_BUFFERS owns that, see its cache_free).
+            done = true;
+        } else if header.opcode == Wl.WL_BUFFER_RELEASE {
+            // Mark the owning slot (or retired slot) free. object_id MUST match a
+            // known slot buffer — opcode 0 alone is ambiguous (see wire gotcha).
             matched := false;
-            obj_id := it.object_id;
-            for * slots  if it.buffer.id == obj_id {
+            obj_id := header.object_id;
+            for * s.wl_slots  if it.buffer.id == obj_id {
                 it.in_flight = false;
                 matched = true;
                 break;
             }
-            if matched  continue;
-
-            release_batch: Wl.MessageBuilder;
-            if wl_release_retired_slot(*release_batch, retired, obj_id, egl) {
-                Wl.wayland_send(*release_batch);
-                continue;
+            if !matched {
+                release_batch: Wl.MessageBuilder;
+                if wl_release_retired_slot(*release_batch, *s.wl_retired, obj_id, s.wl_egl) {
+                    Wl.wayland_send(*release_batch);
+                }
+                // else: not our release event — some other opcode-0 event on an
+                // object we don't own. Drop it (defer consumes it).
             }
-            // otherwise fall through — not our release event, some other
-            // opcode-0 event on an object we don't own.
+        } else if header.object_id == info.window.wayland.xdg_surface && header.opcode == Wl.XDG_SURFACE_CONFIGURE {
+            // Ack the serial — the protocol REQUIRES every configure be acked.
+            serial := Wl.read_u32(header.payload);
+            ack_batch: Wl.MessageBuilder;
+            xs := Wl.Xdg_Surface.{ id = info.window.wayland.xdg_surface };
+            Wl.xdg_surface_ack_configure(*ack_batch, *xs, serial);
+            Wl.wayland_send(*ack_batch);
+        } else if header.object_id == info.window.wayland.xdg_toplevel && header.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
+            // Carries the suggested size (0x0 means "you decide" — ignore those).
+            // Update the live Window_Info directly; the actual slot realloc happens
+            // via the app's next update_window -> BACKEND_RESIZE_RENDER_TARGET.
+            args: Wl.Xdg_Toplevel_Configure_Args;
+            Wl.unmarshal(*args, header.payload, *session.recv);
+            if args.width > 0 && args.height > 0 {
+                info.window.wayland.width  = args.width;
+                info.window.wayland.height = args.height;
+            }
+        } else if header.object_id == info.window.wayland.xdg_toplevel && header.opcode == Wl.XDG_TOPLEVEL_CLOSE {
+            // Compositor/user asked the window to close. Set BOTH flags: Simp's
+            // per-window flag (read via window_should_close) and the decoupled
+            // context flag Input reads to emit .QUIT without a Simp import.
+            s.wl_close_requested = true;
+            context.wl_window_closed = true;
+        } else {
+            // Not one of our render events — hand the raw message to Input's sink
+            // (if registered) so it can classify keyboard/pointer/seat events.
+            if context.wl_input_sink  context.wl_input_sink(header, *session.recv);
         }
+
+        if blocking && done  break;
     }
 }
