@@ -35,6 +35,13 @@ ReceiveBuffer :: struct ($MMS: u32 = MAX_MESSAGE_SIZE * 4, $MFDS: u32 = MAX_FDS_
     in_fds_read: u32;
 }
 
+// The concrete default instantiation of the polymorphic ReceiveBuffer. A bare
+// `recv: ReceiveBuffer` struct field (session.recv, etc.) instantiates to exactly
+// this type. Needed wherever a NON-polymorphic ReceiveBuffer type is required —
+// e.g. a #add_context function-pointer type cannot mention the bare polymorphic
+// ReceiveBuffer (it has no runtime representation); see modules/wayland/pump.jai.
+Default_ReceiveBuffer :: ReceiveBuffer(MAX_MESSAGE_SIZE * 4, MAX_FDS_OUT);
+
 // Connect to the Wayland compositor via Unix socket.
 // Path: $XDG_RUNTIME_DIR / $WAYLAND_DISPLAY (defaults to "wayland-0").
 // Returns true on success, false on failure (socket_fd remains -1).

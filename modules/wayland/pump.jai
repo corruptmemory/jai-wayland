@@ -10,35 +10,29 @@
 // dispatches each message — render events (frame/release/configure/close) to
 // Simp's slot state directly, input events to context.wl_input_sink (Input's).
 
-// A backend-neutral input event the pump hands to the Input sink. Deliberately
-// raw (evdev keycode, not a translated Key_Code) so the wayland module stays
-// free of any dependency on Input's enums — the Input backend does the
-// keysym->Key_Code mapping (Slice 3 Task 6).
-Wl_Input_Event_Kind :: enum u32 {
-    KEY;             // a key press/release
-    POINTER_MOTION;  // pointer moved (surface-local x,y)
-    POINTER_BUTTON;  // pointer button press/release
-    POINTER_AXIS;    // scroll
-    CLOSE;           // xdg_toplevel.close — the window was asked to close
-}
-
-Wl_Input_Event :: struct {
-    kind:          Wl_Input_Event_Kind;
-    evdev_keycode: u32;    // KEY: evdev keycode (xkb keycode - 8)
-    pressed:       bool;   // KEY / POINTER_BUTTON: down (true) or up (false)
-    x, y:          float;  // POINTER_MOTION: surface-local coordinates
-    button:        u32;    // POINTER_BUTTON: linux input button code (BTN_*)
-    axis:          u32;    // POINTER_AXIS: 0 = vertical, 1 = horizontal
-    value:         float;  // POINTER_AXIS: scroll amount
-}
-
 // Implemented by Simp (extends its swap-path drain). blocking=true blocks until
 // the frame callback fires (vsync pacing, used by swap_buffers); blocking=false
 // drains only what is already buffered and returns (used by update_window_events).
 Wl_Pump :: #type (blocking: bool);
 
-// Implemented by the Input backend; the pump calls it for each input event.
-Wl_Input_Sink :: #type (event: Wl_Input_Event);
+// Implemented by the Input backend. The pump calls it for every message it does
+// NOT recognize as one of its own render events (frame callback / wl_buffer.release
+// / xdg_*.configure / xdg_toplevel.close). The sink inspects the RAW message via
+// (header, recv) — reusing the wayland module's own decoders (get_keyboard_event /
+// get_pointer_event) — classifies and translates input itself, and returns whether
+// it consumed the message. This keeps ALL input ownership (seat/keyboard/pointer
+// acquisition, keymap parsing, keysym -> Key_Code mapping) inside Input, and the
+// pump free of any input-decode logic. Render events never reach the sink.
+// recv is the CONCRETE Default_ReceiveBuffer (not the bare polymorphic
+// ReceiveBuffer) — a context-field function-pointer type cannot mention a
+// polymorphic type. session.recv instantiates to exactly this type.
+Wl_Input_Sink :: #type (header: WaylandMessageHeader, recv: *Default_ReceiveBuffer) -> bool;  // returns: did the sink consume this message?
+
+// Set true by the pump on xdg_toplevel.close. A decoupled close signal: the pump
+// (Simp) also sets its own per-window close flag, but Input reads THIS to emit a
+// .QUIT event without needing the toplevel's object id or a Simp import. Terminal
+// (never reset) — single-window scope, which is all Slice 3 / invaders need.
+#add_context wl_window_closed: bool;
 
 #add_context wl_pump:       Wl_Pump;
 #add_context wl_input_sink: Wl_Input_Sink;
