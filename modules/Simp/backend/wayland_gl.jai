@@ -480,7 +480,12 @@ wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
 // Revisit if the resize slice (Task 10) sees slot starvation.
 wl_block_on_frame :: (frame_callback_id: u32, slots: [] Wl_Gl_Slot,
                       retired: *[..] Wl_Gl_Slot, egl: Wl_Egl_State) {
-    for Wl.session() {
+    // `for :Wl.for_expansion` names the iterator explicitly: the WaylandSession
+    // for_expansion lives in the `Wl` module and is NOT merged into Simp's scope
+    // by our named import, so a bare `for Wl.session()` can't find the overload
+    // (it falls through to Hash_Table's). hello_gl gets away with a bare `for`
+    // because it imports wayland anonymously. See modules/wayland/session.jai.
+    for :Wl.for_expansion Wl.session() {
         // wl_callback.done for the frame we most recently requested — done.
         if it.object_id == frame_callback_id && it.opcode == Wl.WL_CALLBACK_DONE {
             break;

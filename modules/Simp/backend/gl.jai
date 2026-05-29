@@ -1123,6 +1123,23 @@ backend_texture_destroy :: (texture: *Texture) {
         wl_slots:      [SIMP_WL_SLOT_COUNT] Wl_Gl_Slot;
         wl_current:    s32 = -1;        // index of the slot currently being rendered
         wl_initted:    bool;
+
+        // Per-window dmabuf negotiation result, kept for slot (re)allocation.
+        // BACKEND_INIT computes these once; the Slice-2 resize path reuses them to
+        // reallocate slots at the new size without re-discovering formats.
+        wl_dmabuf_info: Wl.Dmabuf_Info;  // bound zwp_linux_dmabuf_v1 + advertised formats
+        wl_format:      u32;             // chosen DRM fourcc
+        wl_modifier:    u64;             // chosen DRM modifier
+
+        // Frame-callback id recycler. cache_alloc per swap, cache_free after the
+        // wl_callback.done drains (the wl_block_on_frame caller contract) — keeps
+        // the client-id stream contiguous instead of leaking an id every frame.
+        wl_frame_cache: Wl.Id_Cache;
+
+        // Slots from a prior resize whose buffers the compositor still holds; their
+        // wl_buffer.release is matched inside wl_block_on_frame. Empty in Slice 1
+        // (no resize); populated by the Slice-2 resize path.
+        wl_retired:     [..] Wl_Gl_Slot;
     }
 } else #if OS == .MACOS {
     Backend_Platform_Specific :: struct {
