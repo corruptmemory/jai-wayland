@@ -1065,7 +1065,15 @@ backend_set_texture :: (shader: *Shader, texture: *Texture) {
     glUniform1i(loc, 0);
 }
 
-backend_resize_render_target :: (info: Window_Info) {
+backend_resize_render_target :: (info: *Window_Info) {
+    #if OS == .LINUX {
+        // Let the active backend react to the size change. X11/GLX resizes the
+        // drawable implicitly (its dispatcher RESIZE case is a no-op); the Wayland
+        // dispatcher retires + reallocates its BO-backed slots at the new size.
+        // Pointer arg: the dispatcher mutates info.specific (slot state).
+        args := Simp_Op_Args.{ op = .BACKEND_RESIZE_RENDER_TARGET, resize_render_target = .{ new_width = info.window_width, new_height = info.window_height } };
+        context.simp_dispatch(*args, info);
+    }
     if context.simp.current_window_info.window == info.window {
         glViewport(0, 0, xx info.window_width, xx info.window_height);
         #if OS == .MACOS {

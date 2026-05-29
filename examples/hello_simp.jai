@@ -36,17 +36,19 @@ main :: () {
     window := create_window(window_name = "hello_simp", width = WIDTH, height = HEIGHT);
     Simp.set_render_target(window);  // ONCE — triggers Simp BACKEND_INIT.
 
-    // The compositor may give us a different size than requested (Hyprland tiles
-    // it), so drive the quad geometry off the actual render size, not the
-    // requested constants. Slice 1 has no resize, so query once.
-    win_w, win_h := Simp.get_render_dimensions(window);
-
     frame_limit := frame_limit_from_env();
     if frame_limit > 0  print("hello_simp: bounded run, % frame(s)\n", frame_limit);
     else                print("hello_simp: running until killed (JAI_WAYLAND_SIMP_FRAMES=N to bound)\n");
 
     frame: u64 = 0;
     while true {
+        // Pick up compositor-driven resize (invaders' pattern): update_window
+        // detects a size change and reallocates the backend's render target — for
+        // Wayland that retires + reallocs the BO slots at the new size. Then drive
+        // the quad geometry off the current size so it re-centers on resize.
+        Simp.update_window(window);
+        win_w, win_h := Simp.get_render_dimensions(window);
+
         // Cycle the quad colour so frame advancement is visually obvious — a
         // frozen first frame would look identical to a working static one.
         t := cast(float) frame * 0.03;

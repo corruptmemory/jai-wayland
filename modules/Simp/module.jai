@@ -248,7 +248,7 @@ update_window :: (window: Window_Type) {
     c := *state.current_window_info;
     if c.window == window {
         if (window_width != c.window_width) || (window_height != c.window_height) {
-            backend_resize_render_target(info.*);
+            backend_resize_render_target(info);  // *Window_Info: the backend may mutate per-window state (Wayland slot realloc)
 
             // If the user changes the window after setting a shader,
             // the projection will be out-of-date, so, update it here.
@@ -305,9 +305,12 @@ get_render_dimensions :: (window: Window_Type) -> (width: s32, height: s32) {
         return cast(s32)(c.right - c.left), cast(s32)(c.bottom - c.top);
     } else #if OS == .LINUX {
         if window.wtype == .Wayland {
-            // Wayland has no XGetGeometry. The window's size is the last size the
-            // compositor configured, captured in create_window_wayland (and
-            // updated on resize in Slice 2).
+            // Wayland has no XGetGeometry. The LIVE size lives on Simp's
+            // Window_Info copy, updated by the swap-path drain on
+            // xdg_toplevel.configure; the caller's `window` value is only current
+            // at create time. Fall back to the passed value pre-registration.
+            info := find_window_info(window);
+            if info  return info.window.wayland.width, info.window.wayland.height;
             return window.wayland.width, window.wayland.height;
         }
         root: Window;

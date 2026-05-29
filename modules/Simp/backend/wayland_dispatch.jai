@@ -103,13 +103,34 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             }
 
         case .BACKEND_RESIZE_RENDER_TARGET;
-            // DEFERRED TO SLICE 2 (Task 10). Resize on Wayland is not a no-op like
-            // GLX: the BO-backed slots are sized to the surface, so a resize must
-            // retire the in-flight slots (wl_retire_slots → wl_retired, torn down on
-            // their wl_buffer.release) and reallocate fresh slots at the new size
-            // (wl_slot_init with s.wl_dmabuf_info/wl_format/wl_modifier). Left empty
-            // intentionally for Slice 1 — the backend-agnostic glViewport stays in
-            // gl.jai. See docs/plans/2026-05-29-wayland-backend-design.md.
+            if !s.wl_initted  return;
+            new_w := info.window_width;   // update_window set these before dispatching
+            new_h := info.window_height;
+            // No-op if the slots already match — guards against spurious configures.
+            if s.wl_slots[0].width == new_w && s.wl_slots[0].height == new_h  return;
+
+            // Retire current slots (the compositor may still hold an in-flight
+            // buffer; those go to wl_retired and are torn down on their
+            // wl_buffer.release inside wl_block_on_frame), then reallocate fresh
+            // slots at the new size, reusing the negotiated format/modifier.
+            retire_batch: Wl.MessageBuilder;
+            wl_retire_slots(*retire_batch, *s.wl_retired, s.wl_slots, s.wl_egl);
+            Wl.wayland_send(*retire_batch);
+
+            backend := wl_choose_gl_backend();
+            alloc_batch: Wl.MessageBuilder;
+            for * slot, i: s.wl_slots {
+                if !wl_slot_init(slot, s.wl_egl, *s.wl_dmabuf_info.dmabuf, *alloc_batch,
+                                 s.wl_format, s.wl_modifier, new_w, new_h, backend) {
+                    log_error("Simp Wayland: resize slot % realloc failed (%x%)", i, new_w, new_h);
+                    return;
+                }
+            }
+            Wl.wayland_send(*alloc_batch);
+            s.wl_current = 0;
+            // Bind the new current slot's FBO so the next clear/draw target it (the
+            // old FBO was just retired). gl.jai's glViewport follows this dispatch.
+            glBindFramebuffer(GL_FRAMEBUFFER, window_framebuffer(info));
 
         case .SWAP_BUFFERS;
             // Fail safe if BACKEND_INIT bailed: the slots are uninitialized
@@ -140,10 +161,23 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             slot.in_flight = true;
 
             // Block until this frame callback fires, routing wl_buffer.release events
-            // back to their owning slots. wl_retired carries slots from a prior resize
-            // whose buffers the compositor still holds (empty in Slice 1).
+            // back to their owning slots and collecting close/resize signals. The
+            // drain also acks any xdg_surface.configure. wl_retired carries slots
+            // from a prior resize whose buffers the compositor still holds.
+            signals: Wl_Frame_Signals;
             wl_block_on_frame(frame_callback_id, s.wl_slots, *s.wl_retired, s.wl_egl,
-                              info.window.wayland.xdg_toplevel, *s.wl_close_requested);
+                              info.window.wayland.xdg_toplevel, info.window.wayland.xdg_surface,
+                              *signals);
+            if signals.close_requested  s.wl_close_requested = true;
+            // Record a configured size change on Simp's Window_Type copy — the
+            // source get_render_dimensions reads for Wayland. The actual slot
+            // realloc happens via the app's next update_window -> backend_resize ->
+            // BACKEND_RESIZE_RENDER_TARGET, so the X11 update_window pattern works
+            // unchanged on Wayland too.
+            if signals.have_new_size {
+                info.window.wayland.width  = signals.new_width;
+                info.window.wayland.height = signals.new_height;
+            }
 
             // CALLER CONTRACT (wl_block_on_frame doc comment): the helper does NOT
             // recycle the frame-callback id. Recycle it here, or we leak a new id

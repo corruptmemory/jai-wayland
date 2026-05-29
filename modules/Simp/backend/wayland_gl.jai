@@ -487,13 +487,24 @@ wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
 // Inherent to the block-on-callback model; could show as a one-frame stall or a
 // briefly-stuck slot under a compositor that coalesces releases with callbacks.
 // Revisit if the resize slice (Task 10) sees slot starvation.
-// `close_requested` is set to true (and the wait ends) if the compositor sends
-// xdg_toplevel.close for `xdg_toplevel_id` while we're blocked — the app then
-// sees it via Simp.window_should_close and exits. Pass 0 for xdg_toplevel_id to
-// disable close detection.
+// Event signals the swap-path drain collects while blocked. The dispatcher acts
+// on them after wl_block_on_frame returns (set the close flag; apply a new size).
+// Consolidates what would otherwise be a growing list of out-params and is the
+// seed of the Slice-3 event pump.
+Wl_Frame_Signals :: struct {
+    close_requested: bool;   // xdg_toplevel.close seen
+    have_new_size:   bool;   // an xdg_toplevel.configure carried a usable (>0) size
+    new_width:       s32;
+    new_height:      s32;
+}
+
+// Collects close / resize signals while waiting for the frame callback, and acks
+// every xdg_surface.configure inline (required by the protocol). Pass 0 for an id
+// to disable that detection. Caller acts on `signals` after return.
 wl_block_on_frame :: (frame_callback_id: u32, slots: [] Wl_Gl_Slot,
                       retired: *[..] Wl_Gl_Slot, egl: Wl_Egl_State,
-                      xdg_toplevel_id: u32, close_requested: *bool) {
+                      xdg_toplevel_id: u32, xdg_surface_id: u32,
+                      signals: *Wl_Frame_Signals) {
     // `for :Wl.for_expansion` names the iterator explicitly: the WaylandSession
     // for_expansion lives in the `Wl` module and is NOT merged into Simp's scope
     // by our named import, so a bare `for Wl.session()` can't find the overload
@@ -505,12 +516,38 @@ wl_block_on_frame :: (frame_callback_id: u32, slots: [] Wl_Gl_Slot,
             break;
         }
 
-        // xdg_toplevel.close — compositor/user asked the window to close (opcode 1,
-        // distinct from the opcode-0 pair below, but match object_id too). Record
-        // it and stop waiting; the app checks window_should_close and exits.
-        if xdg_toplevel_id != 0 && it.object_id == xdg_toplevel_id && it.opcode == Wl.XDG_TOPLEVEL_CLOSE {
-            close_requested.* = true;
-            break;
+        if xdg_toplevel_id != 0 && it.object_id == xdg_toplevel_id {
+            // xdg_toplevel.close — compositor/user asked the window to close.
+            // Record it and stop waiting; the app checks window_should_close.
+            if it.opcode == Wl.XDG_TOPLEVEL_CLOSE {
+                signals.close_requested = true;
+                break;
+            }
+            // xdg_toplevel.configure — carries the suggested size (0x0 means
+            // "you decide" — ignore those). Keep waiting for the frame callback;
+            // the resize is applied by the app's next update_window.
+            if it.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
+                args: Wl.Xdg_Toplevel_Configure_Args;
+                Wl.unmarshal(*args, it.payload, recv);
+                if args.width > 0 && args.height > 0 {
+                    signals.have_new_size = true;
+                    signals.new_width  = args.width;
+                    signals.new_height = args.height;
+                }
+                continue;
+            }
+        }
+
+        // xdg_surface.configure — ack the serial (the protocol REQUIRES every
+        // configure be acked, resize or not). The size from xdg_toplevel.configure
+        // above is applied separately by the caller.
+        if xdg_surface_id != 0 && it.object_id == xdg_surface_id && it.opcode == Wl.XDG_SURFACE_CONFIGURE {
+            serial := Wl.read_u32(it.payload);
+            ack_batch: Wl.MessageBuilder;
+            xs := Wl.Xdg_Surface.{ id = xdg_surface_id };
+            Wl.xdg_surface_ack_configure(*ack_batch, *xs, serial);
+            Wl.wayland_send(*ack_batch);
+            continue;
         }
 
         // wl_buffer.release — mark the owning slot available. Requires the
