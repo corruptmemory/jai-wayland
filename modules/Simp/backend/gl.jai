@@ -978,10 +978,17 @@ backend_set_render_target :: (info: *Window_Info) {
     }
 
     glViewport(0, 0, xx info.window_width, xx info.window_height);
-    glBindFramebuffer(GL_FRAMEBUFFER, window_framebuffer(info));
+    fb := window_framebuffer(info);
+    glBindFramebuffer(GL_FRAMEBUFFER, fb);
 
     // glDrawBuffer is not a thing in GLES.
-    #if !IS_GLES  glDrawBuffer(GL_BACK);
+    // GL_BACK is only valid for the DEFAULT framebuffer (0). On Wayland the window
+    // framebuffer is a user FBO (a BO-backed slot), whose draw buffer must be a
+    // colour attachment — GL_BACK there raises GL_INVALID_OPERATION. (Harmless,
+    // since a 1-attachment FBO already defaults to GL_COLOR_ATTACHMENT0, but it
+    // dirties glGetError and trips the debug callback.) X11's framebuffer is 0,
+    // the degenerate case — same shape as window_framebuffer above.
+    #if !IS_GLES  glDrawBuffer(cast(GLenum)(ifx fb == 0 then GL_BACK else GL_COLOR_ATTACHMENT0));
 }
 
 backend_create_render_target :: (texture: *Texture) {
