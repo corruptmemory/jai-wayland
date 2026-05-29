@@ -39,6 +39,10 @@
 // "../../wayland") can never string-match. Resolves via the build import_path.
 Wl :: #import "wayland";
 
+// For getenv() in running_wayland (linux_init.jai, same module scope). Named
+// import; dedups with X11's transitive POSIX. (exit() comes from Basic.)
+POSIX :: #import "POSIX";
+
 window_minimized := false;
 
 Saved_Window_Info :: struct {
@@ -229,8 +233,13 @@ create_window :: (width: int, height: int, window_name: string, window_x := 0, w
 create_window_wayland :: (width: int, height: int, window_name: string) -> Window_Type {
     if !Wl.session() {
         if !Wl.init_wayland_session() {
-            log_error("create_window_wayland: could not initialize Wayland session\n");
-            return INVALID_WINDOW;
+            // Unrecoverable: no window means nothing can render, and the
+            // (unmodifiable) caller does not validity-check the result.
+            // Returning a sentinel would mis-route — INVALID_WINDOW is
+            // .X11-tagged, so on a live Wayland session Simp would take the
+            // X11/GLX path (or mis-read info.window.wayland). Fail loud.
+            log_error("create_window_wayland: could not initialize Wayland session");
+            exit(1);  // Basic.exit
         }
     }
 
@@ -259,6 +268,7 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
     win_width:  s32 = cast(s32) width;
     win_height: s32 = cast(s32) height;
     configure_serial: u32 = 0;
+    got_configure := false;   // distinct from serial==0: a real serial may be 0
     // Named iterator: the WaylandSession for_expansion lives in the `Wl`
     // module and is not merged into this scope by the named import.
     for :Wl.for_expansion Wl.session() {
@@ -271,13 +281,16 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
             }
         } else if it.object_id == xdg_surface.id && it.opcode == Wl.XDG_SURFACE_CONFIGURE {
             configure_serial = Wl.read_u32(it.payload);
+            got_configure = true;
             break;
         }
     }
 
-    if configure_serial == 0 {
-        log_error("create_window_wayland: did not receive xdg_surface.configure\n");
-        return INVALID_WINDOW;
+    if !got_configure {
+        // Unrecoverable (disconnect / wl_display.error before configure). Fail
+        // loud rather than return the .X11-tagged sentinel — see above.
+        log_error("create_window_wayland: did not receive xdg_surface.configure");
+        exit(1);  // Basic.exit
     }
 
     // Ack the configure so the compositor lets us map content.
@@ -285,7 +298,7 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
     Wl.xdg_surface_ack_configure(*ack_batch, *xdg_surface, configure_serial);
     Wl.wayland_send(*ack_batch);
 
-    log("create_window_wayland: configured window %x%\n", win_width, win_height);
+    log("create_window_wayland: configured window %x%", win_width, win_height);
 
     return .{
         wtype = .Wayland,

@@ -10,11 +10,13 @@
                  // at file/load scope.
 
 running_wayland :: () -> bool {
-    // Stage 1: unconditionally X11.
-    // Stage 2 replaces this body with real detection — typically:
-    //   wayland_display := to_string(getenv("WAYLAND_DISPLAY"));
-    //   return wayland_display.count > 0;
-    return false;
+    // A Wayland session sets WAYLAND_DISPLAY; X11 sessions leave it unset (an
+    // X11 app under XWayland sees DISPLAY, not WAYLAND_DISPLAY). getenv returns
+    // a null *u8 when unset — guard before to_string so we never walk null.
+    // POSIX is the named import from linux.jai (same module scope).
+    wd := POSIX.getenv("WAYLAND_DISPLAY");
+    if !wd  return false;
+    return to_string(wd).count > 0;
 }
 
 init_linux_window :: () {
