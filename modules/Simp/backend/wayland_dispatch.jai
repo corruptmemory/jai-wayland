@@ -148,5 +148,14 @@ simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
             // the next swap will re-block on its callback.
             nxt := wl_find_free_slot(s.wl_slots);
             if nxt >= 0  s.wl_current = cast(s32) nxt;
+
+            // Leave the NEW current slot's FBO bound as the render target. On X11
+            // the window's back buffer is always framebuffer 0, so callers set the
+            // render target ONCE (invaders does); on Wayland the target rotates
+            // every frame, so without this rebind the next frame would render into
+            // the slot we just presented. This is what makes the once-set-render-
+            // target pattern correct on Wayland — the rotation is invisible to the
+            // app, exactly as the X11 back-buffer swap is.
+            glBindFramebuffer(GL_FRAMEBUFFER, window_framebuffer(info));
     }
 }

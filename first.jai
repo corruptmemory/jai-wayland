@@ -80,6 +80,12 @@ build :: () {
           case "hello_x11_gl";
             build_and_run_test("hello_x11_gl", "hello_x11_gl", "examples/hello_x11_gl.jai", "build");
             set_build_options_dc(.{do_output=false});
+          case "hello_simp";
+            // Our own example, but built like invaders: it pulls in the vendored
+            // Simp + Window_Creation, whose name-based `wayland` imports must
+            // resolve via modules/-first import_path to dedup into one instance.
+            build_and_run_test("hello_simp", "hello_simp", "examples/hello_simp.jai", "build", upstream_import_path());
+            set_build_options_dc(.{do_output=false});
           case "invaders";
             home := to_string(getenv("HOME"));
             build_and_run_upstream_example(
@@ -90,7 +96,7 @@ build :: () {
             );
             set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'invaders'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'invaders'.\n", arg));
         }
     }
 }
@@ -111,7 +117,7 @@ build_main :: (options: Build_Options) {
     set_build_options_dc(.{do_output=false});
 }
 
-build_and_run_test :: (workspace_name: string, executable_name: string, test_file: string, build_dir: string) {
+build_and_run_test :: (workspace_name: string, executable_name: string, test_file: string, build_dir: string, import_path: [] string = .[]) {
     w := compiler_create_workspace(workspace_name);
     if !w { print("% workspace creation failed.\n", workspace_name); return; }
 
@@ -120,6 +126,11 @@ build_and_run_test :: (workspace_name: string, executable_name: string, test_fil
     opts.arithmetic_overflow_check = .FATAL;
     opts.output_executable_name = executable_name;
     opts.output_path = build_dir;
+    // Targets that pull in the vendored Simp/Window_Creation stack (which import
+    // `wayland` by NAME so the two share one instance) need `modules/` first on
+    // the import path — same as the upstream-example build. Existing callers
+    // pass nothing and keep the compiler's default path.
+    if import_path.count  opts.import_path = import_path;
     make_directory_if_it_does_not_exist(build_dir);
     set_build_options(opts, w);
 
