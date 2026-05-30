@@ -83,11 +83,36 @@ update_wayland_window_events :: () {
                     case .META;  event.cmd_meta_pressed = true;
                 }
 
+                // On press, a printable (modifier-resolved) keysym also yields a
+                // TEXT_INPUT event — mirrors x11.jai's XwcLookupString path. The
+                // KEYBOARD event's text_input_count tells consumers how many follow.
+                utf32 := ifx ev.key.pressed then keysym_to_utf32(ev.key.keysym) else 0;
+                if utf32 != 0  event.text_input_count = 1;
+
                 array_add(*events_this_frame, event);
                 if ev.key.pressed  input_button_states[event.key_code] = .START | .DOWN;
                 else               input_button_states[event.key_code] = .END;
+
+                if utf32 != 0 {
+                    tev: Event;
+                    tev.type        = .TEXT_INPUT;
+                    tev.key_pressed = 1;
+                    tev.key_code    = event.key_code;
+                    tev.utf32       = utf32;
+                    array_add(*events_this_frame, tev);
+                }
         }
     }
 
     WS.wl_clear_input_events();
+}
+
+// Map an xkb/X11 keysym to a Unicode codepoint, or 0 if it is not a text
+// character (function keys, arrows, modifiers, etc.). ASCII and Latin-1 keysyms
+// ARE their codepoint; the 0x0100xxxx range encodes Unicode directly.
+keysym_to_utf32 :: (keysym: u32) -> u32 {
+    if keysym >= 0x20 && keysym <= 0x7e  return keysym;                  // printable ASCII
+    if keysym >= 0xa0 && keysym <= 0xff  return keysym;                  // Latin-1 supplement
+    if (keysym & 0xff000000) == 0x01000000  return keysym & 0x00ffffff;  // direct Unicode keysym
+    return 0;
 }

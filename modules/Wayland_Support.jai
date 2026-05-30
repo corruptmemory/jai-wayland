@@ -705,6 +705,12 @@ wl_keymap:         Wl.Keymap;
 wl_keymap_valid:   bool;
 wl_input_acquired: bool;
 
+// Current keyboard modifier state, tracked from wl_keyboard.modifiers. Used for
+// shift-level keysym resolution (Shift -> level 1; Caps Lock inverts for letters).
+wl_mods_depressed: u32;
+wl_mods_latched:   u32;
+wl_mods_locked:    u32;
+
 // The pump fills this; consumers drain + clear it each frame. It naturally stays
 // empty for render-only apps: Wayland only delivers key events to keyboards you
 // have bound, and binding only happens in wl_acquire_input — so no acquisition
@@ -741,9 +747,20 @@ wl_clear_input_events :: () {
 wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
     if kev.kind == {
         case .KEY;
-            // Level 0 (no shift) for now — matches hello_window; shift-level
-            // resolution from the MODIFIERS state is a follow-up.
-            keysym := ifx wl_keymap_valid then Wl.keymap_get_keysym(*wl_keymap, kev.key.key) else 0;
+            // Resolve the keysym at the modifier-aware shift level: Shift (held or
+            // latched) selects level 1; Caps Lock inverts that for alphabetic keys.
+            // Covers the common xkb ALPHABETIC / TWO_LEVEL / ONE_LEVEL key types;
+            // AltGr / level-3 layouts are a future refinement.
+            keysym: u32 = 0;
+            if wl_keymap_valid {
+                shift     := ((wl_mods_depressed | wl_mods_latched) & 0x01) != 0;  // ShiftMask
+                caps      := (wl_mods_locked & 0x02) != 0;                         // LockMask (Caps)
+                base      := Wl.keymap_get_keysym(*wl_keymap, kev.key.key, 0);
+                is_letter := base >= #char "a" && base <= #char "z";
+                use_shift := shift != (caps && is_letter);                         // XOR: caps flips shift for letters
+                level: u32 = cast(u32)(ifx use_shift then 1 else 0);
+                keysym = Wl.keymap_get_keysym(*wl_keymap, kev.key.key, level);
+            }
             array_add(*provisional_input_events, .{
                 kind = .KEY,
                 key  = .{
@@ -755,6 +772,10 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
                 },
             });
         case .MODIFIERS;
+            // Track for shift-level keysym resolution (above) AND forward to consumers.
+            wl_mods_depressed = kev.modifiers.mods_depressed;
+            wl_mods_latched   = kev.modifiers.mods_latched;
+            wl_mods_locked    = kev.modifiers.mods_locked;
             array_add(*provisional_input_events, .{
                 kind = .MODIFIERS,
                 modifiers = .{
