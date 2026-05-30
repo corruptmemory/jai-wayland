@@ -39,6 +39,22 @@ update_wayland_window_events :: () {
     // already decoded keys that arrived during frame pacing; this sweeps the rest.
     WS.wl_pump(false);
 
+    // Emit Window_Resize_Records for any window the pump flagged as resized
+    // (xdg_toplevel.configure changed its size). This is the Wayland equivalent of
+    // X11's ConfigureNotify -> add_resize_record: apps read these via
+    // get_window_resizes() to realloc the backend and re-lay-out (invaders does
+    // exactly this). Without it, the compositor's post-map reconfigure is dropped
+    // and the app renders at the stale initial size.
+    for * ww: WS.wayland_global_windows {
+        if ww.size_dirty {
+            ww.size_dirty = false;
+            rec := array_add(*pending_resizes);
+            rec.window = .{ wtype = .Wayland, wayland = .{ surface = ww.surface.id } };
+            rec.width  = ww.width;
+            rec.height = ww.height;
+        }
+    }
+
     for ev: WS.provisional_input_events {
         if ev.kind == {
             case .MODIFIERS;

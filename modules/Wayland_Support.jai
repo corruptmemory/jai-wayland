@@ -473,6 +473,7 @@ Wayland_Window :: struct {
     id          : u32;          // == surface.id; the window's identity key
     width       : s32;          // current size (source of truth; pump updates on configure)
     height      : s32;
+    size_dirty  : bool;         // set by the pump when a configure CHANGES the size; consumers (Input) emit a resize event and clear it
     surface     : Wl.Wl_Surface;
     xdg_surface : Wl.Xdg_Surface;
     toplevel    : Wl.Xdg_Toplevel;
@@ -868,13 +869,16 @@ wl_pump :: (blocking: bool) {
                 }
                 if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
                     // Carries the suggested size (0x0 means "you decide"). Update
-                    // the registry (the size source of truth); the slot realloc
-                    // happens via the app's next update_window -> BACKEND_RESIZE.
+                    // the registry (the size source of truth) and flag size_dirty so
+                    // consumers re-sync: Simp's next update_window -> BACKEND_RESIZE
+                    // reallocs the slots, and Input emits a Window_Resize_Record that
+                    // get_window_resizes() returns (invaders/GetRect re-layout off it).
                     args: Wl.Xdg_Toplevel_Configure_Args;
                     Wl.unmarshal(*args, header.payload, *session.recv);
-                    if args.width > 0 && args.height > 0 {
-                        ww.width  = args.width;
-                        ww.height = args.height;
+                    if args.width > 0 && args.height > 0 && (args.width != ww.width || args.height != ww.height) {
+                        ww.width      = args.width;
+                        ww.height     = args.height;
+                        ww.size_dirty = true;
                     }
                     routed = true;
                     break;
