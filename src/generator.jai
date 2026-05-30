@@ -743,7 +743,6 @@ generate_module_root :: (protocol_names: [] string) -> string {
     print_to_builder(*sb, "#load \"shm.jai\";\n");
     print_to_builder(*sb, "#load \"registry.jai\";\n");
     print_to_builder(*sb, "#load \"session.jai\";\n");
-    print_to_builder(*sb, "#load \"pump.jai\";\n");
     print_to_builder(*sb, "#load \"type_registry.jai\";\n");
 
     for name: protocol_names {

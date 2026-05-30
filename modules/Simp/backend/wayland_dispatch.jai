@@ -1,203 +1,79 @@
 // New file (not vendored — original to this project).
-// Wayland dispatcher. Stage 2 Slice 1 implementation: EGL-on-GBM + DMA-BUF
-// presentation (the same architecture hello_gl.jai uses), built on the helpers
-// in backend/wayland_gl.jai. Presents via the block-on-frame-callback model
-// (design §3): each SWAP_BUFFERS attaches the current slot, requests a frame
-// callback, commits, then blocks draining the session until that callback
-// fires — vsync-equivalent pacing without an out-of-band event loop.
+// Wayland backend ops for vendored Simp. Thin glue: each finds this window's
+// shared record in WS.wayland_global_windows (keyed by wl_surface id) and calls
+// the matching Wayland_Support op, then does Simp's own GL bookkeeping (FBO
+// bind). ALL the EGL/GBM/wire work lives in Wayland_Support — Simp never touches
+// EGL/Gbm/wayland directly here.
 //
-// See docs/plans/2026-05-26-context-dispatch-stage1-design.md,
-//     docs/plans/2026-05-29-wayland-backend-design.md (§1, §3, §4),
-// and the impl plan Task 5.
+// Formerly the op-tagged simp_wayland_dispatch switch (context.simp_dispatch);
+// now plain per-op functions called from gl.jai's display_manager branch.
 //
-// Symbol-naming: this file loads into the Simp module scope alongside
-// wayland_gl.jai. The Wl_Gl_Slot / Wl_Egl_State / SIMP_WL_SLOT_COUNT types and
-// the wl_* helpers are referenced BARE (same module scope). GL entry points
-// (glFinish, ...) are bare too (Simp `#import "GL"` anonymously). The `Wl` and
-// `EGL` NAMED imports come from wayland_gl.jai at #scope_module level — they are
-// already module-visible here, so re-importing them in this file is a
-// redeclaration error. We deliberately do NOT re-import; we just use Wl./EGL.
-//
-// Modules log, they don't print — every diagnostic here uses log()/log_error().
+// WS is the module-scope `#import "Wayland_Support"` (module.jai). GL entry
+// points (glFinish, glBindFramebuffer, GL_FRAMEBUFFER) are bare (Simp imports GL
+// anonymously). window_framebuffer lives in gl.jai (same module scope).
 
 #scope_export
 
-simp_wayland_dispatch :: (args: *Simp_Op_Args, info: *Window_Info) {
-    s := *info.specific;
-    if args.op == {
-        case .BACKEND_INIT;
-            // Bring up the EGL-on-GBM stack (render-node selection + EGL display/
-            // context + GL loaders). wl_egl_init eglMakeCurrent's the context on
-            // success, so the GL calls in slot init below have a current context.
-            if !wl_egl_init(*s.wl_egl) {
-                log_error("Simp Wayland: EGL/GBM init failed");
-                return;
-            }
+// Look up the shared record for this Window_Info's surface. The identity lives
+// in info.window.wayland (Window_Type); the render state lives in the registry.
+wl_window_for :: (info: *Window_Info) -> *WS.Wayland_Window {
+    return WS.find_wayland_window(info.window.wayland.surface);
+}
 
-            // Discover the compositor's dmabuf formats and pick one usable by our
-            // GBM device (per-surface feedback when available, else the global
-            // list). The bound zwp_linux_dmabuf_v1 lives in wl_dmabuf_info; we keep
-            // it (plus the chosen format/modifier) so slot (re)allocation — here
-            // and in the Slice-2 resize path — can reach it.
-            dmabuf_info, dmabuf_ok := Wl.get_dmabuf_info();
-            if !dmabuf_ok {
-                log_error("Simp Wayland: compositor does not advertise zwp_linux_dmabuf_v1");
-                return;
-            }
-            // Borrows get_dmabuf_info's `supported` dynamic-array storage (copied
-            // by header — backing is shared, not owned). Fine while nothing frees
-            // it; the Slice-2 resize reuse must not double-free it.
-            s.wl_dmabuf_info = dmabuf_info;
-
-            surface := Wl.Wl_Surface.{ id = info.window.wayland.surface };
-            format, modifier, have_format := wl_choose_dmabuf_format(s.wl_egl.gbm, s.wl_dmabuf_info, *surface);
-            if !have_format {
-                log_error("Simp Wayland: no GBM-usable ABGR/XBGR 8888 dmabuf format advertised");
-                return;
-            }
-            s.wl_format   = format;
-            s.wl_modifier = modifier;
-            log("Simp Wayland: using format=0x% modifier=0x%",
-                formatInt(format, base=16), formatInt(modifier, base=16));
-
-            // Allocate the double-buffered slots at the configured window size.
-            // IMPORTANT: read the size from info.window.wayland, NOT
-            // info.window_width — set_render_target calls backend_init BEFORE
-            // update_window populates info.window_width, so it is still 0 here. The
-            // .wayland fields carry the size captured at create_window_wayland's
-            // first configure. (Buffer-creation messages batch into one send.)
-            init_w := info.window.wayland.width;
-            init_h := info.window.wayland.height;
-            backend := wl_choose_gl_backend();
-            batch: Wl.MessageBuilder;
-            for * slot, i: s.wl_slots {
-                if !wl_slot_init(slot, s.wl_egl, *s.wl_dmabuf_info.dmabuf, *batch,
-                                 s.wl_format, s.wl_modifier, init_w, init_h, backend) {
-                    log_error("Simp Wayland: failed to initialize slot %", i);
-                    // NOTE: an earlier slot's batched create messages are abandoned
-                    // unsent here, yet allocate_id() already advanced the session's
-                    // next_id for them — leaving a hole in the contiguous client-ID
-                    // stream. Tolerable only because this leaves wl_initted false, so
-                    // SWAP/SET_RENDER_TARGET no-op (guards below) and the window is
-                    // dead. If slot init ever becomes recoverable, this must roll
-                    // next_id back or the session is unusable.
-                    return;
-                }
-            }
-            Wl.wayland_send(*batch);
-
-            s.wl_current = 0;
-            s.wl_initted = true;
-
-        case .BACKEND_SET_RENDER_TARGET;
-            // Fail safe if BACKEND_INIT bailed: gl.jai marks the window initted
-            // regardless of dispatch outcome, so without this guard a failed init
-            // would make-current a half-built context. wl_initted is the reader
-            // that makes the flag meaningful.
-            if !s.wl_initted  return;
-            // ONLY make the EGL context current. The FBO bind happens in gl.jai via
-            // window_framebuffer(info); do NOT bind here. (Mirrors how the X11
-            // dispatcher only does glXMakeCurrent and lets gl.jai bind framebuffer 0.)
-            if EGL.eglMakeCurrent(s.wl_egl.dpy, EGL.EGL_NO_SURFACE, EGL.EGL_NO_SURFACE, s.wl_egl.ctx) != EGL.EGL_TRUE {
-                log_error("Simp Wayland: eglMakeCurrent failed in set_render_target");
-            }
-
-        case .BACKEND_RESIZE_RENDER_TARGET;
-            if !s.wl_initted  return;
-            new_w := info.window_width;   // update_window set these before dispatching
-            new_h := info.window_height;
-            // No-op if the slots already match — guards against spurious configures.
-            if s.wl_slots[0].width == new_w && s.wl_slots[0].height == new_h  return;
-
-            // Retire current slots (the compositor may still hold an in-flight
-            // buffer; those go to wl_retired and are torn down on their
-            // wl_buffer.release inside wl_pump), then reallocate fresh
-            // slots at the new size, reusing the negotiated format/modifier.
-            retire_batch: Wl.MessageBuilder;
-            wl_retire_slots(*retire_batch, *s.wl_retired, s.wl_slots, s.wl_egl);
-            Wl.wayland_send(*retire_batch);
-
-            backend := wl_choose_gl_backend();
-            alloc_batch: Wl.MessageBuilder;
-            for * slot, i: s.wl_slots {
-                if !wl_slot_init(slot, s.wl_egl, *s.wl_dmabuf_info.dmabuf, *alloc_batch,
-                                 s.wl_format, s.wl_modifier, new_w, new_h, backend) {
-                    // Realloc failed mid-loop: old slots are already retired and some
-                    // new-slot create messages sit unsent in alloc_batch while
-                    // allocate_id() advanced next_id (the contiguous-ID hazard, same as
-                    // BACKEND_INIT). Mark the window dead so SWAP / SET_RENDER_TARGET
-                    // no-op via their wl_initted guards rather than attaching a
-                    // half-built / null buffer to the live surface. Recovery would
-                    // require rolling next_id back.
-                    log_error("Simp Wayland: resize slot % realloc failed (%x%) — window disabled", i, new_w, new_h);
-                    s.wl_initted = false;
-                    return;
-                }
-            }
-            Wl.wayland_send(*alloc_batch);
-            s.wl_current = 0;
-            // Bind the new current slot's FBO so the next clear/draw target it (the
-            // old FBO was just retired). gl.jai's glViewport follows this dispatch.
-            glBindFramebuffer(GL_FRAMEBUFFER, window_framebuffer(info));
-
-        case .SWAP_BUFFERS;
-            // Fail safe if BACKEND_INIT bailed: the slots are uninitialized
-            // (wl_current still -1, slot.buffer.id 0), so attaching would commit a
-            // null buffer. Skip rather than corrupt the surface.
-            if !s.wl_initted  return;
-            slot := *s.wl_slots[s.wl_current];
-
-            // Coarse GPU sync before handing the BO to the compositor — same as
-            // hello_gl. Explicit fences (EGL_KHR_fence_sync + wp_linux_drm_syncobj_v1)
-            // are a future item; slot.acquire_fence_fd/release_fence_fd are placeholders.
-            glFinish();
-
-            // Present sequence ported from hello_gl.jai's render loop (the steady-state
-            // present at lines 228-233): allocate a fresh frame-callback id, request
-            // wl_surface.frame, attach the slot's wl_buffer, damage the full surface,
-            // commit, and send. The frame-callback id comes from the per-window
-            // Id_Cache so it recycles (first alloc sequential, later allocs reuse a
-            // dead entry) — see the cache_free below. We stash it in
-            // s.wl_pending_frame_callback so wl_pump(true) knows which callback to
-            // pace on (the pump only takes `blocking` — it derives the rest).
-            surface := Wl.Wl_Surface.{ id = info.window.wayland.surface };
-            batch: Wl.MessageBuilder;
-            frame_callback_id := Wl.cache_alloc(*s.wl_frame_cache);
-            s.wl_pending_frame_callback = frame_callback_id;
-            Wl.wl_surface_frame(*batch, *surface, frame_callback_id);
-            Wl.wl_surface_attach(*batch, *surface, *slot.buffer, 0, 0);
-            Wl.wl_surface_damage_buffer(*batch, *surface, 0, 0, slot.width, slot.height);
-            Wl.wl_surface_commit(*batch, *surface);
-            Wl.wayland_send(*batch);
-            slot.in_flight = true;
-
-            // Block until this frame callback fires. wl_pump drains the persistent
-            // session buffer, routing wl_buffer.release back to slots, acking
-            // xdg_surface.configure, recording configure size / close on the live
-            // Window_Info directly, and forwarding any input messages to the Input
-            // sink. It stops the blocking wait on our wl_pending_frame_callback.
-            wl_pump(true);
-
-            // CALLER CONTRACT: the pump does NOT recycle the frame-callback id.
-            // Recycle it here, or we leak a new id every frame. Clear the pending
-            // field so a stray late wl_callback.done can't be mistaken for a live
-            // frame on the next pump.
-            Wl.cache_free(*s.wl_frame_cache, frame_callback_id);
-            s.wl_pending_frame_callback = 0;
-
-            // Rotate to a non-in-flight slot for the next frame's render. If both are
-            // in flight (no release arrived during the block), keep the current slot;
-            // the next swap will re-block on its callback.
-            nxt := wl_find_free_slot(s.wl_slots);
-            if nxt >= 0  s.wl_current = cast(s32) nxt;
-
-            // Leave the NEW current slot's FBO bound as the render target. On X11
-            // the window's back buffer is always framebuffer 0, so callers set the
-            // render target ONCE (invaders does); on Wayland the target rotates
-            // every frame, so without this rebind the next frame would render into
-            // the slot we just presented. This is what makes the once-set-render-
-            // target pattern correct on Wayland — the rotation is invisible to the
-            // app, exactly as the X11 back-buffer swap is.
-            glBindFramebuffer(GL_FRAMEBUFFER, window_framebuffer(info));
+wl_backend_init :: (info: *Window_Info) {
+    ww := wl_window_for(info);
+    if !ww {
+        // create_window_wayland registers the record before Simp ever sees the
+        // window; a miss means the window was built off our create path.
+        log_error("Simp Wayland: no Wayland_Window registered for surface %", info.window.wayland.surface);
+        return;
     }
+    // Read the size from the registry record, not info.window_width:
+    // set_render_target calls backend_init BEFORE update_window populates
+    // info.window_width. wl_window_init_gl reads ww.width/height (set at
+    // create-time / updated by the pump on configure).
+    if !WS.wl_window_init_gl(ww)  log_error("Simp Wayland: GL bring-up failed");
+}
+
+wl_set_render_target :: (info: *Window_Info) {
+    ww := wl_window_for(info);
+    // Fail safe if backend_init bailed: gl.jai marks the window initted regardless
+    // of outcome, so without this guard a failed init would make-current a
+    // half-built context. ONLY make current here; the FBO bind is gl.jai's job via
+    // window_framebuffer (mirrors how the X11 op only does glXMakeCurrent).
+    if !ww || !ww.wl_initted  return;
+    WS.wl_make_current(ww);
+}
+
+wl_resize_render_target :: (info: *Window_Info) {
+    ww := wl_window_for(info);
+    if !ww || !ww.wl_initted  return;
+    // update_window set info.window_{width,height} before dispatching. If the
+    // slots actually reallocated, bind the new current slot's FBO so the next
+    // clear/draw targets it (the old FBO was just retired); gl.jai's glViewport
+    // follows this dispatch.
+    if WS.wl_window_resize_gl(ww, info.window_width, info.window_height) {
+        glBindFramebuffer(GL_FRAMEBUFFER, window_framebuffer(info));
+    }
+}
+
+wl_swap_buffers :: (info: *Window_Info) {
+    ww := wl_window_for(info);
+    // Fail safe if backend_init bailed: slots are uninitialized (wl_current -1),
+    // so presenting would commit a null buffer. Skip rather than corrupt.
+    if !ww || !ww.wl_initted  return;
+
+    // Coarse GPU sync before handing the BO to the compositor — same as hello_gl.
+    // Explicit fences are a future item (slot.acquire/release_fence_fd placeholders).
+    glFinish();
+
+    // Present the current slot and block until its frame callback fires (vsync
+    // pacing). wl_present_and_pace rotates ww.wl_current to a free slot after.
+    WS.wl_present_and_pace(ww);
+
+    // Leave the NEW current slot's FBO bound as the render target. On X11 the
+    // back buffer is always framebuffer 0 so callers set the target once; on
+    // Wayland the target rotates every frame, so this rebind is what keeps the
+    // once-set-render-target pattern correct — the rotation is invisible to the app.
+    glBindFramebuffer(GL_FRAMEBUFFER, window_framebuffer(info));
 }

@@ -1,16 +1,16 @@
 // Vendored from ~/jai/jai/modules/Simp/backend/gl.jai.
 // Modified: (a) gl_load() signature swapped from *GL_Procedures to
 //               get-proc-address function. See commit 7a9d296.
-//           (b) Four #if OS == .LINUX branches in backend_init/
-//               backend_set_render_target/backend_resize_render_target/
-//               swap_buffers replaced with context.simp_dispatch calls.
-//               The X11/GLX-specific logic relocated verbatim to
-//               modules/Simp/backend/x11_dispatch.jai. See
-//               docs/plans/2026-05-26-context-dispatch-stage1-design.md.
-//           (c) Simp_Op_Args constructions updated to the Jai 0.2.029
-//               tagged-union literal form (each must initialize the
-//               selected variant field, even when the variant is empty).
-//               See modules/Simp/backend/dispatch.jai for the union def.
+//           (b) The four #if OS == .LINUX branches in backend_init /
+//               backend_set_render_target / backend_resize_render_target /
+//               swap_buffers branch at value level on the display server —
+//               context.simp.specific.display_manager (a WS.Display_Manager) —
+//               calling the per-op functions in backend/x11_dispatch.jai or the
+//               Wayland glue in backend/wayland_dispatch.jai.
+//           (c) The per-window Wayland render state no longer lives in this
+//               module's Window_Info_Platform_Specific; it lives in the shared
+//               WS.wayland_global_windows registry (modules/Wayland_Support.jai),
+//               reached via WS.find_wayland_window(info.window.wayland.surface).
 
 #load "gl_screenshot.jai";
 
@@ -69,12 +69,14 @@ backend_init :: (info: *Window_Info) {
     }
 
     #if OS == .LINUX {
-        // Dispatches to the active Linux backend (X11 or Wayland) for
-        // context creation, window-surface setup, and make-current. The
-        // backend internally decides whether do_first_time_init applies
-        // based on the_gl_context, matching the previous inline behavior.
-        args := Simp_Op_Args.{ op = .BACKEND_INIT, init = .{} };
-        context.simp_dispatch(*args, info);
+        // Branch to the active Linux backend for context creation + window-surface
+        // setup + make-current. Each backend internally decides whether first-time
+        // init applies (the_gl_context for X11 / wl_initted for Wayland).
+        if context.simp.specific.display_manager == {
+            case .X11;     x11_backend_init(info);
+            case .WAYLAND; wl_backend_init(info);
+            case;          log_error("Simp: backend_init with undefined display manager"); assert(false);
+        }
     }
 
     if do_first_time_init {
@@ -343,8 +345,13 @@ swap_buffers :: (window: Window_Type, vsync := true) {  // @Incomplete: Have som
             log_error("Simp: Attempt to swap_buffers on a previously unseen window!\n");
             return;
         }
-        args := Simp_Op_Args.{ op = .SWAP_BUFFERS, swap_buffers = .{ vsync = vsync } };
-        context.simp_dispatch(*args, info);
+        // vsync is implicit on Wayland (frame-callback paced) and unused by X11's
+        // glXSwapBuffers, so it does not cross into the per-backend op.
+        if context.simp.specific.display_manager == {
+            case .X11;     x11_swap_buffers(info);
+            case .WAYLAND; wl_swap_buffers(info);
+            case;          log_error("Simp: swap_buffers with undefined display manager"); assert(false);
+        }
     } else #if OS == .MACOS {
         // On macOS, OpenGL buffer swapping is done on the context, not on the view.
         // So we can only swap for the active window. (And you need to swap before switching to another view).
@@ -939,9 +946,10 @@ backend_update_texture :: (texture: *Texture, bitmap: *Bitmap) {
 window_framebuffer :: (info: *Window_Info) -> GLuint {
     #if OS == .LINUX {
         if info.window.wtype == .Wayland {
-            if info.specific.wl_current >= 0
-                return cast(GLuint) info.specific.wl_slots[info.specific.wl_current].fbo;
-            return 0;  // before the first slot exists — harmless
+            ww := WS.find_wayland_window(info.window.wayland.surface);
+            if ww && ww.wl_current >= 0
+                return cast(GLuint) ww.wl_slots[ww.wl_current].fbo;
+            return 0;  // before the registry record / first slot exists — harmless
         }
     }
     return 0;
@@ -954,10 +962,13 @@ backend_set_render_target :: (info: *Window_Info) {
             errno := GetLastError();
         } else #if OS == .LINUX {
             // The info.backend_initted_for_this_window guard above stays in
-            // gl.jai (backend-agnostic); the dispatcher just performs the
+            // gl.jai (backend-agnostic); the per-backend op just performs the
             // make-current step.
-            args := Simp_Op_Args.{ op = .BACKEND_SET_RENDER_TARGET, set_render_target = .{} };
-            context.simp_dispatch(*args, info);
+            if context.simp.specific.display_manager == {
+                case .X11;     x11_set_render_target(info);
+                case .WAYLAND; wl_set_render_target(info);
+                case;          log_error("Simp: set_render_target with undefined display manager"); assert(false);
+            }
         } else #if OS == .MACOS {
             // Get the GL view from the window.
             // This relies on this window having a content view with OpenGL support (eg. as created by Window_Creation).
@@ -1075,11 +1086,13 @@ backend_set_texture :: (shader: *Shader, texture: *Texture) {
 backend_resize_render_target :: (info: *Window_Info) {
     #if OS == .LINUX {
         // Let the active backend react to the size change. X11/GLX resizes the
-        // drawable implicitly (its dispatcher RESIZE case is a no-op); the Wayland
-        // dispatcher retires + reallocates its BO-backed slots at the new size.
-        // Pointer arg: the dispatcher mutates info.specific (slot state).
-        args := Simp_Op_Args.{ op = .BACKEND_RESIZE_RENDER_TARGET, resize_render_target = .{ new_width = info.window_width, new_height = info.window_height } };
-        context.simp_dispatch(*args, info);
+        // drawable implicitly (no X11 op); the Wayland op retires + reallocates its
+        // BO-backed slots (in the shared registry) at info.window_{width,height}.
+        if context.simp.specific.display_manager == {
+            case .X11;     // GLX handles resize implicitly via the X11 window.
+            case .WAYLAND; wl_resize_render_target(info);
+            case;          log_error("Simp: resize_render_target with undefined display manager"); assert(false);
+        }
     }
     if context.simp.current_window_info.window == info.window {
         glViewport(0, 0, xx info.window_width, xx info.window_height);
@@ -1133,48 +1146,27 @@ backend_texture_destroy :: (texture: *Texture) {
 
 #if OS == .LINUX {
     Backend_Platform_Specific :: struct {
+        // Which display server this process is talking to. Detected once in
+        // CheckInit (immediate.jai) the first time any Simp entry point runs, by
+        // probing WAYLAND_DISPLAY via WS.running_wayland. Replaces the old
+        // context.simp_dispatch function pointer: instead of a chosen-once
+        // op-tagged dispatcher, the four backend op sites in gl.jai branch on
+        // this value directly (X11 vs Wayland helper). The enum lives in
+        // Wayland_Support (WS.Display_Manager); this field is just where Simp
+        // parks the detected value, on the per-state bag every entry point
+        // already reaches via `state.specific`.
+        display_manager: WS.Display_Manager = .UNDEFINED;
     }
 
     Window_Info_Platform_Specific :: struct {
-        glx_window: GLXWindow;          // X11 path (unchanged)
+        glx_window: GLXWindow;          // X11 path — Simp's per-window GLX handle.
 
-        // Wayland path. Populated by simp_wayland_dispatch's BACKEND_INIT (Task 5).
-        // Mirrors how glx_window is Simp's per-window X11 backend handle.
-        // SIMP_WL_SLOT_COUNT / Wl_Egl_State / Wl_Gl_Slot are defined in
-        // backend/wayland_gl.jai, loaded into this same module scope.
-        wl_egl:        Wl_Egl_State;    // EGL display/context + GBM device + drm fd
-        wl_slots:      [SIMP_WL_SLOT_COUNT] Wl_Gl_Slot;
-        wl_current:    s32 = -1;        // index of the slot currently being rendered
-        wl_initted:    bool;
-
-        // Per-window dmabuf negotiation result, kept for slot (re)allocation.
-        // BACKEND_INIT computes these once; the Slice-2 resize path reuses them to
-        // reallocate slots at the new size without re-discovering formats.
-        wl_dmabuf_info: Wl.Dmabuf_Info;  // bound zwp_linux_dmabuf_v1 + advertised formats
-        wl_format:      u32;             // chosen DRM fourcc
-        wl_modifier:    u64;             // chosen DRM modifier
-
-        // Frame-callback id recycler. cache_alloc per swap, cache_free after
-        // wl_pump(true) returns (the SWAP_BUFFERS caller contract) — keeps the
-        // client-id stream contiguous instead of leaking an id every frame.
-        wl_frame_cache: Wl.Id_Cache;
-
-        // Slots from a prior resize whose buffers the compositor still holds; their
-        // wl_buffer.release is matched inside wl_pump. Empty in Slice 1 (no resize);
-        // populated by the Slice-2 resize path.
-        wl_retired:     [..] Wl_Gl_Slot;
-
-        // Set when the compositor sends xdg_toplevel.close (e.g. Hyprland's
-        // killactive / Super+Q) — observed in the swap-path event drain. The app
-        // reads it via Simp.window_should_close and exits. (Slice-3 entry: real
-        // input via the Input module comes later; this is just the close signal.)
-        wl_close_requested: bool;
-
-        // The frame-callback id the current blocking wl_pump is pacing on.
-        // SWAP_BUFFERS allocates it (cache_alloc), stores it here, then calls
-        // wl_pump(true); the pump breaks its blocking wait when wl_callback.done
-        // for this id arrives. Set back to 0 (and cache_free'd) by SWAP after.
-        wl_pending_frame_callback: u32;
+        // The Wayland render state (EGL ctx, BO slots, dmabuf negotiation, frame
+        // pacing, close signal) does NOT live here. It lives in the SHARED
+        // WS.wayland_global_windows registry, keyed by info.window.wayland.surface,
+        // so the single Wayland_Support pump — driven by BOTH Simp (render) and
+        // Input — can reach it over the one compositor connection. Look it up with
+        // WS.find_wayland_window(info.window.wayland.surface) (see wayland_dispatch.jai).
     }
 } else #if OS == .MACOS {
     Backend_Platform_Specific :: struct {

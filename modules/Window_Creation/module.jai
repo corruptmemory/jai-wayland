@@ -1,16 +1,12 @@
 // Vendored from ~/jai/jai/modules/Window_Creation/module.jai.
-// Modified: (a) added #load "linux_init.jai" in the Linux branch for the
-//               context-dispatch init ceremony (running_wayland +
-//               init_linux_window).
-//           (b) re-exported INVALID_WINDOW and the Linux tagged-union
-//               `operator ==` overloads from the WT namespace so importers
-//               of Window_Creation can use them without a direct Window_Type
-//               import. The upstream `WT :: #import "Window_Type"; Window_Type
-//               :: WT.Window_Type;` pattern provides the type name but not
-//               operators (named imports don't propagate operator overloads
-//               in Jai); the explicit `operator == :: WT.operator==;`
-//               re-export plugs that gap for Linux's tagged-union variant.
-//           See docs/plans/2026-05-26-context-dispatch-stage1-design.md.
+// Modified: re-exported INVALID_WINDOW and the Linux tagged-union
+//           `operator ==` overloads from the WT namespace so importers of
+//           Window_Creation can use them without a direct Window_Type import.
+//           The upstream `WT :: #import "Window_Type"; Window_Type :: WT.
+//           Window_Type;` pattern provides the type name but not operators
+//           (named imports don't propagate operator overloads in Jai); the
+//           explicit `operator == :: WT.operator==;` re-export plugs that gap
+//           for Linux's tagged-union variant.
 
 // Platform-independent window creation routines.
 #module_parameters (DEFAULT_MSAA: s32 = 4);
@@ -19,7 +15,6 @@
     case .WINDOWS; #load "windows.jai";
     case .LINUX;
         #load "linux.jai";
-        #load "linux_init.jai";
     case .MACOS;   #load "macos.jai";
     case .PS5;     #load "ps5.jai";
     case .NN_SWITCH2;   #load "nintendo.jai";

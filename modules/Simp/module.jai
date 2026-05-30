@@ -1,13 +1,12 @@
 // Vendored from ~/jai/jai/modules/Simp/module.jai.
-// Modified: (a) added #load directives for backend/dispatch.jai (the
-//               context-based dispatch infrastructure) and
-//               backend/x11_dispatch.jai (the X11/GLX dispatcher with
-//               the relocated GLX code from gl.jai). See
-//               docs/plans/2026-05-26-context-dispatch-stage1-design.md.
-//           (b) get_render_dimensions's Linux branch unwraps window.x11
-//               for XGetGeometry since Window_Type is now a tagged
-//               union. See Task 6A in
-//               docs/plans/2026-05-26-context-dispatch-stage1-impl.md.
+// Modified: (a) on Linux, imports Wayland_Support (WS) and loads the per-op
+//               backend files backend/x11_dispatch.jai and
+//               backend/wayland_dispatch.jai, which gl.jai's backend ops call
+//               by branching on context.simp.specific.display_manager.
+//           (b) get_render_dimensions / window_should_close read Wayland size
+//               and close state from the shared WS.wayland_global_windows
+//               registry (and unwrap window.x11 for XGetGeometry on the X11
+//               branch, since Window_Type is now a tagged union).
 
 //
 // This is a simple framework for drawing graphics that you can use
@@ -86,9 +85,18 @@
         #import "GL";
     }
 
-    #load "backend/dispatch.jai";
+    #if OS == .LINUX {
+        // The Wayland backend support layer (the GPU-aware module shared with
+        // Input/Window_Creation). Name-based so it dedups to ONE instance across
+        // all importers — that shared single instance is what gives Simp and Input
+        // the same session + window registry (WS.wayland_global_windows). It
+        // replaces the per-window EGL/slot state that used to live in this
+        // module's Window_Info_Platform_Specific. Simp talks to WS, never to the
+        // raw `wayland` wire module directly (WS re-exposes what it needs).
+        WS :: #import "Wayland_Support";
+    }
+
     #load "backend/x11_dispatch.jai";
-    #load "backend/wayland_gl.jai";
     #load "backend/wayland_dispatch.jai";
     #load "backend/gl.jai";
 } else #if render_api ==  .METAL {
@@ -305,13 +313,14 @@ get_render_dimensions :: (window: Window_Type) -> (width: s32, height: s32) {
         return cast(s32)(c.right - c.left), cast(s32)(c.bottom - c.top);
     } else #if OS == .LINUX {
         if window.wtype == .Wayland {
-            // Wayland has no XGetGeometry. The LIVE size lives on Simp's
-            // Window_Info copy, updated by the swap-path drain on
-            // xdg_toplevel.configure; the caller's `window` value is only current
-            // at create time. Fall back to the passed value pre-registration.
-            info := find_window_info(window);
-            if info  return info.window.wayland.width, info.window.wayland.height;
-            return window.wayland.width, window.wayland.height;
+            // Wayland has no XGetGeometry. The LIVE size is the single source of
+            // truth in the shared registry record (updated by the pump on
+            // xdg_toplevel.configure). create_window registers the window before
+            // its Window_Type ever escapes, so a miss here means the window was
+            // already destroyed — 0x0 is the right answer then.
+            ww := WS.find_wayland_window(window.wayland.surface);
+            if ww  return ww.width, ww.height;
+            return 0, 0;
         }
         root: Window;
         x, y: s32;
@@ -372,8 +381,8 @@ Pixel_Read :: struct {
 window_should_close :: (window: Window_Type) -> bool {
     #if OS == .LINUX {
         if window.wtype == .Wayland {
-            info := find_window_info(window);
-            return info != null && info.specific.wl_close_requested;
+            ww := WS.find_wayland_window(window.wayland.surface);
+            return ww != null && ww.wl_close_requested;
         }
     }
     return false;

@@ -25,19 +25,15 @@
         Wayland;
     }
 
-    // Window IDENTITY for the Wayland backend — the analogue of X11.Window.
-    // Holds the compositor object IDs that name this window's surface stack.
-    // Created by Window_Creation.create_window (Stage 2 Task 6). NOTE: the GL
-    // backend state (EGL ctx, GBM, BO slots) does NOT live here — it lives in
-    // Simp's Window_Info.specific, exactly as glx_window does for X11. See
-    // docs/plans/2026-05-29-wayland-backend-design.md §1.
+    // Window IDENTITY for the Wayland backend — the analogue of X11's bare
+    // X11.Window handle. Just the wl_surface id: the stable key into the shared
+    // WS.wayland_global_windows registry (Wayland_Support), which owns the full
+    // per-window state — xdg roles, current size, EGL ctx, BO slots. Window_Type
+    // is a freely-copied VALUE, so it must stay a lightweight handle, not a copy
+    // of state that would go stale the instant it is copied. Resolve the full
+    // record with WS.find_wayland_window(surface).
     Wayland_Window_State :: struct {
-        surface:      u32;    // wl_surface id
-        xdg_surface:  u32;    // xdg_surface id
-        xdg_toplevel: u32;    // xdg_toplevel id
-        width:        s32;    // last configured size
-        height:       s32;
-        configured:   bool;   // has the first xdg configure arrived?
+        surface: u32;    // wl_surface id — identity key into WS.wayland_global_windows
     }
 
     Window_Type :: union wtype: Window_Tag {

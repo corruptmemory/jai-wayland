@@ -1,6 +1,9 @@
 // Vendored from ~/jai/jai/modules/Window_Creation/linux.jai.
-// Modified: (a) create_window calls init_linux_window() at its top to
-//               lazy-initialize context-based backend dispatch.
+// Modified: (a) create_window picks the Wayland vs X11 arm directly via
+//               WS.running_wayland(); the Wayland arm registers the window in
+//               WS.wayland_global_windows (the X11 x_global_windows mirror).
+//               Display-server selection is value-level (set in Simp's
+//               CheckInit) — no context-dispatch init ceremony.
 //           (b) parent parameter default changed from None (X11 s64) to
 //               INVALID_WINDOW (Window_Type tagged-union sentinel).
 //               In-body parent usages updated accordingly with .x11
@@ -25,22 +28,27 @@
 //
 #import "X11";
 
-// Wayland module, named-imported so the wire-protocol API is namespaced.
-// Module-scope constant: declared in THIS file only within Window_Creation
-// (linux_init.jai / module.jai do not import wayland). Used by the Wayland
-// arm of create_window below. The `for :Wl.for_expansion` form is required
-// to resolve the WaylandSession for_expansion through the named import.
+// Wayland module, named-imported so the wire-protocol API is namespaced. Used by
+// the Wayland arm of create_window below. The `for :Wl.for_expansion` form is
+// required to resolve the WaylandSession for_expansion through the named import.
 //
-// NAME-based (not #import,dir) is REQUIRED: Simp's wayland_gl.jai also imports
-// wayland, and both must share ONE instance (wayland declares `#add_context
+// NAME-based (not #import,dir) is REQUIRED: Wayland_Support and Simp also import
+// wayland, and all must share ONE instance (wayland declares `#add_context
 // wayland_session` — two instances ⇒ conflicting context types). Jai dedups
-// modules by import spelling; name-based dedups across modules regardless of
-// each file's location, whereas dir-based paths ("../wayland" vs Simp's
-// "../../wayland") can never string-match. Resolves via the build import_path.
+// modules by import spelling; name-based dedups across modules regardless of each
+// file's location, whereas dir-based paths can never string-match. Resolves via
+// the build import_path (modules/ first — see first.jai).
 Wl :: #import "wayland";
 
-// For getenv() in running_wayland (linux_init.jai, same module scope). Named
-// import; dedups with X11's transitive POSIX. (exit() comes from Basic.)
+// Wayland_Support — the GPU-aware support module shared with Simp/Input. Used
+// here for running_wayland (the backend probe) and register_wayland_window (the
+// side effect that records each created Wayland window in the shared
+// WS.wayland_global_windows registry — the mirror of X11's array_add into
+// x_global_windows). Name-based so it dedups to one instance with Simp/Input.
+WS :: #import "Wayland_Support";
+
+// For getenv() and other POSIX bits used by this file. Named import; dedups with
+// X11's transitive POSIX. (exit() comes from Basic.)
 POSIX :: #import "POSIX";
 
 window_minimized := false;
@@ -118,10 +126,11 @@ toggle_fullscreen :: (win: Window, desire_fullscreen: bool, saved: *Saved_Window
 }
 
 create_window :: (width: int, height: int, window_name: string, window_x := 0, window_y := 0, parent: Window_Type = INVALID_WINDOW, background_color_rgb := DEFAULT_WINDOW_CREATION_COLOR, wanted_msaa: s32 = DEFAULT_MSAA) -> Window_Type {
-    if !context.simp_dispatch  init_linux_window();
-
+    // Backend selection is by value now (display server detected in Simp's
+    // CheckInit), not a context dispatch pointer — so there is no lazy-init
+    // ceremony here; we just pick the create arm directly.
     #if OS == .LINUX {
-        if running_wayland()  return create_window_wayland(width, height, window_name);
+        if WS.running_wayland()  return create_window_wayland(width, height, window_name);
     }
 
     if !x_global_display
@@ -300,16 +309,15 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
 
     log("create_window_wayland: configured window %x%", win_width, win_height);
 
+    // Register this window in the shared WS registry — the Wayland mirror of
+    // X11's `array_add(*x_global_windows, win)` (linux.jai). Records identity +
+    // initial size; Simp's wl_backend_init later fills in the EGL/slot state, and
+    // the single Wayland_Support pump routes this window's events by these ids.
+    WS.register_wayland_window(surface.id, xdg_surface.id, toplevel.id, win_width, win_height);
+
     return .{
-        wtype = .Wayland,
-        wayland = .{
-            surface      = surface.id,
-            xdg_surface  = xdg_surface.id,
-            xdg_toplevel = toplevel.id,
-            width        = win_width,
-            height       = win_height,
-            configured   = true,
-        },
+        wtype   = .Wayland,
+        wayland = .{ surface = surface.id },  // identity only; full state lives in WS.wayland_global_windows
     };
 }
 

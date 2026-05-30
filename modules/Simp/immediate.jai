@@ -356,6 +356,19 @@ CheckInit :: () #expand {
     #if render_api == .METAL {
         init_metal();
     }
+
+    #if OS == .LINUX {
+        // Detect the display server once (the first Simp entry point any thread
+        // hits) and park it on the backend state. The four backend op sites in
+        // gl.jai then branch on state.specific.display_manager directly, instead
+        // of routing through the old context.simp_dispatch function pointer.
+        // WS is the module-scope `#import "Wayland_Support"` (module.jai); both
+        // running_wayland and Display_Manager live there.
+        if state.specific.display_manager == .UNDEFINED {
+            if WS.running_wayland()  state.specific.display_manager = .WAYLAND;
+            else                     state.specific.display_manager = .X11;
+        }
+    }
 }
 
 // Or you can call CheckSpace, to do a CheckInit but also

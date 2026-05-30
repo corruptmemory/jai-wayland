@@ -8,7 +8,6 @@
 #load "shm.jai";
 #load "registry.jai";
 #load "session.jai";
-#load "pump.jai";
 #load "output.jai";
 #load "input.jai";
 #load "xkb.jai";
