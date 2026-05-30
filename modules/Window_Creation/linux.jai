@@ -38,6 +38,13 @@
 // modules by import spelling; name-based dedups across modules regardless of each
 // file's location, whereas dir-based paths can never string-match. Resolves via
 // the build import_path (modules/ first — see first.jai).
+//
+// #scope_module: these named imports are INTERNAL to Window_Creation. Without it,
+// the file's default export scope re-exports the Wl / WS / POSIX constants to
+// importers of Window_Creation — and a re-exported WS collides with any app or
+// module that imports Wayland_Support under the same name (e.g. hello_simp). They
+// are used only in function bodies here, so module scope is sufficient.
+#scope_module
 Wl :: #import "wayland";
 
 // Wayland_Support — the GPU-aware support module shared with Simp/Input. Used
@@ -50,6 +57,8 @@ WS :: #import "Wayland_Support";
 // For getenv() and other POSIX bits used by this file. Named import; dedups with
 // X11's transitive POSIX. (exit() comes from Basic.)
 POSIX :: #import "POSIX";
+
+#scope_export
 
 window_minimized := false;
 

@@ -654,6 +654,117 @@ wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
     return true;
 }
 
+// ──────────────────────────── Input (keyboard) ────────────────────────────
+// The shared input globals — the Wayland analogue of X11's x_global_input_*.
+// Acquisition is triggered by a consumer (Input's init, or hello_simp) via
+// wl_acquire_input; the objects live HERE so the single pump can decode against
+// them. The pump turns raw wl_keyboard events into stable Wl_Input_Events and
+// appends them to provisional_input_events; consumers drain that buffer each
+// frame, translate to their own model (Input -> events_this_frame), then call
+// wl_clear_input_events.
+
+Wl_Input_Event_Kind :: enum u8 {
+    KEY;
+    MODIFIERS;
+}
+
+Wl_Key_Event :: struct {
+    keycode: u32;   // evdev keycode (wl_keyboard.key)
+    keysym:  u32;   // resolved through the keymap (xkb keysym == X11 keysym numbering)
+    pressed: bool;  // true = press, false = release
+    serial:  u32;
+    time:    u32;
+}
+
+Wl_Modifiers_Event :: struct {
+    mods_depressed: u32;
+    mods_latched:   u32;
+    mods_locked:    u32;
+    group:          u32;
+}
+
+// A decoded, consumer-agnostic input event of our own making (the "stable event"
+// the repackaging vision calls for): Wayland semantics (keysym + evdev code),
+// each consumer maps it to its own model. New variants (pointer/touch) land here.
+Wl_Input_Event :: union kind: Wl_Input_Event_Kind {
+    .KEY       ,, key:       Wl_Key_Event;
+    .MODIFIERS ,, modifiers: Wl_Modifiers_Event;
+}
+
+wl_keyboards:      [] Wl.Keyboard_Info;   // acquired keyboards; the pump matches object ids against these
+wl_keymap:         Wl.Keymap;
+wl_keymap_valid:   bool;
+wl_input_acquired: bool;
+
+// The pump fills this; consumers drain + clear it each frame. It naturally stays
+// empty for render-only apps: Wayland only delivers key events to keyboards you
+// have bound, and binding only happens in wl_acquire_input — so no acquisition
+// means no events to buffer (no leak, no gate needed).
+provisional_input_events: [..] Wl_Input_Event;
+
+// Bind the seats' keyboards and parse the keymap. MUST be called before the
+// render loop's first pump: get_seats_info / get_keyboards_info do their own sync
+// roundtrips (via for_expansion), which would otherwise consume in-flight render
+// events. Idempotent.
+wl_acquire_input :: () {
+    if wl_input_acquired  return;
+    wl_input_acquired = true;
+
+    seats := Wl.get_seats_info();
+    wl_keyboards = Wl.get_keyboards_info(seats);
+    if wl_keyboards.count > 0 {
+        kb := wl_keyboards[0];
+        keymap, ok := Wl.parse_keymap_fd(kb.keymap_fd, kb.keymap_size);
+        if ok  { wl_keymap = keymap; wl_keymap_valid = true; }
+        else     log("Wayland_Support: keymap parse failed; keysyms unavailable", flags=.WARNING);
+        close(cast(s32) kb.keymap_fd);  // parse_keymap_fd mmaps a private copy; it does NOT own the fd
+    }
+    log("Wayland_Support: acquired % keyboard(s)", wl_keyboards.count);
+}
+
+// Drop the events a consumer has finished processing (keeps array capacity).
+wl_clear_input_events :: () {
+    provisional_input_events.count = 0;
+}
+
+// Decode one wl_keyboard event into a stable Wl_Input_Event (or update keymap
+// state). Called by the pump for messages matching an acquired keyboard.
+wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
+    if kev.kind == {
+        case .KEY;
+            // Level 0 (no shift) for now — matches hello_window; shift-level
+            // resolution from the MODIFIERS state is a follow-up.
+            keysym := ifx wl_keymap_valid then Wl.keymap_get_keysym(*wl_keymap, kev.key.key) else 0;
+            array_add(*provisional_input_events, .{
+                kind = .KEY,
+                key  = .{
+                    keycode = kev.key.key,
+                    keysym  = keysym,
+                    pressed = kev.key.state == cast(u32) Wl.Wl_Keyboard_Key_State.PRESSED,
+                    serial  = kev.key.serial,
+                    time    = kev.key.time,
+                },
+            });
+        case .MODIFIERS;
+            array_add(*provisional_input_events, .{
+                kind = .MODIFIERS,
+                modifiers = .{
+                    mods_depressed = kev.modifiers.mods_depressed,
+                    mods_latched   = kev.modifiers.mods_latched,
+                    mods_locked    = kev.modifiers.mods_locked,
+                    group          = kev.modifiers.group,
+                },
+            });
+        case .KEYMAP;
+            // Layout change mid-session: re-parse, then release the fresh fd.
+            keymap, ok := Wl.parse_keymap_fd(kev.keymap.fd, kev.keymap.size);
+            if ok  { wl_keymap = keymap; wl_keymap_valid = true; }
+            close(cast(s32) kev.keymap.fd);
+        case;
+            // ENTER / LEAVE (focus) — not surfaced in this slice.
+    }
+}
+
 // ─────────────────────────── The single pump ──────────────────────────────
 
 // wl_pump is THE single drain of the persistent session buffer, serving BOTH
@@ -787,9 +898,18 @@ wl_pump :: (blocking: bool) {
                 }
             }
 
-            // Still unrouted → an input (or otherwise unhandled) message. The
-            // Input slice will deposit these into a shared queue; for now it is
-            // dropped (the defer above still consumes it).
+            // Still unrouted → try input. Keyboard messages (matched against the
+            // acquired wl_keyboards) decode into stable Wl_Input_Events appended
+            // to provisional_input_events, which consumers drain each frame.
+            // Pointer/touch are later slices; anything still unrouted is dropped
+            // (the defer above consumes it regardless).
+            if !routed && wl_keyboards.count > 0 {
+                kev, is_kb := Wl.get_keyboard_event(header, wl_keyboards, *session.recv);
+                if is_kb {
+                    wl_handle_keyboard_event(kev);
+                    routed = true;
+                }
+            }
         }
 
         if blocking && done  break;
