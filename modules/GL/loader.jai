@@ -60,6 +60,12 @@ gl_load :: (get_proc: GL_Get_Proc_Address) -> bool {
     glFramebufferTexture2D   = xx resolve(get_proc, "glFramebufferTexture2D", *ok);
     glCheckFramebufferStatus = xx resolve(get_proc, "glCheckFramebufferStatus", *ok);
 
+    glGenRenderbuffers        = xx resolve(get_proc, "glGenRenderbuffers", *ok);
+    glDeleteRenderbuffers     = xx resolve(get_proc, "glDeleteRenderbuffers", *ok);
+    glBindRenderbuffer        = xx resolve(get_proc, "glBindRenderbuffer", *ok);
+    glRenderbufferStorage     = xx resolve(get_proc, "glRenderbufferStorage", *ok);
+    glFramebufferRenderbuffer = xx resolve(get_proc, "glFramebufferRenderbuffer", *ok);
+
     // Shaders / programs (not strictly required for Task 3, but they're core 3.3
     // so any context we care about will have them — resolve eagerly so Task 8
     // doesn't need its own pass)
@@ -77,6 +83,8 @@ gl_load :: (get_proc: GL_Get_Proc_Address) -> bool {
     glGetProgramInfoLog  = xx resolve(get_proc, "glGetProgramInfoLog", *ok);
     glUseProgram         = xx resolve(get_proc, "glUseProgram", *ok);
     glGetUniformLocation = xx resolve(get_proc, "glGetUniformLocation", *ok);
+    glGetUniformBlockIndex = xx resolve(get_proc, "glGetUniformBlockIndex", *ok);
+    glUniformBlockBinding  = xx resolve(get_proc, "glUniformBlockBinding", *ok);
     glGetAttribLocation  = xx resolve(get_proc, "glGetAttribLocation", *ok);
     glUniform1f          = xx resolve(get_proc, "glUniform1f", *ok);
     glUniform1i          = xx resolve(get_proc, "glUniform1i", *ok);
@@ -87,6 +95,9 @@ gl_load :: (get_proc: GL_Get_Proc_Address) -> bool {
     glDeleteBuffers  = xx resolve(get_proc, "glDeleteBuffers", *ok);
     glBindBuffer     = xx resolve(get_proc, "glBindBuffer", *ok);
     glBufferData     = xx resolve(get_proc, "glBufferData", *ok);
+    glBufferSubData  = xx resolve(get_proc, "glBufferSubData", *ok);
+    glDepthMask      = xx resolve(get_proc, "glDepthMask", *ok);
+    glBindBufferBase = xx resolve(get_proc, "glBindBufferBase", *ok);
     glMapBuffer      = xx resolve(get_proc, "glMapBuffer", *ok);
     glMapBufferRange = xx resolve(get_proc, "glMapBufferRange", *ok);
     glUnmapBuffer    = xx resolve(get_proc, "glUnmapBuffer", *ok);
@@ -96,6 +107,7 @@ gl_load :: (get_proc: GL_Get_Proc_Address) -> bool {
     glDeleteVertexArrays       = xx resolve(get_proc, "glDeleteVertexArrays", *ok);
     glBindVertexArray          = xx resolve(get_proc, "glBindVertexArray", *ok);
     glVertexAttribPointer      = xx resolve(get_proc, "glVertexAttribPointer", *ok);
+    glVertexAttribIPointer     = xx resolve(get_proc, "glVertexAttribIPointer", *ok);
     glEnableVertexAttribArray  = xx resolve(get_proc, "glEnableVertexAttribArray", *ok);
     glDisableVertexAttribArray = xx resolve(get_proc, "glDisableVertexAttribArray", *ok);
 
@@ -108,6 +120,7 @@ gl_load :: (get_proc: GL_Get_Proc_Address) -> bool {
 
     // Draw
     glDrawArrays = xx resolve(get_proc, "glDrawArrays", *ok);
+    glDrawElements = xx resolve(get_proc, "glDrawElements", *ok);
 
     return ok;
 }

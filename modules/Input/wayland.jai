@@ -22,6 +22,13 @@ wl_mod_meta:  bool;
 
 wl_input_initialized := false;
 
+// Pointer position tracking — wl_pointer.motion gives surface-ABSOLUTE position;
+// we derive the relative mouse_delta the camera/UI use by differencing it. ENTER
+// (re)baselines so the first motion after entering doesn't make a huge jump.
+wl_last_mouse_x:   float;
+wl_last_mouse_y:   float;
+wl_have_mouse_pos: bool;
+
 update_wayland_window_events :: () {
     // Lazy one-time acquisition. Safe here because apps poll input at the TOP of
     // the frame, before the first swap_buffers — so wl_acquire_input's sync
@@ -54,6 +61,10 @@ update_wayland_window_events :: () {
             rec.height = ww.height;
         }
     }
+
+    // Reflect keyboard focus (set in the pump on wl_keyboard.enter/leave) so apps
+    // that gate on focus (e.g. skeletal-animation's camera) behave correctly.
+    input_application_has_focus = WS.wl_keyboard_focused;
 
     for ev: WS.provisional_input_events {
         if ev.kind == {
@@ -101,6 +112,52 @@ update_wayland_window_events :: () {
                     tev.utf32       = utf32;
                     array_add(*events_this_frame, tev);
                 }
+
+            case .POINTER_ENTER;
+                // (Re)baseline the pointer position so the first motion delta after
+                // entering isn't a huge jump.
+                wl_last_mouse_x   = ev.pointer_enter.x;
+                wl_last_mouse_y   = ev.pointer_enter.y;
+                wl_have_mouse_pos = true;
+
+            case .POINTER_MOTION;
+                // Derive relative motion (camera/UI read mouse_delta; reset to 0 each
+                // frame by input_per_frame_event_and_flag_update).
+                if wl_have_mouse_pos {
+                    mouse_delta_x += cast(int)(ev.pointer_motion.x - wl_last_mouse_x);
+                    mouse_delta_y += cast(int)(ev.pointer_motion.y - wl_last_mouse_y);
+                }
+                wl_last_mouse_x   = ev.pointer_motion.x;
+                wl_last_mouse_y   = ev.pointer_motion.y;
+                wl_have_mouse_pos = true;
+
+            case .POINTER_BUTTON;
+                kc := wl_button_to_key_code(ev.pointer_button.button);
+                if kc != .UNKNOWN {
+                    bev: Event;
+                    bev.type        = .KEYBOARD;
+                    bev.key_pressed = cast(u32)(ifx ev.pointer_button.pressed then 1 else 0);
+                    bev.key_code    = kc;
+                    bev.shift_pressed    = wl_mod_shift;
+                    bev.ctrl_pressed     = wl_mod_ctrl;
+                    bev.alt_pressed      = wl_mod_alt;
+                    bev.cmd_meta_pressed = wl_mod_meta;
+                    array_add(*events_this_frame, bev);
+                    if ev.pointer_button.pressed  input_button_states[kc] = .START | .DOWN;
+                    else                          input_button_states[kc] = .END;
+                }
+
+            case .POINTER_AXIS;
+                // Vertical scroll -> MOUSE_WHEEL + mouse_delta_z (matches x11.jai).
+                // Wayland: positive value = scroll DOWN; X11 convention: up = +WHEEL_DELTA.
+                if ev.pointer_axis.axis == 0 {  // VERTICAL_SCROLL
+                    wev: Event;
+                    wev.type                = .MOUSE_WHEEL;
+                    wev.typical_wheel_delta = WHEEL_DELTA;
+                    wev.wheel_delta         = cast(s32)(ifx ev.pointer_axis.value < 0 then WHEEL_DELTA else -WHEEL_DELTA);
+                    array_add(*events_this_frame, wev);
+                    mouse_delta_z += wev.wheel_delta;
+                }
         }
     }
 
@@ -115,4 +172,16 @@ keysym_to_utf32 :: (keysym: u32) -> u32 {
     if keysym >= 0xa0 && keysym <= 0xff  return keysym;                  // Latin-1 supplement
     if (keysym & 0xff000000) == 0x01000000  return keysym & 0x00ffffff;  // direct Unicode keysym
     return 0;
+}
+
+// Map a Linux evdev button code (what wl_pointer.button carries) to a Key_Code.
+wl_button_to_key_code :: (button: u32) -> Key_Code {
+    if button == {
+        case 0x110; return .MOUSE_BUTTON_LEFT;     // BTN_LEFT
+        case 0x111; return .MOUSE_BUTTON_RIGHT;    // BTN_RIGHT
+        case 0x112; return .MOUSE_BUTTON_MIDDLE;   // BTN_MIDDLE
+        case 0x113; return .MOUSE_BUTTON_EXTRA_1;  // BTN_SIDE
+        case 0x114; return .MOUSE_BUTTON_EXTRA_2;  // BTN_EXTRA
+    }
+    return .UNKNOWN;
 }

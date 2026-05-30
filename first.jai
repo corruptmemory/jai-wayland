@@ -95,8 +95,17 @@ build :: () {
                 source_subpath  = "source/invaders.jai",
             );
             set_build_options_dc(.{do_output=false});
+          case "skeletal_animation";
+            home := to_string(getenv("HOME"));
+            build_and_run_upstream_example(
+                workspace_name  = "skeletal_animation",
+                executable_name = "anim",
+                upstream_dir    = tprint("%/jai/jai/examples/skeletal-animation", home),
+                source_subpath  = "source/main.jai",
+            );
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'invaders'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'invaders', 'skeletal_animation'.\n", arg));
         }
     }
 }
@@ -210,13 +219,13 @@ ensure_upstream_data_symlink :: (upstream_dir: string) {
     }
 
     dst := tprint("%/build/data", #filepath);
-    if file_exists(dst) {
-        // Already present (symlink, directory, whatever) — assume good.
-        return;
-    }
-
     src_c := temp_c_string(src);
     dst_c := temp_c_string(dst);
+    // Always repoint: build/data may be a leftover symlink to a DIFFERENT example
+    // (invaders vs skeletal_animation). unlink removes our prior symlink (not its
+    // target) and harmlessly fails if absent. If dst is a real directory, unlink
+    // fails and the symlink below is skipped — we never rm a real data dir.
+    unlink(dst_c);
     rc := symlink(src_c, dst_c);
     if rc != 0 {
         print("WARNING: could not create symlink % -> % (errno %)\n", dst, src, errno());

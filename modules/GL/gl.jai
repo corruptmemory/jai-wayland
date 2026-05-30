@@ -28,6 +28,7 @@ GL_STENCIL_BUFFER_BIT :: 0x00000400;
 
 // --- Primitive types ---
 GL_TRIANGLES :: 0x0004;
+GL_LINES     :: 0x0001;
 
 // --- Capability / draw / read targets ---
 GL_NONE                 :: 0;
@@ -135,6 +136,9 @@ GL_READ_FRAMEBUFFER_BINDING     :: 0x8CAA;
 GL_DRAW_FRAMEBUFFER_BINDING     :: 0x8CA6;
 GL_COLOR_ATTACHMENT0            :: 0x8CE0;
 GL_FRAMEBUFFER_COMPLETE         :: 0x8CD5;
+GL_DEPTH_ATTACHMENT             :: 0x8D00;
+GL_RENDERBUFFER                 :: 0x8D41;
+GL_DEPTH_COMPONENT24            :: 0x81A6;
 
 // --- Version query ---
 GL_VENDOR        :: 0x1F00;
@@ -155,6 +159,9 @@ GL_ARRAY_BUFFER         :: 0x8892;
 GL_ELEMENT_ARRAY_BUFFER :: 0x8893;
 GL_STATIC_DRAW          :: 0x88E4;
 GL_DYNAMIC_DRAW         :: 0x88E8;
+// Uniform buffer objects (added for skeletal-animation: skinning matrices).
+GL_UNIFORM_BUFFER          :: 0x8A11;
+GL_MAX_UNIFORM_BLOCK_SIZE  :: 0x8A30;
 GL_STREAM_DRAW          :: 0x88E0;
 GL_DYNAMIC_READ         :: 0x88E9;
 GL_READ_ONLY            :: 0x88B8;
@@ -206,6 +213,13 @@ glBindFramebuffer:        #type (target: GLenum, framebuffer: GLuint) #c_call;
 glFramebufferTexture2D:   #type (target: GLenum, attachment: GLenum, textarget: GLenum, texture: GLuint, level: GLint) #c_call;
 glCheckFramebufferStatus: #type (target: GLenum) -> GLenum #c_call;
 
+// Renderbuffer objects (added for 3D examples: depth attachment on BO-backed FBOs).
+glGenRenderbuffers:        #type (n: GLsizei, renderbuffers: *GLuint) #c_call;
+glDeleteRenderbuffers:     #type (n: GLsizei, renderbuffers: *GLuint) #c_call;
+glBindRenderbuffer:        #type (target: GLenum, renderbuffer: GLuint) #c_call;
+glRenderbufferStorage:     #type (target: GLenum, internalformat: GLenum, width: GLsizei, height: GLsizei) #c_call;
+glFramebufferRenderbuffer: #type (target: GLenum, attachment: GLenum, renderbuffertarget: GLenum, renderbuffer: GLuint) #c_call;
+
 // Shaders / programs (Task 8)
 glCreateShader:      #type (shaderType: GLenum) -> GLuint #c_call;
 glDeleteShader:      #type (shader: GLuint) #c_call;
@@ -222,6 +236,8 @@ glGetProgramInfoLog: #type (program: GLuint, maxLength: GLsizei, length: *GLsize
 glUseProgram:         #type (program: GLuint) #c_call;
 glGetUniformLocation: #type (program: GLuint, name: *GLchar) -> GLint #c_call;
 glGetAttribLocation:  #type (program: GLuint, name: *GLchar) -> GLint #c_call;
+glGetUniformBlockIndex: #type (program: GLuint, uniformBlockName: *GLchar) -> GLuint #c_call;
+glUniformBlockBinding:  #type (program: GLuint, uniformBlockIndex: GLuint, uniformBlockBinding: GLuint) #c_call;
 glUniform1f:          #type (location: GLint, v0: GLfloat) #c_call;
 glUniform1i:          #type (location: GLint, v0: GLint) #c_call;
 glUniformMatrix4fv:   #type (location: GLint, count: GLsizei, transpose: GLboolean, value: *GLfloat) #c_call;
@@ -231,6 +247,9 @@ glGenBuffers:    #type (n: GLsizei, buffers: *GLuint) #c_call;
 glDeleteBuffers: #type (n: GLsizei, buffers: *GLuint) #c_call;
 glBindBuffer:    #type (target: GLenum, buffer: GLuint) #c_call;
 glBufferData:    #type (target: GLenum, size: GLsizeiptr, data: *void, usage: GLenum) #c_call;
+glBufferSubData: #type (target: GLenum, offset: GLintptr, size: GLsizeiptr, data: *void) #c_call;
+glDepthMask:     #type (flag: GLboolean) #c_call;
+glBindBufferBase:#type (target: GLenum, index: GLuint, buffer: GLuint) #c_call;
 glMapBuffer:     #type (target: GLenum, access: GLenum) -> *void #c_call;
 glMapBufferRange:#type (target: GLenum, offset: GLintptr, length: GLsizeiptr, access: GLbitfield) -> *void #c_call;
 glUnmapBuffer:   #type (target: GLenum) -> GLboolean #c_call;
@@ -240,6 +259,7 @@ glGenVertexArrays:          #type (n: GLsizei, arrays: *GLuint) #c_call;
 glDeleteVertexArrays:       #type (n: GLsizei, arrays: *GLuint) #c_call;
 glBindVertexArray:          #type (array: GLuint) #c_call;
 glVertexAttribPointer:      #type (index: GLuint, size: GLint, type: GLenum, normalized: GLboolean, stride: GLsizei, pointer: *void) #c_call;
+glVertexAttribIPointer:     #type (index: GLuint, size: GLint, type: GLenum, stride: GLsizei, pointer: *void) #c_call;
 glEnableVertexAttribArray:  #type (index: GLuint) #c_call;
 glDisableVertexAttribArray: #type (index: GLuint) #c_call;
 
@@ -252,3 +272,4 @@ glClientWaitSync: #type (sync: GLsync, flags: GLbitfield, timeout: GLuint64) -> 
 
 // Draw calls
 glDrawArrays: #type (mode: GLenum, first: GLint, count: GLsizei) #c_call;
+glDrawElements: #type (mode: GLenum, count: GLsizei, type: GLenum, indices: *void) #c_call;

@@ -69,6 +69,7 @@ SIMP_WL_SLOT_COUNT :: 2;
 Wl_Gl_Slot :: struct {
     tex:       u32;
     fbo:       u32;
+    depth_rbo: u32;   // depth renderbuffer (the BO-backed color texture has no depth; 3D apps need it)
     image:     EGL.EGLImage;
     bo:        Gbm.Gbm_Bo;
     buffer:    Wl.Wl_Buffer;
@@ -270,6 +271,18 @@ wl_pick_global_format_for_gbm_pass :: (gbm: Gbm.Gbm_Device, supported: [] Wl.For
 // ───────────────────────── Slot allocation ────────────────────────────────
 // (Ported from hello_gl.jai:506-619.)
 
+// Attach a depth renderbuffer to the currently-bound FBO. The BO-backed color
+// texture has no depth; 3D apps (skeletal-animation) need depth testing. 2D apps
+// (invaders, hello_simp) simply never enable GL_DEPTH_TEST, so this is harmless
+// for them. The FBO must already be bound when this is called.
+wl_attach_depth_rbo :: (slot: *Wl_Gl_Slot, width: s32, height: s32) {
+    if glGenRenderbuffers == null  return;  // GL too old to provide renderbuffers
+    glGenRenderbuffers(1, *slot.depth_rbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, slot.depth_rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, cast(GLsizei) width, cast(GLsizei) height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, slot.depth_rbo);
+}
+
 // Allocate a GL texture + FBO, export as DMA-BUF, wrap as wl_buffer. The
 // wl_buffer + params messages get queued into `batch`; the caller sends when
 // ready (so multiple slots can batch into a single send).
@@ -327,6 +340,7 @@ wl_slot_init_bo :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linux_
     glBindFramebuffer(GL_FRAMEBUFFER, slot.fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
         GL_TEXTURE_2D, slot.tex, 0);
+    wl_attach_depth_rbo(slot, width, height);  // depth buffer for 3D apps (skeletal-animation)
     if glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE  return false;
 
     if Gbm.gbm_bo_get_fd == null || Gbm.gbm_bo_get_stride == null  return false;
@@ -365,6 +379,7 @@ wl_slot_init_mesa :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linu
     glBindFramebuffer(GL_FRAMEBUFFER, slot.fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
         GL_TEXTURE_2D, slot.tex, 0);
+    wl_attach_depth_rbo(slot, width, height);  // depth buffer for 3D apps (skeletal-animation)
     if glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE  return false;
 
     slot.image = EGL.eglCreateImageKHR(egl.dpy, egl.ctx, EGL.EGL_GL_TEXTURE_2D_KHR,
@@ -414,6 +429,7 @@ wl_slot_make_buffer :: (batch: *Wl.MessageBuilder, dmabuf: *Wl.Zwp_Linux_Dmabuf_
 
 wl_slot_destroy :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State) {
     if slot.fbo != 0  glDeleteFramebuffers(1, *slot.fbo);
+    if slot.depth_rbo != 0 && glDeleteRenderbuffers != null  glDeleteRenderbuffers(1, *slot.depth_rbo);
     if slot.tex != 0  glDeleteTextures(1, *slot.tex);
     if slot.image != null  EGL.eglDestroyImageKHR(egl.dpy, slot.image);
     if slot.bo != null  Gbm.gbm_bo_destroy(slot.bo);
@@ -675,6 +691,10 @@ wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
 Wl_Input_Event_Kind :: enum u8 {
     KEY;
     MODIFIERS;
+    POINTER_ENTER;
+    POINTER_MOTION;
+    POINTER_BUTTON;
+    POINTER_AXIS;
 }
 
 Wl_Key_Event :: struct {
@@ -692,12 +712,31 @@ Wl_Modifiers_Event :: struct {
     group:          u32;
 }
 
+Wl_Pointer_Pos_Event :: struct {  // ENTER + MOTION: surface-local pointer position
+    x: float;
+    y: float;
+}
+
+Wl_Pointer_Btn_Event :: struct {
+    button:  u32;   // Linux evdev button code (BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112, …)
+    pressed: bool;
+}
+
+Wl_Pointer_Axis_Event :: struct {
+    axis:  u32;     // Wl_Pointer_Axis: 0 = vertical scroll, 1 = horizontal scroll
+    value: float;   // scroll amount (Wayland convention: positive = down/right)
+}
+
 // A decoded, consumer-agnostic input event of our own making (the "stable event"
-// the repackaging vision calls for): Wayland semantics (keysym + evdev code),
-// each consumer maps it to its own model. New variants (pointer/touch) land here.
+// the repackaging vision calls for): Wayland semantics (keysym + evdev codes),
+// each consumer maps it to its own model. Touch variants land here next.
 Wl_Input_Event :: union kind: Wl_Input_Event_Kind {
-    .KEY       ,, key:       Wl_Key_Event;
-    .MODIFIERS ,, modifiers: Wl_Modifiers_Event;
+    .KEY            ,, key:            Wl_Key_Event;
+    .MODIFIERS      ,, modifiers:      Wl_Modifiers_Event;
+    .POINTER_ENTER  ,, pointer_enter:  Wl_Pointer_Pos_Event;
+    .POINTER_MOTION ,, pointer_motion: Wl_Pointer_Pos_Event;
+    .POINTER_BUTTON ,, pointer_button: Wl_Pointer_Btn_Event;
+    .POINTER_AXIS   ,, pointer_axis:   Wl_Pointer_Axis_Event;
 }
 
 wl_keyboards:      [] Wl.Keyboard_Info;   // acquired keyboards; the pump matches object ids against these
@@ -710,6 +749,11 @@ wl_input_acquired: bool;
 wl_mods_depressed: u32;
 wl_mods_latched:   u32;
 wl_mods_locked:    u32;
+
+wl_pointers:         [] Wl.Pointer_Info;  // acquired pointers; the pump matches object ids against these
+wl_mouse_x:          float;               // current surface-local pointer position (for get_mouse_pointer_position)
+wl_mouse_y:          float;
+wl_keyboard_focused: bool;                // wl_keyboard.enter/leave -> input_application_has_focus
 
 // The pump fills this; consumers drain + clear it each frame. It naturally stays
 // empty for render-only apps: Wayland only delivers key events to keyboards you
@@ -727,6 +771,7 @@ wl_acquire_input :: () {
 
     seats := Wl.get_seats_info();
     wl_keyboards = Wl.get_keyboards_info(seats);
+    wl_pointers  = Wl.get_pointers_info(seats);
     if wl_keyboards.count > 0 {
         kb := wl_keyboards[0];
         keymap, ok := Wl.parse_keymap_fd(kb.keymap_fd, kb.keymap_size);
@@ -734,7 +779,7 @@ wl_acquire_input :: () {
         else     log("Wayland_Support: keymap parse failed; keysyms unavailable", flags=.WARNING);
         close(cast(s32) kb.keymap_fd);  // parse_keymap_fd mmaps a private copy; it does NOT own the fd
     }
-    log("Wayland_Support: acquired % keyboard(s)", wl_keyboards.count);
+    log("Wayland_Support: acquired % keyboard(s), % pointer(s)", wl_keyboards.count, wl_pointers.count);
 }
 
 // Drop the events a consumer has finished processing (keeps array capacity).
@@ -790,8 +835,38 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
             keymap, ok := Wl.parse_keymap_fd(kev.keymap.fd, kev.keymap.size);
             if ok  { wl_keymap = keymap; wl_keymap_valid = true; }
             close(cast(s32) kev.keymap.fd);
+        case .ENTER;  wl_keyboard_focused = true;   // keyboard focus -> input_application_has_focus
+        case .LEAVE;  wl_keyboard_focused = false;
         case;
-            // ENTER / LEAVE (focus) — not surfaced in this slice.
+            // REPEAT_INFO etc. — ignored.
+    }
+}
+
+// Decode one wl_pointer event into stable Wl_Input_Events (and track the current
+// surface-local pointer position for get_mouse_pointer_position). Called by the
+// pump for messages matching an acquired pointer.
+wl_handle_pointer_event :: (pev: Wl.Wl_Pointer_Event) {
+    if pev.kind == {
+        case .ENTER;
+            wl_mouse_x = cast(float) Wl.fixed_to_float(pev.enter.surface_x);
+            wl_mouse_y = cast(float) Wl.fixed_to_float(pev.enter.surface_y);
+            array_add(*provisional_input_events, .{ kind = .POINTER_ENTER, pointer_enter = .{ x = wl_mouse_x, y = wl_mouse_y } });
+        case .MOTION;
+            wl_mouse_x = cast(float) Wl.fixed_to_float(pev.motion.surface_x);
+            wl_mouse_y = cast(float) Wl.fixed_to_float(pev.motion.surface_y);
+            array_add(*provisional_input_events, .{ kind = .POINTER_MOTION, pointer_motion = .{ x = wl_mouse_x, y = wl_mouse_y } });
+        case .BUTTON;
+            array_add(*provisional_input_events, .{ kind = .POINTER_BUTTON, pointer_button = .{
+                button  = pev.button.button,
+                pressed = pev.button.state == cast(u32) Wl.Wl_Pointer_Button_State.PRESSED,
+            }});
+        case .AXIS;
+            array_add(*provisional_input_events, .{ kind = .POINTER_AXIS, pointer_axis = .{
+                axis  = pev.axis.axis,
+                value = cast(float) Wl.fixed_to_float(pev.axis.value),
+            }});
+        case;
+            // LEAVE / FRAME / AXIS_SOURCE/STOP/DISCRETE/VALUE120/RELATIVE_DIRECTION — ignored.
     }
 }
 
@@ -940,6 +1015,13 @@ wl_pump :: (blocking: bool) {
                 kev, is_kb := Wl.get_keyboard_event(header, wl_keyboards, *session.recv);
                 if is_kb {
                     wl_handle_keyboard_event(kev);
+                    routed = true;
+                }
+            }
+            if !routed && wl_pointers.count > 0 {
+                pev, is_ptr := Wl.get_pointer_event(header, wl_pointers, *session.recv);
+                if is_ptr {
+                    wl_handle_pointer_event(pev);
                     routed = true;
                 }
             }

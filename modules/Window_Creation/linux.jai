@@ -371,6 +371,25 @@ get_mouse_pointer_position :: (win: Window, right_handed: bool) -> x: int, y: in
     return x, y, success;
 }
 
+// Window_Type overload — GetRect resolves this (get_mouse_pointer_position(dummy:
+// Window_Type, true)). On Wayland the position is surface-local, tracked by the
+// pump (no round-trip). right_handed flips Y to bottom-left origin using the
+// registry size, matching the X11 path so UI hit-testing lines up with Simp's
+// y-up rendering. (Window vs Window_Type are distinct types -> no overload clash.)
+get_mouse_pointer_position :: (win: Window_Type, right_handed: bool) -> x: int, y: int, success: bool {
+    if win.wtype == .Wayland {
+        x := cast(int) WS.wl_mouse_x;
+        y := cast(int) WS.wl_mouse_y;
+        if right_handed {
+            ww := WS.find_wayland_window(win.wayland.surface);
+            if ww  y = ww.height - y;
+        }
+        return x, y, true;
+    }
+    x, y, success := get_mouse_pointer_position(win.x11, right_handed);
+    return x, y, success;
+}
+
 get_mouse_pointer_position :: inline (right_handed := false) -> x: int, y: int, success: bool {
     dpy := x_global_display;
     if !dpy return 0, 0, false;
