@@ -21,6 +21,7 @@ wl_mod_alt:   bool;
 wl_mod_meta:  bool;
 
 wl_input_initialized := false;
+wl_quit_emitted      := false;  // emit the .QUIT event for a compositor close only once
 
 // Pointer position tracking — wl_pointer.motion gives surface-ABSOLUTE position;
 // we derive the relative mouse_delta the camera/UI use by differencing it. ENTER
@@ -59,6 +60,16 @@ update_wayland_window_events :: () {
             rec.window = .{ wtype = .Wayland, wayland = .{ surface = ww.surface.id } };
             rec.width  = ww.width;
             rec.height = ww.height;
+        }
+        // Compositor-requested close (xdg_toplevel.close: Hyprland killactive/Super+Q,
+        // a title-bar X, etc.) -> emit a .QUIT event so apps that watch
+        // events_this_frame for it (skeletal-animation) terminate. (Simp.window_should_close
+        // reads the same ww.wl_close_requested flag for apps that poll instead.)
+        if ww.wl_close_requested && !wl_quit_emitted {
+            wl_quit_emitted = true;
+            qev: Event;
+            qev.type = .QUIT;
+            array_add(*events_this_frame, qev);
         }
     }
 

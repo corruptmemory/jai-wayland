@@ -819,6 +819,13 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
                 use_shift := shift != (caps && is_letter);                         // XOR: caps flips shift for letters
                 level: u32 = cast(u32)(ifx use_shift then 1 else 0);
                 keysym = Wl.keymap_get_keysym(*wl_keymap, kev.key.key, level);
+                // Keys with only one level (modifiers, F-keys, …) have no level-1
+                // keysym; if the shifted level is empty, fall back to level 0 so the
+                // physical key still resolves. This is what made Shift fail to
+                // register: when the modifiers event marking Shift active arrives
+                // BEFORE the Shift key-press, we'd pick level 1 for Shift_L (which has
+                // no level-1 keysym) -> 0 -> UNKNOWN instead of SHIFT.
+                if keysym == 0 && level != 0  keysym = Wl.keymap_get_keysym(*wl_keymap, kev.key.key, 0);
             }
             array_add(*provisional_input_events, .{
                 kind = .KEY,
