@@ -611,6 +611,14 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
             return false;
         }
     }
+    // GL renders into the FBO with row 0 at the BOTTOM (OpenGL convention); the
+    // dma-buf is then scanned out top-down, so every frame would appear vertically
+    // FLIPPED versus what the same draw calls produce on X11's default framebuffer.
+    // Tell the compositor the buffer carries a FLIPPED_180 transform (a vertical
+    // flip) so it presents upright. This is a presentation-layer fix — it needs no
+    // change to any app's projection/coordinate system. Surface state, set once
+    // here; it persists across resizes and applies at the first present's commit.
+    Wl.wl_surface_set_buffer_transform(*batch, *ww.surface, cast(s32) Wl.Wl_Output_Transform.FLIPPED_180);
     Wl.wayland_send(*batch);
 
     ww.wl_current = 0;
