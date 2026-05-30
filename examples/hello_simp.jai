@@ -10,11 +10,11 @@
 //       swap_buffers exports the BO as a wl_buffer, commits, blocks on the frame
 //       callback, rotates to the next slot, and rebinds its FBO.
 //
-// Resize works (compositor-driven), and keyboard input now works too: 'q' quits
-// through the REAL Wayland input path — WS.wl_acquire_input + the single pump
-// decoding keys into stable Wl_Input_Events that this loop drains — not a
-// hand-rolled wire reader. A coloured quad animating on the compositor, that
-// resizes and responds to 'q', is the functional gate.
+// Resize works (compositor-driven), and keyboard input runs through the REAL
+// Input module: update_window_events / events_this_frame drive the Wayland input
+// backend (which acquires the keyboard and drains the shared pump), exactly as
+// invaders consumes input. 'q' quits. A coloured quad that animates, resizes, and
+// responds to 'q' through the full vendored Simp+Input stack is the functional gate.
 //
 // set_render_target is called ONCE (like invaders): on Wayland the dispatcher
 // rebinds the rotated slot's FBO inside swap_buffers, so the rotation stays
@@ -30,7 +30,7 @@
 #import "POSIX";              // getenv (frame cap)
 #import "Window_Creation";   // create_window, Window_Type
 Simp :: #import "Simp";
-WS   :: #import "Wayland_Support";  // keyboard input: acquire + drain the pump's decoded events
+#import "Input";             // update_window_events / events_this_frame — drives the Wayland input backend
 
 WIDTH  :: 800;
 HEIGHT :: 600;
@@ -39,11 +39,6 @@ main :: () {
     window := create_window(window_name = "hello_simp", width = WIDTH, height = HEIGHT);
     Simp.set_render_target(window);  // ONCE — triggers Simp BACKEND_INIT.
 
-    // Acquire keyboard input BEFORE the render loop. wl_acquire_input does sync
-    // roundtrips that must not run once frames are in flight; here the window is
-    // configured and the backend is up, but nothing has been presented yet.
-    WS.wl_acquire_input();
-
     frame_limit := frame_limit_from_env();
     if frame_limit > 0  print("hello_simp: bounded run, % frame(s)\n", frame_limit);
     else                print("hello_simp: running until killed (JAI_WAYLAND_SIMP_FRAMES=N to bound)\n");
@@ -51,6 +46,19 @@ main :: () {
     frame: u64 = 0;
     quit := false;
     while true {
+        // Poll input FIRST, before any swap: update_window_events drives the
+        // Input module's Wayland backend, which lazily acquires the keyboard (its
+        // sync roundtrips must run before frames are in flight) and drains the
+        // shared pump into events_this_frame — exactly as invaders consumes input.
+        update_window_events();
+        for events_this_frame {
+            if it.type == .KEYBOARD && it.key_pressed != 0 && it.key_code == cast(Key_Code) #char "Q" {
+                print("hello_simp: 'q' pressed — exiting\n");
+                quit = true;
+            }
+        }
+        if quit  break;
+
         // Pick up compositor-driven resize (invaders' pattern): update_window
         // detects a size change and reallocates the backend's render target — for
         // Wayland that retires + reallocs the BO slots at the new size. Then drive
@@ -77,20 +85,6 @@ main :: () {
         Simp.immediate_flush();
 
         Simp.swap_buffers(window);  // present current slot, block on frame, rotate.
-
-        // Drain the keyboard input the pump decoded. swap_buffers above pumped
-        // (blocking) for frame pacing, decoding any keys that arrived during the
-        // block; the non-blocking sweep here catches anything since the frame
-        // callback fired. 'q' quits — through the real Wayland input path.
-        WS.wl_pump(false);
-        for ev: WS.provisional_input_events {
-            if ev.kind == .KEY && ev.key.pressed && ev.key.keysym == #char "q" {
-                print("hello_simp: 'q' pressed — exiting\n");
-                quit = true;
-            }
-        }
-        WS.wl_clear_input_events();
-        if quit  break;
 
         // Quit cleanly when the compositor asks (Super+Q → killactive →
         // xdg_toplevel.close). Without this the window ignores the close request.

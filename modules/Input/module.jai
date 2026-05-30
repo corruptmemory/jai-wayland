@@ -14,7 +14,7 @@
 
 #if OS == {
     case .WINDOWS; #load "windows.jai";
-    case .LINUX;   #load "x11.jai";
+    case .LINUX;   #load "x11.jai"; #load "wayland.jai";  // both Linux backends; update_window_events branches on running_wayland()
     case .MACOS;   #load "macos.jai";
     case .PS5;     #load "ps5.jai";
     case .NN_SWITCH2;   #load "nintendo.jai";
@@ -323,3 +323,9 @@ resizes_to_free: [..] Window_Resize_Record;
 
 #import "Basic";
 #import "Window_Type";
+
+// Wayland input backend support: the shared pump + decoded Wl_Input_Events.
+// Inside #scope_module so it is NOT re-exported to importers of Input. Linux-only
+// (Wayland_Support pulls in the GPU stack); name-based so it dedups to the one
+// shared instance with Simp / Window_Creation (same session + input globals).
+#if OS == .LINUX  { WS :: #import "Wayland_Support"; }

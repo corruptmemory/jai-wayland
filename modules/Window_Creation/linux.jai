@@ -331,6 +331,16 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
 }
 
 get_dimensions :: (win: Window_Type, right_handed: bool) -> (x: s32, y: s32, width: s32, height: s32, success := true) {
+    if win.wtype == .Wayland {
+        // Wayland clients have no XGetWindowAttributes and are not told their
+        // on-screen position (the compositor owns placement), so x/y are 0. Size
+        // is the single source of truth in the shared registry. right_handed has
+        // no effect with y == 0. (Matches Simp.get_render_dimensions.)
+        ww := WS.find_wayland_window(win.wayland.surface);
+        if ww  return 0, 0, ww.width, ww.height;
+        return 0, 0, 0, 0, false;
+    }
+
     xwa: XWindowAttributes;
     XGetWindowAttributes(x_global_display, win.x11, *xwa);
 

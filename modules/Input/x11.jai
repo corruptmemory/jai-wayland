@@ -798,6 +798,12 @@ update_x11_window_events :: () {
 WHEEL_DELTA :: 120;
 
 update_window_events :: () {
+    // Value-level backend branch (mirrors Simp's display_manager): on a Wayland
+    // session, drive the Wayland input backend (wayland.jai) instead of X11.
+    if WS.running_wayland() {
+        update_wayland_window_events();
+        return;
+    }
     update_x11_window_events();
 }
 
