@@ -158,6 +158,34 @@ update_wayland_window_events :: () {
                     array_add(*events_this_frame, wev);
                     mouse_delta_z += wev.wheel_delta;
                 }
+
+            case .TOUCH_DOWN;
+                tv: Event;
+                tv.type        = .TOUCH;
+                tv.touch_type  = .PRESSED;
+                tv.touch_index = ev.touch_down.id;
+                tv.touch_x     = ev.touch_down.x;
+                tv.touch_y     = ev.touch_down.y;
+                array_add(*events_this_frame, tv);
+                wl_set_touch_pointer(ev.touch_down.id, true, ev.touch_down.x, ev.touch_down.y);
+
+            case .TOUCH_MOTION;
+                tv: Event;
+                tv.type        = .TOUCH;
+                tv.touch_type  = .MOVED;
+                tv.touch_index = ev.touch_motion.id;
+                tv.touch_x     = ev.touch_motion.x;
+                tv.touch_y     = ev.touch_motion.y;
+                array_add(*events_this_frame, tv);
+                wl_set_touch_pointer(ev.touch_motion.id, true, ev.touch_motion.x, ev.touch_motion.y);
+
+            case .TOUCH_UP;
+                tv: Event;
+                tv.type        = .TOUCH;
+                tv.touch_type  = .RELEASED;
+                tv.touch_index = ev.touch_up.id;
+                array_add(*events_this_frame, tv);
+                wl_set_touch_pointer(ev.touch_up.id, false, 0, 0);
         }
     }
 
@@ -172,6 +200,23 @@ keysym_to_utf32 :: (keysym: u32) -> u32 {
     if keysym >= 0xa0 && keysym <= 0xff  return keysym;                  // Latin-1 supplement
     if (keysym & 0xff000000) == 0x01000000  return keysym & 0x00ffffff;  // direct Unicode keysym
     return 0;
+}
+
+// Update the touch_pointers snapshot (active fingers + positions) and recount
+// touch_pointers_active. wl_touch ids are small and sequential per active touch,
+// so we use the id directly as the slot index. (Untested — no touch device here.)
+wl_set_touch_pointer :: (id: s32, down: bool, x: float, y: float) {
+    if id < 0 || id >= TOUCH_POINTERS_COUNT  return;
+    if down {
+        touch_pointers[id].state = .DOWN;
+        touch_pointers[id].window_position_x = x;
+        touch_pointers[id].window_position_y = y;
+    } else {
+        touch_pointers[id].state = 0;
+    }
+    n := 0;
+    for touch_pointers  if it.state & .DOWN  n += 1;
+    touch_pointers_active = n;
 }
 
 // Map a Linux evdev button code (what wl_pointer.button carries) to a Key_Code.

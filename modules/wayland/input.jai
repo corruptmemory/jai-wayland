@@ -165,3 +165,50 @@ get_pointer_event :: (header: WaylandMessageHeader, pointers: [] Pointer_Info, r
     }
     return .{}, false;
 }
+
+Touch_Info :: struct {
+    seat_index: int;
+    touch: Wl_Touch;
+}
+
+// Acquire touch devices from seats that advertise the TOUCH capability.
+get_touch_info :: (seats: [] Seat_Info) -> [] Touch_Info {
+    touch_count: int;
+    for seats {
+        if it.capabilities & cast(u32) Wl_Seat_Capability.TOUCH  touch_count += 1;
+    }
+    if touch_count == 0  return .[];
+
+    touches: [..] Touch_Info;
+
+    display := Wl_Display.{ id = 1 };
+    batch: MessageBuilder;
+    for seat, si: seats {
+        if seat.capabilities & cast(u32) Wl_Seat_Capability.TOUCH {
+            t := array_add(*touches);
+            t.seat_index = si;
+            t.touch = Wl_Touch.{ id = allocate_id() };
+            wl_seat_get_touch(*batch, *seat.seat, t.touch.id);
+        }
+    }
+    sync_id := allocate_id();
+    wl_display_sync(*batch, *display, sync_id);
+    wayland_send(*batch);
+
+    // Touch has no initial burst — just drain the sync.
+    for session()  if it.object_id == sync_id  break;
+
+    return touches;
+}
+
+// Match a message to a touch device and unmarshal.
+get_touch_event :: (header: WaylandMessageHeader, touches: [] Touch_Info, recv: *ReceiveBuffer) -> Wl_Touch_Event, bool {
+    for touches {
+        if header.object_id == it.touch.id {
+            event: Wl_Touch_Event;
+            unmarshal_event(*event, header.opcode, header.payload, recv);
+            return event, true;
+        }
+    }
+    return .{}, false;
+}

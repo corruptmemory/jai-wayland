@@ -695,6 +695,9 @@ Wl_Input_Event_Kind :: enum u8 {
     POINTER_MOTION;
     POINTER_BUTTON;
     POINTER_AXIS;
+    TOUCH_DOWN;
+    TOUCH_UP;
+    TOUCH_MOTION;
 }
 
 Wl_Key_Event :: struct {
@@ -727,9 +730,15 @@ Wl_Pointer_Axis_Event :: struct {
     value: float;   // scroll amount (Wayland convention: positive = down/right)
 }
 
+Wl_Touch_Point_Event :: struct {
+    id: s32;        // touch-point id (a finger) -> touch_index
+    x:  float;      // surface-local position (0 on UP)
+    y:  float;
+}
+
 // A decoded, consumer-agnostic input event of our own making (the "stable event"
 // the repackaging vision calls for): Wayland semantics (keysym + evdev codes),
-// each consumer maps it to its own model. Touch variants land here next.
+// each consumer maps it to its own model.
 Wl_Input_Event :: union kind: Wl_Input_Event_Kind {
     .KEY            ,, key:            Wl_Key_Event;
     .MODIFIERS      ,, modifiers:      Wl_Modifiers_Event;
@@ -737,6 +746,9 @@ Wl_Input_Event :: union kind: Wl_Input_Event_Kind {
     .POINTER_MOTION ,, pointer_motion: Wl_Pointer_Pos_Event;
     .POINTER_BUTTON ,, pointer_button: Wl_Pointer_Btn_Event;
     .POINTER_AXIS   ,, pointer_axis:   Wl_Pointer_Axis_Event;
+    .TOUCH_DOWN     ,, touch_down:     Wl_Touch_Point_Event;
+    .TOUCH_UP       ,, touch_up:       Wl_Touch_Point_Event;
+    .TOUCH_MOTION   ,, touch_motion:   Wl_Touch_Point_Event;
 }
 
 wl_keyboards:      [] Wl.Keyboard_Info;   // acquired keyboards; the pump matches object ids against these
@@ -751,6 +763,7 @@ wl_mods_latched:   u32;
 wl_mods_locked:    u32;
 
 wl_pointers:         [] Wl.Pointer_Info;  // acquired pointers; the pump matches object ids against these
+wl_touches:          [] Wl.Touch_Info;    // acquired touch devices (machine-dependent; usually none on desktop)
 wl_mouse_x:          float;               // current surface-local pointer position (for get_mouse_pointer_position)
 wl_mouse_y:          float;
 wl_keyboard_focused: bool;                // wl_keyboard.enter/leave -> input_application_has_focus
@@ -772,6 +785,7 @@ wl_acquire_input :: () {
     seats := Wl.get_seats_info();
     wl_keyboards = Wl.get_keyboards_info(seats);
     wl_pointers  = Wl.get_pointers_info(seats);
+    wl_touches   = Wl.get_touch_info(seats);
     if wl_keyboards.count > 0 {
         kb := wl_keyboards[0];
         keymap, ok := Wl.parse_keymap_fd(kb.keymap_fd, kb.keymap_size);
@@ -779,7 +793,7 @@ wl_acquire_input :: () {
         else     log("Wayland_Support: keymap parse failed; keysyms unavailable", flags=.WARNING);
         close(cast(s32) kb.keymap_fd);  // parse_keymap_fd mmaps a private copy; it does NOT own the fd
     }
-    log("Wayland_Support: acquired % keyboard(s), % pointer(s)", wl_keyboards.count, wl_pointers.count);
+    log("Wayland_Support: acquired % keyboard(s), % pointer(s), % touch", wl_keyboards.count, wl_pointers.count, wl_touches.count);
 }
 
 // Drop the events a consumer has finished processing (keeps array capacity).
@@ -867,6 +881,30 @@ wl_handle_pointer_event :: (pev: Wl.Wl_Pointer_Event) {
             }});
         case;
             // LEAVE / FRAME / AXIS_SOURCE/STOP/DISCRETE/VALUE120/RELATIVE_DIRECTION — ignored.
+    }
+}
+
+// Decode one wl_touch event into stable Wl_Input_Events. Called by the pump for
+// messages matching an acquired touch device. (Untested on this hardware — no
+// touch device — but structurally mirrors the pointer path.)
+wl_handle_touch_event :: (tev: Wl.Wl_Touch_Event) {
+    if tev.kind == {
+        case .DOWN;
+            array_add(*provisional_input_events, .{ kind = .TOUCH_DOWN, touch_down = .{
+                id = tev.down.id,
+                x  = cast(float) Wl.fixed_to_float(tev.down.x),
+                y  = cast(float) Wl.fixed_to_float(tev.down.y),
+            }});
+        case .UP;
+            array_add(*provisional_input_events, .{ kind = .TOUCH_UP, touch_up = .{ id = tev.up.id } });
+        case .MOTION;
+            array_add(*provisional_input_events, .{ kind = .TOUCH_MOTION, touch_motion = .{
+                id = tev.motion.id,
+                x  = cast(float) Wl.fixed_to_float(tev.motion.x),
+                y  = cast(float) Wl.fixed_to_float(tev.motion.y),
+            }});
+        case;
+            // FRAME / CANCEL / SHAPE / ORIENTATION — ignored.
     }
 }
 
@@ -1022,6 +1060,13 @@ wl_pump :: (blocking: bool) {
                 pev, is_ptr := Wl.get_pointer_event(header, wl_pointers, *session.recv);
                 if is_ptr {
                     wl_handle_pointer_event(pev);
+                    routed = true;
+                }
+            }
+            if !routed && wl_touches.count > 0 {
+                tev, is_touch := Wl.get_touch_event(header, wl_touches, *session.recv);
+                if is_touch {
+                    wl_handle_touch_event(tev);
                     routed = true;
                 }
             }
