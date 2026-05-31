@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **Built with Jai `beta 0.2.029`** (compiler built 25 April 2026) — the most recent version everything here was compiled and tested against.
+>
+> **A note on paths:** code and documentation hard-code `~/jai/jai` as the unpacked Jai distribution — that's just where I unpacked mine. In your clone/fork, update this path (in `build.sh` and throughout the docs) to point to your own distribution.
+
 ## Project Overview
 
 `jai-wayland` is a Wayland client library for Jai. It bypasses

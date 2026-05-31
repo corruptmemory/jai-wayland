@@ -2,6 +2,10 @@
 
 Wayland client support for the [Jai](https://jai.community/) programming language.
 
+> **Built with Jai `beta 0.2.029`** (compiler built 25 April 2026) — the most recent version everything here was compiled and tested against.
+>
+> **A note on paths:** some code and documentation reference a hard-coded path to the unpacked Jai distribution, `~/jai/jai` — but that's just where I unpacked mine. Please update this path in your clone/fork (in `build.sh` and throughout the docs) to point to your own distribution.
+
 ## Design
 
 This library takes the same approach as [zig-wayland](https://github.com/ifreund/zig-wayland) and [wayland-rs](https://github.com/Smithay/wayland-rs): bypass `libwayland-client.so` entirely and speak the Wayland wire protocol directly.
@@ -101,7 +105,7 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 
 ## Building
 
-Requires the Jai compiler (beta 0.2.028+) at `~/jai/jai/`. The Vulkan triangle
+Requires the Jai compiler (beta 0.2.029 — see the note at the top of this file) at `~/jai/jai/`. The Vulkan triangle
 example also expects `glslc` in `PATH`; `first.jai` invokes it to compile GLSL
 into SPIR-V under `build/shaders/`.
 
