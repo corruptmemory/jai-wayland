@@ -68,9 +68,12 @@ running_wayland :: () -> bool {
 
 // ───────────────────────── EGL / GL state ─────────────────────────────────
 
-// Double-buffered, matching hello_gl. The compositor scans out slot N while we
-// render slot N+1; wl_buffer.release marks a slot free again.
-SIMP_WL_SLOT_COUNT :: 2;
+// Triple-buffered for the asynchronous (non-blocking) present: the compositor
+// scans out one slot, one sits committed-waiting, and we render into the third,
+// so the app never has to block waiting for a free buffer. wl_buffer.release
+// marks a slot free again. (Was 2 under the old synchronous frame-callback
+// present; see docs/plans/2026-05-31-wayland-async-present.md.)
+SIMP_WL_SLOT_COUNT :: 3;
 
 // One slot holds a GL texture + FBO + EGLImage + (optional) GBM BO + the
 // exported DMA-BUF fd wrapped as a wl_buffer. (hello_gl.jai:31-51 Gl_Slot.)
@@ -525,9 +528,14 @@ Wayland_Window :: struct {
     // (and, once wired, by Input to emit .QUIT).
     wl_close_requested: bool;
 
-    // The frame-callback id the current blocking wl_pump is pacing on. The pump
-    // breaks its blocking wait when wl_callback.done for this id arrives.
+    // Vsync pacing for the asynchronous present. wl_pending_frame_callback is the
+    // id of the in-flight wl_surface.frame callback (the PREVIOUS frame's); the
+    // pump sets wl_frame_done when its wl_callback.done arrives. wl_present_and_pace
+    // throttles on the PREVIOUS callback (already fired for a CPU-bound app → no
+    // wait; not yet for a fast app → capped to vsync). See
+    // docs/plans/2026-05-31-wayland-async-present.md.
     wl_pending_frame_callback: u32;
+    wl_frame_done: bool;
 }
 
 // THE shared global window registry — one instance across Simp/Input/GetRect
@@ -567,11 +575,33 @@ register_wayland_window :: (surface_id: u32, xdg_surface_id: u32, toplevel_id: u
 // hello_gl.jai's steady-state present + the SWAP_BUFFERS path.
 wl_present_and_pace :: (ww: *Wayland_Window) {
     if ww.wl_current < 0  return;
-    slot := *ww.wl_slots[ww.wl_current];
 
+    // VSYNC PACING on the PREVIOUS frame's callback. The old path requested a
+    // frame callback, committed, then blocked on THIS frame's callback — waiting
+    // up to a full vsync for the compositor to present what we just sent (~3.3 ms
+    // even for a slow app: the entire perceptible Wayland-vs-X11 gap). Instead we
+    // block here on the PREVIOUS frame's callback, before committing the next:
+    //   * CPU-bound app (GetRect ~28.5 ms/frame > 13.3 ms vsync): the prior
+    //     callback already fired during this frame's render → no wait, no latency.
+    //   * Fast app (faster than vsync): blocks until the compositor consumed the
+    //     prior frame → capped to vsync, no uncapped GPU burn.
+    // This is exactly GLX's triple-buffered swap behaviour. See
+    // docs/plans/2026-05-31-wayland-async-present.md.
+    if ww.wl_pending_frame_callback != 0 {
+        while !ww.wl_frame_done {
+            sess := context.wayland_session;
+            if !sess || sess.connection_lost  break;
+            wl_pump(true);   // stops when the pending callback's wl_callback.done arrives
+        }
+        Wl.cache_free(*ww.wl_frame_cache, ww.wl_pending_frame_callback);
+        ww.wl_pending_frame_callback = 0;
+    }
+
+    slot := *ww.wl_slots[ww.wl_current];
     batch: Wl.MessageBuilder;
     frame_callback_id := Wl.cache_alloc(*ww.wl_frame_cache);
     ww.wl_pending_frame_callback = frame_callback_id;
+    ww.wl_frame_done = false;
     Wl.wl_surface_frame(*batch, *ww.surface, frame_callback_id);
     Wl.wl_surface_attach(*batch, *ww.surface, *slot.buffer, 0, 0);
     Wl.wl_surface_damage_buffer(*batch, *ww.surface, 0, 0, slot.width, slot.height);
@@ -579,16 +609,20 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
     Wl.wayland_send(*batch);
     slot.in_flight = true;
 
-    // Block until this frame callback fires (the only blocking point).
-    wl_pump(true);
-
-    // CALLER CONTRACT mirror: the pump does NOT recycle the frame-callback id.
-    Wl.cache_free(*ww.wl_frame_cache, frame_callback_id);
-    ww.wl_pending_frame_callback = 0;
-
-    // Rotate to a non-in-flight slot for the next frame's render. If both are in
-    // flight (no release arrived during the block), keep the current slot.
+    // Rotate to a free slot for the next render. With 3 slots + vsync pacing the
+    // N-2 slot is already released, so a free slot is normally available after a
+    // non-blocking drain. Block only as a safety fallback if every slot is somehow
+    // still in flight (buffer-release sets `done`). A slot is reused only after its
+    // release, so we never overwrite an in-flight buffer (tear-safe); Simp's swap
+    // glFinish already guaranteed the GPU finished before commit.
+    wl_pump(false);
     nxt := wl_find_free_slot(ww.wl_slots);
+    while nxt < 0 {
+        sess := context.wayland_session;
+        if !sess || sess.connection_lost  break;
+        wl_pump(true);
+        nxt = wl_find_free_slot(ww.wl_slots);
+    }
     if nxt >= 0  ww.wl_current = cast(s32) nxt;
 }
 
@@ -1441,8 +1475,10 @@ wl_pump :: (blocking: bool) {
             routed := false;
             for * ww: wayland_global_windows {
                 if ww.wl_pending_frame_callback != 0 && header.object_id == ww.wl_pending_frame_callback && header.opcode == Wl.WL_CALLBACK_DONE {
-                    // The frame we're pacing on — stop the blocking wait. (SWAP
-                    // owns the id recycle, see wl_present_and_pace's cache_free.)
+                    // The frame we're pacing on fired. Flag it (wl_present_and_pace's
+                    // vsync throttle loops on wl_frame_done) and stop the blocking
+                    // wait. SWAP owns the id recycle (cache_free).
+                    ww.wl_frame_done = true;
                     done = true;
                     routed = true;
                     break;
@@ -1485,6 +1521,10 @@ wl_pump :: (blocking: bool) {
                     for * ww.wl_slots {
                         if it.buffer.id == header.object_id {
                             it.in_flight = false;
+                            // Let wl_present_and_pace's throttle (a blocking wl_pump)
+                            // stop as soon as an active slot frees. (Async present
+                            // dropped the frame callback that used to set `done`.)
+                            done = true;
                             routed = true;
                             break;
                         }
