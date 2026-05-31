@@ -778,6 +778,19 @@ wl_mods_depressed: u32;
 wl_mods_latched:   u32;
 wl_mods_locked:    u32;
 
+// Key autorepeat. Wayland delivers NO repeat events — the client synthesizes
+// them from wl_keyboard.repeat_info (rate = keys/sec, delay = ms before repeat).
+// We remember the held repeatable key and the Input backend replays it each
+// frame (wl_repeats_due). Defaults cover pre-v4 keyboards that never send
+// repeat_info. rate == 0 means the user disabled repeat — honour it.
+WL_REPEAT_MAX_PER_FRAME :: 6;   // cap a post-stall burst (e.g. after a long frame)
+wl_repeat_rate:       s32 = 25;
+wl_repeat_delay:      s32 = 600;
+wl_repeat_key_valid:  bool;
+wl_repeat_key:        Wl_Key_Event;
+wl_repeat_press_time: float64;
+wl_repeat_count:      int;
+
 wl_pointers:         [] Wl.Pointer_Info;  // acquired pointers; the pump matches object ids against these
 wl_touches:          [] Wl.Touch_Info;    // acquired touch devices (machine-dependent; usually none on desktop)
 wl_mouse_x:          float;               // current surface-local pointer position (for get_mouse_pointer_position)
@@ -916,16 +929,15 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
                 // no level-1 keysym) -> 0 -> UNKNOWN instead of SHIFT.
                 if keysym == 0 && level != 0  keysym = Wl.keymap_get_keysym(*wl_keymap, kev.key.key, 0);
             }
-            array_add(*provisional_input_events, .{
-                kind = .KEY,
-                key  = .{
-                    keycode = kev.key.key,
-                    keysym  = keysym,
-                    pressed = kev.key.state == cast(u32) Wl.Wl_Keyboard_Key_State.PRESSED,
-                    serial  = kev.key.serial,
-                    time    = kev.key.time,
-                },
-            });
+            key_event := Wl_Key_Event.{
+                keycode = kev.key.key,
+                keysym  = keysym,
+                pressed = kev.key.state == cast(u32) Wl.Wl_Keyboard_Key_State.PRESSED,
+                serial  = kev.key.serial,
+                time    = kev.key.time,
+            };
+            array_add(*provisional_input_events, .{ kind = .KEY, key = key_event });
+            wl_update_repeat_state(key_event);
         case .MODIFIERS;
             // Track for shift-level keysym resolution (above) AND forward to consumers.
             wl_mods_depressed = kev.modifiers.mods_depressed;
@@ -946,10 +958,55 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
             if ok  { wl_keymap = keymap; wl_keymap_valid = true; }
             close(cast(s32) kev.keymap.fd);
         case .ENTER;  wl_keyboard_focused = true;   // keyboard focus -> input_application_has_focus
-        case .LEAVE;  wl_keyboard_focused = false;
+        case .LEAVE;
+            wl_keyboard_focused = false;
+            wl_repeat_key_valid = false;            // stop repeating a held key when focus leaves
+        case .REPEAT_INFO;
+            wl_repeat_rate  = kev.repeat_info.rate;   // keys/sec (0 disables repeat)
+            wl_repeat_delay = kev.repeat_info.delay;  // ms before repeat starts
         case;
-            // REPEAT_INFO etc. — ignored.
+            // (no other wl_keyboard events)
     }
+}
+
+// True for the standard modifier keysyms (Shift/Control/Caps/Meta/Alt/Super/Hyper,
+// left+right) — these must NOT autorepeat and must not disturb the held key.
+wl_keysym_is_modifier :: (keysym: u32) -> bool {
+    return keysym >= 0xffe1 && keysym <= 0xffee;
+}
+
+// Track the currently-held repeatable key for autorepeat. A press of a non-modifier
+// key becomes the repeat key (replacing any prior); releasing it stops repeat.
+wl_update_repeat_state :: (key_event: Wl_Key_Event) {
+    if key_event.pressed {
+        if wl_keysym_is_modifier(key_event.keysym)  return;  // modifiers don't repeat / don't take over
+        wl_repeat_key_valid  = true;
+        wl_repeat_key        = key_event;
+        wl_repeat_press_time = seconds_since_init();
+        wl_repeat_count      = 0;
+    } else if wl_repeat_key_valid && key_event.keycode == wl_repeat_key.keycode {
+        wl_repeat_key_valid = false;
+    }
+}
+
+// How many autorepeat events are due since the last frame (advancing the count),
+// plus the held key to replay. The Input backend calls this once per frame and
+// emits that many key events through its normal key path. Returns 0 before the
+// initial delay elapses, while no key is held, or when repeat is disabled.
+wl_repeats_due :: () -> count: int, key: Wl_Key_Event {
+    if !wl_repeat_key_valid || wl_repeat_rate <= 0  return 0, wl_repeat_key;
+    elapsed := seconds_since_init() - wl_repeat_press_time;
+    delay_s := wl_repeat_delay / 1000.0;
+    if elapsed < delay_s  return 0, wl_repeat_key;
+
+    interval := 1.0 / wl_repeat_rate;
+    target   := cast(int)((elapsed - delay_s) / interval) + 1;  // repeats that should have fired by now
+    due      := target - wl_repeat_count;
+    if due <= 0  return 0, wl_repeat_key;
+
+    wl_repeat_count = target;
+    if due > WL_REPEAT_MAX_PER_FRAME  due = WL_REPEAT_MAX_PER_FRAME;
+    return due, wl_repeat_key;
 }
 
 // Decode one wl_pointer event into stable Wl_Input_Events (and track the current

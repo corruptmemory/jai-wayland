@@ -5,6 +5,10 @@
 //   'c' -> os_clipboard_set_text("...")   (COPY: we take the selection)
 //   'p' -> print os_clipboard_get_text()  (PASTE: read the current selection)
 //   'q' -> quit
+// It also echoes every key press (with modifiers + the autorepeat flag) and every
+// TEXT_INPUT char, which doubles as a smoke test for the Wayland input path —
+// command chords (Ctrl/Alt/Meta + key) must NOT emit TEXT_INPUT, and a held key
+// must produce repeat=true events at the compositor's repeat rate.
 //
 // On Wayland these route to Wayland_Support's wl_clipboard_* over wl_data_device;
 // on X11 they'd hit the stock X11 selection path. A window is created + rendered
@@ -43,7 +47,24 @@ main :: () {
     while !quit {
         update_window_events();
         for events_this_frame {
+            // Echo text input (Ctrl/Alt/Meta chords must NOT produce these).
+            if it.type == .TEXT_INPUT {
+                cp := it.utf32;
+                if cp >= 32 && cp < 127 {
+                    ch := cast(u8) cp;
+                    chs: string = .{ count = 1, data = *ch };
+                    print("  text: \"%\" (U+%)\n", chs, formatInt(cp, base=16, minimum_digits=4));
+                } else {
+                    print("  text: U+%\n", formatInt(cp, base=16, minimum_digits=4));
+                }
+                continue;
+            }
             if it.type != .KEYBOARD || !it.key_pressed  continue;
+
+            // Echo each key press (repeat=true marks a synthesized autorepeat).
+            print("key: % repeat=% ctrl=% alt=% shift=%\n",
+                  it.key_code, it.repeat, it.ctrl_pressed, it.alt_pressed, it.shift_pressed);
+
             if it.key_code == {
                 case #char "Q";
                     quit = true;

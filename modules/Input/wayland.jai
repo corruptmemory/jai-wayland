@@ -87,42 +87,7 @@ update_wayland_window_events :: () {
                 wl_mod_meta  = (m & 0x40) != 0;  // Mod4    (index 6 == Mod4Mask / Super)
 
             case .KEY;
-                event: Event;
-                event.type        = .KEYBOARD;
-                event.key_pressed = cast(u32)(ifx ev.key.pressed then 1 else 0);
-                event.key_code    = get_key_code(xx ev.key.keysym);
-
-                event.shift_pressed    = wl_mod_shift;
-                event.ctrl_pressed     = wl_mod_ctrl;
-                event.alt_pressed      = wl_mod_alt;
-                event.cmd_meta_pressed = wl_mod_meta;
-                // Pressing a modifier key itself should report that modifier (its
-                // MODIFIERS event may not have arrived yet) — matches x11.jai.
-                if event.key_code == {
-                    case .SHIFT; event.shift_pressed    = true;
-                    case .CTRL;  event.ctrl_pressed     = true;
-                    case .ALT;   event.alt_pressed      = true;
-                    case .META;  event.cmd_meta_pressed = true;
-                }
-
-                // On press, a printable (modifier-resolved) keysym also yields a
-                // TEXT_INPUT event — mirrors x11.jai's XwcLookupString path. The
-                // KEYBOARD event's text_input_count tells consumers how many follow.
-                utf32 := ifx ev.key.pressed then keysym_to_utf32(ev.key.keysym) else 0;
-                if utf32 != 0  event.text_input_count = 1;
-
-                array_add(*events_this_frame, event);
-                if ev.key.pressed  input_button_states[event.key_code] = .START | .DOWN;
-                else               input_button_states[event.key_code] = .END;
-
-                if utf32 != 0 {
-                    tev: Event;
-                    tev.type        = .TEXT_INPUT;
-                    tev.key_pressed = 1;
-                    tev.key_code    = event.key_code;
-                    tev.utf32       = utf32;
-                    array_add(*events_this_frame, tev);
-                }
+                wl_emit_key(ev.key, is_repeat = false);
 
             case .POINTER_ENTER;
                 // (Re)baseline the pointer position so the first motion delta after
@@ -215,7 +180,61 @@ update_wayland_window_events :: () {
         }
     }
 
+    // Synthesize key autorepeat. Wayland sends NO repeat events — while a key is
+    // held the client replays it at the compositor's repeat_info rate after its
+    // delay (WS tracks the held key + timing). Reusing wl_emit_key gives repeats
+    // the same modifier handling, TEXT_INPUT, and input_button_states as a real
+    // press — so e.g. holding Backspace in a GetRect field deletes repeatedly.
+    repeat_count, repeat_key := WS.wl_repeats_due();
+    for 1..repeat_count  wl_emit_key(repeat_key, is_repeat = true);
+
     WS.wl_clear_input_events();
+}
+
+// Turn one decoded key event into Input events: a KEYBOARD event always, plus a
+// TEXT_INPUT event when the keysym is printable AND no command modifier is held.
+// Used for both real key events and synthesized autorepeats (is_repeat sets
+// Event.repeat). Suppressing TEXT_INPUT under Ctrl/Alt/Meta is what keeps Ctrl+C/
+// V/X from inserting a literal 'c'/'v'/'x' into a text field — those chords are
+// commands, not text. (Shift is NOT a command modifier: Shift+a is 'A'.) This
+// mirrors the X11 path, where XwcLookupString maps Ctrl+key to a control char
+// that its `< 32` filter drops.
+wl_emit_key :: (kev: WS.Wl_Key_Event, is_repeat: bool) {
+    event: Event;
+    event.type        = .KEYBOARD;
+    event.key_pressed = cast(u32)(ifx kev.pressed then 1 else 0);
+    event.key_code    = get_key_code(xx kev.keysym);
+    event.repeat      = is_repeat;
+
+    event.shift_pressed    = wl_mod_shift;
+    event.ctrl_pressed     = wl_mod_ctrl;
+    event.alt_pressed      = wl_mod_alt;
+    event.cmd_meta_pressed = wl_mod_meta;
+    // Pressing a modifier key itself should report that modifier (its MODIFIERS
+    // event may not have arrived yet) — matches x11.jai.
+    if event.key_code == {
+        case .SHIFT; event.shift_pressed    = true;
+        case .CTRL;  event.ctrl_pressed     = true;
+        case .ALT;   event.alt_pressed      = true;
+        case .META;  event.cmd_meta_pressed = true;
+    }
+
+    command_chord := wl_mod_ctrl || wl_mod_alt || wl_mod_meta;
+    utf32 := ifx (kev.pressed && !command_chord) then keysym_to_utf32(kev.keysym) else 0;
+    if utf32 != 0  event.text_input_count = 1;
+
+    array_add(*events_this_frame, event);
+    if kev.pressed  input_button_states[event.key_code] = .START | .DOWN;
+    else            input_button_states[event.key_code] = .END;
+
+    if utf32 != 0 {
+        tev: Event;
+        tev.type        = .TEXT_INPUT;
+        tev.key_pressed = 1;
+        tev.key_code    = event.key_code;
+        tev.utf32       = utf32;
+        array_add(*events_this_frame, tev);
+    }
 }
 
 // Parse a text/uri-list (RFC 2483) into heap-allocated file paths — matching the
