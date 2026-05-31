@@ -223,6 +223,22 @@ wl_emit_key :: (kev: WS.Wl_Key_Event, is_repeat: bool) {
     utf32 := ifx (kev.pressed && !command_chord) then keysym_to_utf32(kev.keysym) else 0;
     if utf32 != 0  event.text_input_count = 1;
 
+    if WS.wl_should_log_keys() {
+        log("INPUT_KEY evdev=% keysym=0x% -> key=% pressed=% repeat=% shift=% ctrl=% alt=% meta=% command_chord=% utf32=0x% text_count=%",
+            kev.keycode,
+            formatInt(kev.keysym, base=16),
+            event.key_code,
+            event.key_pressed,
+            event.repeat,
+            event.shift_pressed,
+            event.ctrl_pressed,
+            event.alt_pressed,
+            event.cmd_meta_pressed,
+            command_chord,
+            formatInt(utf32, base=16),
+            event.text_input_count);
+    }
+
     array_add(*events_this_frame, event);
     if kev.pressed  input_button_states[event.key_code] = .START | .DOWN;
     else            input_button_states[event.key_code] = .END;

@@ -31,6 +31,11 @@ main :: () {
         .{ 34, "G" }, .{ 38, "L" }, .{ 48, "B" },
         .{ 1, "ESC" }, .{ 28, "ENTER" }, .{ 57, "SPACE" },
         .{ 2, "1" }, .{ 3, "2" }, .{ 4, "3" },
+        .{ 59, "F1" }, .{ 60, "F2" }, .{ 61, "F3" }, .{ 62, "F4" },
+        .{ 63, "F5" }, .{ 64, "F6" }, .{ 65, "F7" }, .{ 66, "F8" },
+        .{ 67, "F9" }, .{ 68, "F10" }, .{ 87, "F11" }, .{ 88, "F12" },
+        .{ 42, "LSHIFT" }, .{ 29, "LCTRL" }, .{ 56, "LALT" },
+        .{ 125, "LSUPER" }, .{ 100, "RALT" },
     ];
 
     print("Evdev → Keysym mappings:\n");
@@ -44,7 +49,9 @@ main :: () {
                 ks := entry.keysyms[i];
                 if i > 0  print(", ");
                 if Wayland.keysym_is_ascii(ks) {
-                    print("'%' (0x%)", cast(u8) ks, formatInt(ks, base=16));
+                    print("'");
+                    print_character(cast(u8) ks);
+                    print("' (0x%)", formatInt(ks, base=16));
                 } else {
                     print("0x%", formatInt(ks, base=16));
                 }

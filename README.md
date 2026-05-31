@@ -50,7 +50,7 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 - Global discovery: `discover_globals()` performs `wl_display.get_registry` + sync roundtrip and returns all compositor globals. Type registry for automatic version negotiation in `wl_registry_bind`.
 - Screen discovery: `get_screens_info()` — binds every `wl_output`, returns `[] Screen_Info` with modes, scale, geometry.
 - Seat-based input: `get_seats_info()` → `get_keyboards_info(seats)` + `get_pointers_info(seats)`. `get_keyboard_event` / `get_pointer_event` route incoming messages by object ID into tagged-union events. Works for multi-seat setups.
-- XKB keymap parsing (`xkb.jai`): mmap's the keymap fd from `wl_keyboard.keymap`, parses the xkb text format into a 768-entry evdev→keysym lookup table. Layout-independent keysyms replace raw scancodes.
+- XKB keymap parsing (`xkb.jai`): mmap's the keymap fd from `wl_keyboard.keymap`, parses the xkb text format into a 768-entry evdev→keysym lookup table, including named keysyms and xkbcommon-style `symbols[N]` group entries. Layout-independent keysyms replace raw scancodes; physical Alt+F4 has been verified under Hyprland.
 - `wl_shm` path with pooled buffers sized to the native screen resolution, so resize is a cheap `wl_buffer` re-describe (no remap, no syscalls).
 - Double-buffered painting: two `Buffer_Slot` records carve the pool at offsets `0` and `frame_max_bytes`. Paint picks a non-in-flight slot; `wl_buffer.release` events free slots. Persistent `dirty` flag queues paints when both slots are in flight.
 - Examples:
@@ -58,7 +58,7 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
   - `hello_screens.jai` — prints each output's modes, scale, geometry (~30 lines)
   - `hello_window.jai` — double-buffered resizable window, keyboard (r/g/b/q keysyms) + pointer (click cycles color), dynamic resize (~220 lines)
   - `dump_keymap.jai` — diagnostic: prints evdev→keysym mappings from the live compositor's keymap
-- 111 tests across 6 test suites (xml, generator, wire, marshal, unmarshal, compile)
+- 114 tests across 7 test suites (xml, generator, wire, xkb, marshal, unmarshal, compile)
 - Tested live against Hyprland compositor on Artix Linux
 
 **Phase 5 (complete, Mesa + NVIDIA/hybrid):** GPU rendering via OpenGL 3.3 core, end-to-end GL → DMA-BUF → Wayland without any libwayland or libGL linkage.
@@ -76,7 +76,7 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 - **Vulkan binding baseline** — `modules/Vulkan/` vendors Jai's stock Vulkan module, with generated commands converted from `#foreign libvulkan` declarations into runtime-loaded `PFN_vk*` function-pointer variables. `init_vulkan()` loads the platform loader with `dlopen` / `LoadLibrary`, then populates global, instance, and device commands through `vkGetInstanceProcAddr` / `vkGetDeviceProcAddr`. Convenience enumeration wrappers are retained with `_Array` suffixes to avoid colliding with raw command pointers.
 - **Vulkan DMA-BUF baseline** — `headless_vulkan_dmabuf.jai` creates a Vulkan image using `VK_EXT_image_drm_format_modifier`, allocates exportable external memory, binds it, and exports the image memory as a DMA-BUF fd via `vkGetMemoryFdKHR`. This is the project-compatible Vulkan presentation direction. `VK_KHR_wayland_surface` expects `libwayland-client` `wl_display*` / `wl_surface*` proxy objects, not jai-wayland wire IDs, so direct WSI swapchains are intentionally not the first path.
 - **Vulkan presentation smoke** — `hello_vulkan_dmabuf.jai` creates a real Wayland window, selects a compositor-compatible DRM modifier from dmabuf surface feedback, renders a rotating RGB triangle through a Vulkan graphics pipeline, releases images to `VK_QUEUE_FAMILY_EXTERNAL`, exports their fds, creates `wl_buffer` objects, and presents them through double-buffered, frame-paced, resize-safe slots. `first.jai` compiles its GLSL shaders with `glslc`. Set `JAI_WAYLAND_VULKAN_FRAMES=N` for bounded live smoke runs.
-- **X11 compatibility binding baseline** — `modules/X11/` vendors Jai's stock `X11/module.jai` without `X11/sofd`, converts Xlib/GLX `#foreign` calls into runtime-loaded function pointers, and exposes `init_x11()` / `init_glx()` loaders. This is separate from the Wayland implementation and is intended for future vendored `Window_Creation` / `Simp` / `GetRect` Linux backend selection. `x11_smoke.jai` and `hello_x11_gl.jai` verify Xlib/GLX loading and GL rendering without `libX11`, `libGLX`, `libGL`, or `libxcb` under `ldd`. Set `JAI_WAYLAND_X11_GL_FRAMES=N` for bounded `hello_x11_gl` smoke runs.
+- **X11 compatibility binding baseline** — `modules/X11/` vendors Jai's stock `X11/module.jai` without `X11/sofd`, converts Xlib/GLX `#foreign` calls into runtime-loaded function pointers, and exposes `init_x11()` / `init_glx()` loaders. This is separate from the Wayland implementation and backs the vendored `Window_Creation` / `Simp` / `GetRect` X11 path; `Input/x11.jai` maps `MotionNotify` into `mouse_delta_x/y` so XWayland camera controls work. `x11_smoke.jai` and `hello_x11_gl.jai` verify Xlib/GLX loading and GL rendering without `libX11`, `libGLX`, `libGL`, or `libxcb` under `ldd`. Set `JAI_WAYLAND_X11_GL_FRAMES=N` for bounded `hello_x11_gl` smoke runs.
 - **Examples added:**
   - `headless_gl.jai` — EGL/GL/gbm smoke test (BO-backed FBO readback + DMA-BUF export, no Wayland)
   - `headless_vulkan.jai` — Vulkan loader smoke test (no Wayland, no link-time libvulkan)
@@ -116,6 +116,7 @@ into SPIR-V under `build/shaders/`.
 ./build.sh - test              # 22 XML/protocol tests
 ./build.sh - gen_test          # 35 generator tests
 ./build.sh - wire_test         # 22 wire protocol tests
+./build.sh - xkb_test          # 3 XKB keymap parser tests
 ./build.sh - marshal_test      # 9 marshal macro tests
 ./build.sh - unmarshal_test    # 12 unmarshal macro tests
 ./build.sh - compile_test      # 11 compilation smoke tests
@@ -160,6 +161,7 @@ tests/
   xml_test.jai       — 22 tests (parser, entities, protocol)
   generator_test.jai — 35 tests (naming, enums, events, requests, assembly)
   wire_test.jai      — 22 tests (primitive read/write, header, string/array, buffers)
+  xkb_test.jai       — 3 tests (compact hex/named keysyms, symbols[N] group form)
   marshal_test.jai   — 9 tests (fixed args, fd, string, array, constructors)
   unmarshal_test.jai — 12 tests (round-trip, tagged union dispatch)
   compile_test.jai   — 11 tests (imports generated module, verifies types)
@@ -167,7 +169,7 @@ examples/
   hello_globals.jai  — ~20 lines: connect, discover globals, print them
   hello_screens.jai  — ~30 lines: output discovery (modes, scale, geometry)
   hello_window.jai   — ~270 lines: double-buffered resizable shm window, keyboard + pointer input, XKB keysym translation
-  dump_keymap.jai    — ~55 lines: mmap keymap fd, print evdev→keysym mappings
+  dump_keymap.jai    — mmap keymap fd, print evdev→keysym mappings for letters, digits, F-keys, and modifiers
   headless_gl.jai    — EGL/GL/gbm smoke test + BO-backed DMA-BUF export (no Wayland)
   headless_vulkan.jai — Vulkan loader smoke test (no Wayland, no libvulkan link)
   headless_vulkan_dmabuf.jai — Vulkan image + external memory + DMA-BUF fd export smoke test

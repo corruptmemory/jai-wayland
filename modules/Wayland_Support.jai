@@ -936,6 +936,21 @@ wl_clear_input_events :: () {
     provisional_input_events.count = 0;
 }
 
+wl_key_trace_checked: bool;
+wl_key_trace_enabled: bool;
+
+wl_should_log_keys :: () -> bool {
+    if !wl_key_trace_checked {
+        p := getenv("JAI_WAYLAND_LOG_KEYS");
+        if p {
+            v := to_string(p);
+            wl_key_trace_enabled = v.count > 0 && v[0] != #char "0";
+        }
+        wl_key_trace_checked = true;
+    }
+    return wl_key_trace_enabled;
+}
+
 // Decode one wl_keyboard event into a stable Wl_Input_Event (or update keymap
 // state). Called by the pump for messages matching an acquired keyboard.
 wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
@@ -947,13 +962,17 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
             // Covers the common xkb ALPHABETIC / TWO_LEVEL / ONE_LEVEL key types;
             // AltGr / level-3 layouts are a future refinement.
             keysym: u32 = 0;
+            base:   u32 = 0;
+            level:  u32 = 0;
+            shift := false;
+            caps  := false;
             if wl_keymap_valid {
-                shift     := ((wl_mods_depressed | wl_mods_latched) & 0x01) != 0;  // ShiftMask
-                caps      := (wl_mods_locked & 0x02) != 0;                         // LockMask (Caps)
-                base      := Wl.keymap_get_keysym(*wl_keymap, kev.key.key, 0);
+                shift      = ((wl_mods_depressed | wl_mods_latched) & 0x01) != 0;  // ShiftMask
+                caps       = (wl_mods_locked & 0x02) != 0;                         // LockMask (Caps)
+                base       = Wl.keymap_get_keysym(*wl_keymap, kev.key.key, 0);
                 is_letter := base >= #char "a" && base <= #char "z";
                 use_shift := shift != (caps && is_letter);                         // XOR: caps flips shift for letters
-                level: u32 = cast(u32)(ifx use_shift then 1 else 0);
+                level = cast(u32)(ifx use_shift then 1 else 0);
                 keysym = Wl.keymap_get_keysym(*wl_keymap, kev.key.key, level);
                 // Keys with only one level (modifiers, F-keys, …) have no level-1
                 // keysym; if the shifted level is empty, fall back to level 0 so the
@@ -970,6 +989,21 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
                 serial  = kev.key.serial,
                 time    = kev.key.time,
             };
+            if wl_should_log_keys() {
+                log("WL_KEY raw key=% state=% keysym=0x% base=0x% level=% shift=% caps=% mods depressed=0x% latched=0x% locked=0x% serial=% time=%",
+                    key_event.keycode,
+                    ifx key_event.pressed then "pressed" else "released",
+                    formatInt(key_event.keysym, base=16),
+                    formatInt(base, base=16),
+                    level,
+                    shift,
+                    caps,
+                    formatInt(wl_mods_depressed, base=16),
+                    formatInt(wl_mods_latched, base=16),
+                    formatInt(wl_mods_locked, base=16),
+                    key_event.serial,
+                    key_event.time);
+            }
             array_add(*provisional_input_events, .{ kind = .KEY, key = key_event });
             wl_update_repeat_state(key_event);
         case .MODIFIERS;
@@ -977,6 +1011,13 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
             wl_mods_depressed = kev.modifiers.mods_depressed;
             wl_mods_latched   = kev.modifiers.mods_latched;
             wl_mods_locked    = kev.modifiers.mods_locked;
+            if wl_should_log_keys() {
+                log("WL_MODIFIERS depressed=0x% latched=0x% locked=0x% group=%",
+                    formatInt(wl_mods_depressed, base=16),
+                    formatInt(wl_mods_latched, base=16),
+                    formatInt(wl_mods_locked, base=16),
+                    kev.modifiers.group);
+            }
             array_add(*provisional_input_events, .{
                 kind = .MODIFIERS,
                 modifiers = .{
@@ -990,6 +1031,7 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
             // Layout change mid-session: re-parse, then release the fresh fd.
             keymap, ok := Wl.parse_keymap_fd(kev.keymap.fd, kev.keymap.size);
             if ok  { wl_keymap = keymap; wl_keymap_valid = true; }
+            if wl_should_log_keys()  log("WL_KEYMAP fd=% size=% ok=%", kev.keymap.fd, kev.keymap.size, ok);
             close(cast(s32) kev.keymap.fd);
         case .ENTER;  wl_keyboard_focused = true;   // keyboard focus -> input_application_has_focus
         case .LEAVE;

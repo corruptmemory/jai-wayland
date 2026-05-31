@@ -157,7 +157,10 @@ find_xkb_code :: (names: [] Keycode_Name, name: string) -> s32, bool {
     return 0, false;
 }
 
-// Parse the symbols section: entries like "key <AD01> { [ 0x71, 0x51 ] };"
+// Parse the symbols section. Handles both compact entries:
+//   key <AD01> { [ 0x71, 0x51 ] };
+// and xkbcommon-style entries:
+//   key <FK04> { type=..., symbols[1]= [ F4, F4, ... ] };
 parse_symbols_section :: (text: string, start: s64, end: s64,
                           names: [] Keycode_Name, keymap: *Keymap) {
     i := start;
@@ -191,43 +194,42 @@ parse_symbols_section :: (text: string, start: s64, end: s64,
         evdev := xkb_code - 8;
         if evdev < 0 || evdev >= MAX_EVDEV_KEYCODE { i += 1; continue; }
 
-        // Find the first '[' (keysym list)
-        while i < end && text.data[i] != #char "["  i += 1;
+        // Limit parsing to this key's block. This matters for forms such as
+        // `symbols[1] = [ ... ]`, where the first '[' belongs to the group index,
+        // not to the keysym list.
+        while i < end && text.data[i] != #char "{"  i += 1;
         if i >= end  break;
-        i += 1;  // skip '['
+        block_start := i + 1;
+        block_end   := find_section_end(text, block_start);
+        if block_end > end  block_end = end;
+        i = block_end + 1;
 
-        // Parse hex keysyms until ']'
+        list_start := find_keysym_list_start(text, block_start, block_end);
+        if list_start < 0  continue;
+
+        // Parse keysyms until ']'.
         entry := *keymap.entries[evdev];
         entry.count = 0;
-        while i < end && text.data[i] != #char "]" {
+        j := list_start;
+        while j < block_end && text.data[j] != #char "]" {
             // Skip whitespace and commas
-            while i < end && (text.data[i] == #char " " || text.data[i] == #char "\t" ||
-                              text.data[i] == #char "," || text.data[i] == #char "\n")
-                i += 1;
+            while j < block_end && (text.data[j] == #char " " || text.data[j] == #char "\t" ||
+                                    text.data[j] == #char "," || text.data[j] == #char "\n")
+                j += 1;
 
-            if i >= end || text.data[i] == #char "]"  break;
+            if j >= block_end || text.data[j] == #char "]"  break;
 
-            // Parse hex value (0x...)
-            val: u32 = 0;
-            if i + 1 < end && text.data[i] == #char "0" && text.data[i+1] == #char "x" {
-                i += 2;
-                while i < end {
-                    c := text.data[i];
-                    if c >= #char "0" && c <= #char "9" {
-                        val = (val << 4) | cast(u32)(c - #char "0");
-                    } else if c >= #char "a" && c <= #char "f" {
-                        val = (val << 4) | cast(u32)(c - #char "a" + 10);
-                    } else if c >= #char "A" && c <= #char "F" {
-                        val = (val << 4) | cast(u32)(c - #char "A" + 10);
-                    } else break;
-                    i += 1;
-                }
-            } else {
-                // Skip non-hex token (shouldn't happen in well-formed keymap)
-                while i < end && text.data[i] != #char "," && text.data[i] != #char "]"
-                    i += 1;
-                continue;
-            }
+            token_start := j;
+            while j < block_end && text.data[j] != #char "," && text.data[j] != #char "]" &&
+                  text.data[j] != #char " " && text.data[j] != #char "\t" && text.data[j] != #char "\n"
+                j += 1;
+
+            token: string;
+            token.data = text.data + token_start;
+            token.count = j - token_start;
+
+            val, parsed := parse_keysym_token(token);
+            if !parsed  val = 0;  // Preserve level positions for unknown names.
 
             if entry.count < MAX_KEYSYMS_PER_KEY {
                 entry.keysyms[entry.count] = val;
@@ -235,6 +237,171 @@ parse_symbols_section :: (text: string, start: s64, end: s64,
             }
         }
     }
+}
+
+find_keysym_list_start :: (text: string, start: s64, end: s64) -> s64 {
+    p := start;
+    while p < end {
+        if match_keyword(text, p, end, "symbols") {
+            q := p + 7;
+            while q < end && text.data[q] != #char "="  q += 1;
+            if q < end {
+                while q < end && text.data[q] != #char "["  q += 1;
+                if q < end  return q + 1;
+            }
+        }
+        p += 1;
+    }
+
+    p = start;
+    while p < end && text.data[p] != #char "["  p += 1;
+    if p < end  return p + 1;
+    return -1;
+}
+
+parse_keysym_token :: (token: string) -> u32, bool {
+    if token.count == 0  return 0, false;
+
+    if token.count == 1 {
+        c := token.data[0];
+        if (c >= #char "a" && c <= #char "z") ||
+           (c >= #char "A" && c <= #char "Z") ||
+           (c >= #char "0" && c <= #char "9")
+            return cast(u32) c, true;
+    }
+
+    if token.count >= 2 && token.data[0] == #char "0" && token.data[1] == #char "x" {
+        val: u32 = 0;
+        i: s64 = 2;
+        while i < token.count {
+            c := token.data[i];
+            if c >= #char "0" && c <= #char "9" {
+                val = (val << 4) | cast(u32)(c - #char "0");
+            } else if c >= #char "a" && c <= #char "f" {
+                val = (val << 4) | cast(u32)(c - #char "a" + 10);
+            } else if c >= #char "A" && c <= #char "F" {
+                val = (val << 4) | cast(u32)(c - #char "A" + 10);
+            } else {
+                return 0, false;
+            }
+            i += 1;
+        }
+        return val, true;
+    }
+
+    if token.data[0] == #char "F" && token.count >= 2 {
+        n, ok := parse_decimal_suffix(token, 1);
+        if ok && n >= 1 && n <= 35  return 0xffbe + cast(u32)(n - 1), true;
+    }
+
+    if match_token(token, "NoSymbol") return 0, true;
+
+    if match_token(token, "space")      return 0x0020, true;
+    if match_token(token, "exclam")     return 0x0021, true;
+    if match_token(token, "quotedbl")   return 0x0022, true;
+    if match_token(token, "numbersign") return 0x0023, true;
+    if match_token(token, "dollar")     return 0x0024, true;
+    if match_token(token, "percent")    return 0x0025, true;
+    if match_token(token, "ampersand")  return 0x0026, true;
+    if match_token(token, "apostrophe") || match_token(token, "quoteright") return 0x0027, true;
+    if match_token(token, "parenleft")  return 0x0028, true;
+    if match_token(token, "parenright") return 0x0029, true;
+    if match_token(token, "asterisk")   return 0x002a, true;
+    if match_token(token, "plus")       return 0x002b, true;
+    if match_token(token, "comma")      return 0x002c, true;
+    if match_token(token, "minus")      return 0x002d, true;
+    if match_token(token, "period")     return 0x002e, true;
+    if match_token(token, "slash")      return 0x002f, true;
+    if match_token(token, "colon")      return 0x003a, true;
+    if match_token(token, "semicolon")  return 0x003b, true;
+    if match_token(token, "less")       return 0x003c, true;
+    if match_token(token, "equal")      return 0x003d, true;
+    if match_token(token, "greater")    return 0x003e, true;
+    if match_token(token, "question")   return 0x003f, true;
+    if match_token(token, "at")         return 0x0040, true;
+    if match_token(token, "bracketleft")  return 0x005b, true;
+    if match_token(token, "backslash")    return 0x005c, true;
+    if match_token(token, "bracketright") return 0x005d, true;
+    if match_token(token, "asciicircum")  return 0x005e, true;
+    if match_token(token, "underscore")   return 0x005f, true;
+    if match_token(token, "grave") || match_token(token, "quoteleft") return 0x0060, true;
+    if match_token(token, "braceleft")  return 0x007b, true;
+    if match_token(token, "bar")        return 0x007c, true;
+    if match_token(token, "braceright") return 0x007d, true;
+    if match_token(token, "asciitilde") return 0x007e, true;
+
+    if match_token(token, "ISO_Left_Tab") return 0xfe20, true;
+    if match_token(token, "BackSpace")    return 0xff08, true;
+    if match_token(token, "Tab")          return 0xff09, true;
+    if match_token(token, "Linefeed")     return 0xff0a, true;
+    if match_token(token, "Return")       return 0xff0d, true;
+    if match_token(token, "Pause")        return 0xff13, true;
+    if match_token(token, "Scroll_Lock")  return 0xff14, true;
+    if match_token(token, "Escape")       return 0xff1b, true;
+    if match_token(token, "Delete")       return 0xffff, true;
+
+    if match_token(token, "Home")      return 0xff50, true;
+    if match_token(token, "Left")      return 0xff51, true;
+    if match_token(token, "Up")        return 0xff52, true;
+    if match_token(token, "Right")     return 0xff53, true;
+    if match_token(token, "Down")      return 0xff54, true;
+    if match_token(token, "Prior") || match_token(token, "Page_Up")     return 0xff55, true;
+    if match_token(token, "Next")  || match_token(token, "Page_Down")   return 0xff56, true;
+    if match_token(token, "End")       return 0xff57, true;
+    if match_token(token, "Print")     return 0xff61, true;
+    if match_token(token, "Insert")    return 0xff63, true;
+    if match_token(token, "Menu")      return 0xff67, true;
+
+    if match_token(token, "ISO_Level3_Shift") return 0xfe03, true;
+    if match_token(token, "Shift_L")   return 0xffe1, true;
+    if match_token(token, "Shift_R")   return 0xffe2, true;
+    if match_token(token, "Control_L") return 0xffe3, true;
+    if match_token(token, "Control_R") return 0xffe4, true;
+    if match_token(token, "Meta_L")    return 0xffe7, true;
+    if match_token(token, "Meta_R")    return 0xffe8, true;
+    if match_token(token, "Alt_L")     return 0xffe9, true;
+    if match_token(token, "Alt_R")     return 0xffea, true;
+    if match_token(token, "Super_L")   return 0xffeb, true;
+    if match_token(token, "Super_R")   return 0xffec, true;
+    if match_token(token, "Hyper_L")   return 0xffed, true;
+    if match_token(token, "Hyper_R")   return 0xffee, true;
+
+    if match_token(token, "KP_Space")     return 0xff80, true;
+    if match_token(token, "KP_Tab")       return 0xff89, true;
+    if match_token(token, "KP_Enter")     return 0xff8d, true;
+    if match_token(token, "KP_Delete")    return 0xff9f, true;
+    if match_token(token, "KP_Up")        return 0xff97, true;
+    if match_token(token, "KP_Down")      return 0xff99, true;
+    if match_token(token, "KP_Left")      return 0xff96, true;
+    if match_token(token, "KP_Right")     return 0xff98, true;
+    if match_token(token, "KP_Page_Up")   return 0xff9a, true;
+    if match_token(token, "KP_Page_Down") return 0xff9b, true;
+    if match_token(token, "KP_Home")      return 0xff95, true;
+    if match_token(token, "KP_End")       return 0xff9c, true;
+    if match_token(token, "KP_Insert")    return 0xff9e, true;
+
+    return 0, false;
+}
+
+parse_decimal_suffix :: (token: string, start: s64) -> s32, bool {
+    if start >= token.count  return 0, false;
+    n: s32 = 0;
+    i := start;
+    while i < token.count {
+        c := token.data[i];
+        if c < #char "0" || c > #char "9"  return 0, false;
+        n = n * 10 + cast(s32)(c - #char "0");
+        i += 1;
+    }
+    return n, true;
+}
+
+match_token :: (token: string, literal: string) -> bool {
+    if token.count != literal.count  return false;
+    for i: 0..token.count-1 {
+        if token.data[i] != literal.data[i]  return false;
+    }
+    return true;
 }
 
 match_keyword :: (text: string, pos: s64, end: s64, keyword: string) -> bool {
