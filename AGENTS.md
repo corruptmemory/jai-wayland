@@ -8,18 +8,26 @@
 
 `jai-wayland` is a Wayland client library for Jai. It bypasses
 `libwayland-client` and speaks the Wayland wire protocol directly over a Unix
-socket. Shared libraries for GPU work are loaded at runtime with `dlopen` and
-function pointers; do not introduce hard link-time dependencies on Wayland, EGL,
-gbm, GL, Vulkan, X11, or xcb.
+socket. Display-server and GPU libraries are loaded at runtime with `dlopen` and
+function pointers; do not introduce hard link-time dependencies on Wayland, X11,
+xcb, EGL, gbm, GL/GLX, or Vulkan.
 
-Current status: phases 1-5 are complete, including NVIDIA/hybrid GPU support.
-The primary GL path is GBM BO-backed: select a DRM render node, allocate a
-`gbm_bo`, import it as an `EGLImage`, bind it to a GL texture/FBO, export the BO
-fd/stride/offset/modifier, and present it through `zwp_linux_dmabuf_v1`. The
-older Mesa `EGL_MESA_image_dma_buf_export` texture-export path remains as a
-fallback. Current examples include double-buffered slots, frame callbacks,
-keyboard/pointer input, XKB keysym translation, dmabuf feedback, and resizable
-BO-backed GL windows.
+Current status: phases 1-5 are complete, including NVIDIA/hybrid GPU support,
+plus Vulkan DMA-BUF presentation and Phase 6's vendored upstream window/graphics
+stack on Wayland. The primary GL path is GBM BO-backed: select a DRM render
+node, allocate a `gbm_bo`, import it as an `EGLImage`, bind it to a GL
+texture/FBO, export the BO fd/stride/offset/modifier, and present it through
+`zwp_linux_dmabuf_v1`. The older Mesa `EGL_MESA_image_dma_buf_export`
+texture-export path remains as a fallback.
+
+The vendored `Window_Creation` / `Simp` / `Input` / `Clipboard` / `GetRect`
+stack now runs on Wayland through `modules/Wayland_Support.jai`, with runtime
+selection between Wayland and X11 by value (`Display_Manager` /
+`running_wayland()`), not compile-time Linux branches or the old
+`context.simp_dispatch` plan. Current examples cover SHM windows, GL and Vulkan
+DMA-BUF presentation, runtime-loaded X11/GLX, async triple-buffered Simp present,
+keyboard/pointer/touch-structural input, XKB keysyms, text clipboard,
+drag-and-drop, compositor resize, and upstream-unmodified graphical examples.
 
 ## Required Skill
 
@@ -37,7 +45,9 @@ Use the project wrapper:
 ./build.sh
 ./build.sh - test
 ./build.sh - gen_test
+./build.sh - generate
 ./build.sh - wire_test
+./build.sh - xkb_test
 ./build.sh - marshal_test
 ./build.sh - unmarshal_test
 ./build.sh - compile_test
@@ -46,7 +56,7 @@ Use the project wrapper:
 To run all non-live tests in one invocation:
 
 ```bash
-./build.sh - test gen_test wire_test marshal_test unmarshal_test compile_test
+./build.sh - test gen_test wire_test xkb_test marshal_test unmarshal_test compile_test
 ```
 
 Live compositor / GPU examples:
@@ -64,11 +74,19 @@ Live compositor / GPU examples:
 ./build.sh - hello_dmabuf
 ./build.sh - hello_gl
 ./build.sh - hello_vulkan_dmabuf
+./build.sh - hello_simp
+./build.sh - hello_clipboard
 ./build.sh - invaders
+./build.sh - skeletal_animation
+./build.sh - getrect_example
+./build.sh - getrect_lh_example
+./build.sh - compile_only <target>
 ```
 
 The lone `-` separates Jai compiler arguments from metaprogram arguments. Do not
 repeat it before each target.
+`compile_only` must appear before the target; use it as the headless compile
+gate for GUI examples that would otherwise open a live window.
 
 ## Architecture
 
@@ -95,55 +113,37 @@ repeat it before each target.
   Vulkan headers for Linux DMA-BUF export.
 - `modules/X11` vendors Jai's stock `X11/module.jai` without `X11/sofd`.
   Xlib and GLX entry points are function-pointer variables loaded by
-  `init_x11()` / `init_glx()`. This module is a compatibility backend for
-  future vendored `Window_Creation` / `Simp` / `GetRect`, not part of the
+  `init_x11()` / `init_glx()`. This module is the X11 compatibility backend for
+  the vendored `Window_Creation` / `Simp` / `GetRect` stack, not part of the
   Wayland wire-protocol implementation. Also exports
   `glx_create_context(window, major, minor)` ported from upstream
   `~/jai/jai/modules/GL/GL.jai` so vendored Simp's GLX context creation
   works without vendoring stock GL (which would introduce `#foreign`
   linkage).
-- `modules/Window_Creation`, `modules/Simp`, `modules/GetRect`, and
-  `modules/GetRect_LeftHanded` are upstream Jai distribution modules
-  vendored verbatim from `~/jai/jai/modules/` for compatibility with
-  upstream graphical examples. Three minimal patch sites:
-  `modules/X11/module.jai` self-initializes in `init_global_display`;
-  `modules/Simp/backend/gl.jai` uses our `gl_load(glXGetProcAddress)`
-  signature; `modules/Simp/bitmap.jai` and
-  `modules/Sound_Player/cached_decoder.jai` get `init_stb_*()` lazy-init
-  calls at the entry points that consume the runtime-loaded stb_image /
-  stb_image_write / stb_image_resize / stb_vorbis function pointers.
-  `./build.sh - invaders` compiles upstream's
-  `~/jai/jai/examples/invaders/source/invaders.jai` against these.
-- `modules/stb_image`, `modules/stb_image_write`, `modules/stb_image_resize`,
-  `modules/stb_vorbis`, and `modules/Sound_Player` are runtime-loaded
-  image/audio modules needed by Simp + invaders. They replace upstream's
-  `#library` / `#foreign` declarations with `dlopen` + `dlsym`. The three
-  `stb_*` modules that call libm symbols (stb_image, stb_image_resize,
-  stb_vorbis) also dlopen `libm.so.6` with `RTLD_GLOBAL` so their bundled
-  `.so` files (which call `pow` / `cos` / `floor` without a `DT_NEEDED
-  libm`) can resolve math symbols at runtime, preserving the ldd-clean
-  invariant. (stb_image_write has no libm symbols and skips that step.)
-- **Backend dispatch infrastructure** (Stage 1 of Phase 6):
-  - `modules/Window_Type.jai` — vendored with Linux branch rewritten as a
-    tagged union (`union wtype: Window_Tag { .X11 ,, x11: X11.Window;
-    .Wayland ,, wayland: Wayland_Window_State }`). Defines `operator ==`
-    overloads (Window_Type ↔ Window_Type and Window_Type ↔ X11.Window).
-    `Window_Creation/module.jai` re-exports them via
-    `operator == :: WT.operator==;` so importers of Window_Creation can
-    compare values without explicitly importing Window_Type.
-  - `modules/Simp/backend/dispatch.jai` — `Simp_Op_Args` tagged union,
-    `Simp_Backend_Dispatch` function-pointer type, `#add_context
-    simp_dispatch`.
-  - `modules/Simp/backend/x11_dispatch.jai` — `simp_x11_dispatch`; X11/GLX
-    paths relocated out of `backend/gl.jai`'s inline `#if OS == .LINUX`
-    branches.
-  - `modules/Simp/backend/wayland_dispatch.jai` — Stage 2 stub.
-  - `modules/Window_Creation/linux_init.jai` — new file (not vendored).
-    `init_linux_window()` pushes the backend dispatch into context. Called
-    lazily on first `create_window` invocation.
-  - `modules/Input/` — vendored upstream Input module; `x11.jai` patched
-    to construct `Window_Type` values explicitly (required for tagged-union
-    shape).
+- `modules/Wayland_Support.jai` is the Phase 6 support layer above the pure
+  `wayland` wire module. It is the Wayland analogue of `modules/X11`: shared
+  module-scope globals plus the single `wl_pump` that drains the compositor
+  connection and routes render, resize, input, data-device, clipboard, and
+  drag-and-drop events. It owns `wayland_global_windows`, GL-on-GBM setup,
+  triple-buffered async `wl_present_and_pace`, the parsed keymap, acquired
+  seats/devices, and the stable `Wl_Input_Event` queue consumed by `Input`.
+- `modules/Window_Type.jai` vendors the upstream Linux window type as a tagged
+  union (`X11 | Wayland`) with equality overloads and the shared
+  `wayland_drag_and_drop_requested` opt-in flag used by X11 and Wayland paths.
+- `modules/Window_Creation`, `modules/Simp`, `modules/Input`, `modules/GetRect`,
+  `modules/GetRect_LeftHanded`, and `modules/Clipboard` are Jai distribution
+  modules vendored for compatibility with upstream graphical examples. Linux
+  patch sites keep their public shape while routing by runtime backend value:
+  `Window_Creation/linux.jai` chooses Wayland vs X11 with `WS.running_wayland()`;
+  `Simp/backend/gl.jai` branches on `context.simp.specific.display_manager`;
+  `Simp/backend/{x11_dispatch,wayland_dispatch}.jai` hold the per-op backend
+  glue; `Input/wayland.jai` drains `Wayland_Support` events; `Clipboard` routes
+  no-arg text clipboard calls to `Wayland_Support` under Wayland.
+- `stb_image`, `stb_image_write`, `stb_image_resize`, `stb_vorbis`, and
+  `Sound_Player` are not vendored here. Upstream examples resolve those through
+  the Jai distribution via the `modules`-first import path. Their normal
+  `libm` / `libasound` linkage is allowed because those are not display-server
+  or GPU-driver libraries.
 
 ## Core Invariants
 
@@ -152,8 +152,9 @@ repeat it before each target.
   extension expects real `libwayland-client` `wl_display*` and `wl_surface*`
   proxy objects, not wire-protocol IDs. Prefer Vulkan external-memory /
   DMA-BUF export unless an explicit compatibility shim is designed.
-- Do not add hard-linked `#library` / `#foreign` dependencies for GPU or window
-  libraries.
+- Do not add hard-linked `#library` / `#foreign` dependencies for display-server
+  or GPU-driver libraries. Universal Linux libraries such as `libm`, `libasound`,
+  and `libstdc++` are allowed when pulled by upstream-compatible modules.
 - Preserve the `ldd build/hello_gl` invariant: no `libEGL`, `libgbm`, `libGL`,
   `libwayland`, `libX11`, or `libxcb`. Preserve the matching
   `ldd build/headless_vulkan` invariant: no `libvulkan`.
@@ -162,6 +163,11 @@ repeat it before each target.
 - Preserve the matching `ldd build/hello_x11_gl` invariant: no `libX11`,
   `libGLX`, `libGL`, or `libxcb`. Use `JAI_WAYLAND_X11_GL_FRAMES=N` for
   bounded live smoke runs.
+- Preserve the vendored-stack linkage invariant for `hello_simp`,
+  `hello_clipboard`, `invaders`, `anim`, `getrect_example`, and
+  `getrect_lh_example`: no `libwayland`, `libX11`, `libxcb`, `libGL`,
+  `libGLX`, `libEGL`, `libgbm`, or `libvulkan`. `libm` and invaders'
+  `libasound` linkage are expected.
 - `hello_vulkan_dmabuf` is the first live Vulkan presentation smoke: Vulkan
   renders a rotating triangle into DRM-modifier images, exports them as DMA-BUF,
   wraps them as Wayland `wl_buffer` objects, and presents them through
@@ -175,6 +181,9 @@ repeat it before each target.
   u32`.
 - Constructor request functions take caller-provided `new_id`; do not allocate
   object IDs inside generated request functions.
+- `Wayland_Support` is the only event pump for the vendored Wayland backend.
+  Keep Simp/Input/Window_Creation sharing the same name-based import instance;
+  do not split the compositor connection or create hidden queues.
 
 ## Jai Patterns And Gotchas
 
@@ -185,6 +194,12 @@ repeat it before each target.
   in the byte payload.
 - Client-allocated Wayland IDs must be monotonic in wire-send order. Allocate an
   ID immediately before queueing the request that creates that object.
+- Some compositors effectively require contiguous client IDs with no gaps. Do
+  not pre-reserve object ID ranges; use the existing short-lived ID cache pattern
+  only after an object has been destroyed.
+- Server-allocated object IDs arrive inside events (for example `wl_data_offer`
+  during data-device handling) and flow through `unmarshal`'s `*Interface` path.
+  Do not allocate those IDs client-side.
 - Opcodes are per-interface, not global. Always route events by object ID first,
   then opcode. Many unrelated Wayland events have opcode `0`.
 - The `for session()` expansion uses `defer` to consume messages even when loop
@@ -192,6 +207,25 @@ repeat it before each target.
   protected by `defer`.
 - Jai `cast` binds looser than `<<`. Use explicit parentheses for bit packing:
   `((cast(u32) b) << 8)`.
+- Phase 6 backend selection is a runtime value: `WS.Display_Manager` /
+  `running_wayland()`. Do not reintroduce the deleted `context.simp_dispatch`
+  function-pointer dispatcher or Linux-only inline backend bodies.
+- Wayland input synthesizes key autorepeat from `wl_keyboard.repeat_info` and
+  suppresses `TEXT_INPUT` under Ctrl/Alt/Meta command chords. Preserve both when
+  touching keyboard paths.
+- The XKB parser must handle both compact hex lists and named-key `symbols[N]`
+  group forms (`F4`, `Escape`, `Alt_L`, etc.). Physical Alt+F4 under Hyprland
+  depends on this.
+- The X11 backend selected `MotionNotify` from the start; keep translating it
+  into `mouse_delta_x/y` with enter/leave baselining so XWayland camera control
+  paths continue to work.
+- Use `JAI_WAYLAND_LOG_KEYS=1` for temporary Wayland keyboard traces. It logs
+  raw `wl_keyboard` keys/modifiers and the final `Input` key events.
+- `wl_present_and_pace` is asynchronous and triple-buffered: it throttles on the
+  previous frame callback. Do not restore the old synchronous wait-on-this-frame
+  present path.
+- Code under `modules/` should use `log` / `log_error`, not `print`; examples
+  may still print user-facing diagnostics.
 
 ## Generated Code
 
@@ -217,14 +251,28 @@ Use focused tests first:
 - Generator changes: `./build.sh - gen_test`, then `./build.sh - generate`,
   then `./build.sh - compile_test`
 - Wire encoding changes: `./build.sh - wire_test`
+- XKB keymap parser changes: `./build.sh - xkb_test`, then
+  `./build.sh - dump_keymap` against the live compositor when useful.
 - Marshal changes: `./build.sh - marshal_test`
 - Unmarshal changes: `./build.sh - unmarshal_test`
 - Generated binding smoke checks: `./build.sh - compile_test`
+- Vendored GUI stack compile gates:
+  `./build.sh - compile_only hello_simp`,
+  `./build.sh - compile_only hello_clipboard`,
+  `./build.sh - compile_only invaders`,
+  `./build.sh - compile_only skeletal_animation`,
+  `./build.sh - compile_only getrect_example`,
+  `./build.sh - compile_only getrect_lh_example`
+- Bounded live smokes use frame caps where available:
+  `JAI_WAYLAND_SIMP_FRAMES=N ./build.sh - hello_simp`,
+  `JAI_WAYLAND_CLIPBOARD_FRAMES=N ./build.sh - hello_clipboard`,
+  `JAI_WAYLAND_X11_GL_FRAMES=N ./build.sh - hello_x11_gl`,
+  `JAI_WAYLAND_VULKAN_FRAMES=N ./build.sh - hello_vulkan_dmabuf`
 
 For substantial changes, run:
 
 ```bash
-./build.sh - test gen_test wire_test marshal_test unmarshal_test compile_test
+./build.sh - test gen_test wire_test xkb_test marshal_test unmarshal_test compile_test
 ```
 
 ## Current Roadmap
@@ -234,18 +282,10 @@ Known future areas:
 - Explicit sync / syncobj integration.
 - Deeper Vulkan examples beyond the triangle DMA-BUF smoke path.
 - Vulkan WSI compatibility shim, if a future layer needs swapchains.
-- Vendored `Window_Creation`, `Simp`, `GetRect`, and `GetRect_LeftHanded` with
-  Linux runtime backend selection between Wayland and X11. **Phase 6 Stage 1
-  complete on `upstream-integration`: context-based backend dispatch wired
-  through vendored Simp; invaders runs identically through
-  `context.simp_dispatch` instead of inline `#if OS == .LINUX` branches in
-  Simp; ldd-clean preserved.** Stage 2 (Wayland dispatcher implementation)
-  is the remaining work — see `docs/plans/2026-05-26-context-dispatch-stage1-design.md`
-  for the architecture this established and
-  `docs/plans/2026-05-26-wayland-backend-question.md` for the Stage-2
-  Layer-3 decision. The load-bearing decision is how GL actually works on
-  Wayland under our "no libwayland linkage" thesis (same fundamental
-  incompatibility as `VK_KHR_wayland_surface`).
-- Server-allocated Wayland object IDs.
+- Clipboard bitmaps on the Wayland backend.
+- AltGr / level-3 keysyms and `wp_relative_pointer_v1` support.
+- Touch runtime validation on real hardware.
 - Fractional scaling.
+- Tiling-WM floating-widget first-size compatibility quirk, if we decide to add
+  the documented default-off opt-in.
 - Higher-level "raylib-light" ergonomic layer.

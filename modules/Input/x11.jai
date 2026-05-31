@@ -95,6 +95,10 @@ get_key_code :: (key: KeySym) -> Key_Code {
 
 #scope_file
 
+x11_last_mouse_x: s32;
+x11_last_mouse_y: s32;
+x11_have_mouse_pos: bool;
+
 // Xdnd support by Jens Frederich. Send questions his way. Licensed under the MIT license; see copyright at the end of the file.
 
 get_position_root_x :: inline (xevent: *XEvent) -> s32 {
@@ -747,6 +751,22 @@ update_x11_window_events :: () {
         case ConfigureNotify;
             config := cast(*XConfigureEvent) *xev;
             add_resize_record(config.window, config.width, config.height);
+        case MotionNotify;
+            x := xev.xmotion.x;
+            y := xev.xmotion.y;
+            if x11_have_mouse_pos {
+                mouse_delta_x += cast(int)(x - x11_last_mouse_x);
+                mouse_delta_y += cast(int)(y - x11_last_mouse_y);
+            }
+            x11_last_mouse_x = x;
+            x11_last_mouse_y = y;
+            x11_have_mouse_pos = true;
+        case EnterNotify;
+            x11_last_mouse_x = xev.xcrossing.x;
+            x11_last_mouse_y = xev.xcrossing.y;
+            x11_have_mouse_pos = true;
+        case LeaveNotify;
+            x11_have_mouse_pos = false;
         case FocusIn;
             input_application_has_focus = true;
         case FocusOut;
