@@ -60,6 +60,7 @@ Live compositor / GPU examples:
 ./build.sh - hello_dmabuf
 ./build.sh - hello_gl
 ./build.sh - hello_vulkan_dmabuf
+./build.sh - invaders
 ```
 
 The lone `-` separates Jai compiler arguments from metaprogram arguments. Do not
@@ -92,7 +93,53 @@ repeat it before each target.
   Xlib and GLX entry points are function-pointer variables loaded by
   `init_x11()` / `init_glx()`. This module is a compatibility backend for
   future vendored `Window_Creation` / `Simp` / `GetRect`, not part of the
-  Wayland wire-protocol implementation.
+  Wayland wire-protocol implementation. Also exports
+  `glx_create_context(window, major, minor)` ported from upstream
+  `~/jai/jai/modules/GL/GL.jai` so vendored Simp's GLX context creation
+  works without vendoring stock GL (which would introduce `#foreign`
+  linkage).
+- `modules/Window_Creation`, `modules/Simp`, `modules/GetRect`, and
+  `modules/GetRect_LeftHanded` are upstream Jai distribution modules
+  vendored verbatim from `~/jai/jai/modules/` for compatibility with
+  upstream graphical examples. Three minimal patch sites:
+  `modules/X11/module.jai` self-initializes in `init_global_display`;
+  `modules/Simp/backend/gl.jai` uses our `gl_load(glXGetProcAddress)`
+  signature; `modules/Simp/bitmap.jai` and
+  `modules/Sound_Player/cached_decoder.jai` get `init_stb_*()` lazy-init
+  calls at the entry points that consume the runtime-loaded stb_image /
+  stb_image_write / stb_image_resize / stb_vorbis function pointers.
+  `./build.sh - invaders` compiles upstream's
+  `~/jai/jai/examples/invaders/source/invaders.jai` against these.
+- `modules/stb_image`, `modules/stb_image_write`, `modules/stb_image_resize`,
+  `modules/stb_vorbis`, and `modules/Sound_Player` are runtime-loaded
+  image/audio modules needed by Simp + invaders. They replace upstream's
+  `#library` / `#foreign` declarations with `dlopen` + `dlsym`. The three
+  `stb_*` modules that call libm symbols (stb_image, stb_image_resize,
+  stb_vorbis) also dlopen `libm.so.6` with `RTLD_GLOBAL` so their bundled
+  `.so` files (which call `pow` / `cos` / `floor` without a `DT_NEEDED
+  libm`) can resolve math symbols at runtime, preserving the ldd-clean
+  invariant. (stb_image_write has no libm symbols and skips that step.)
+- **Backend dispatch infrastructure** (Stage 1 of Phase 6):
+  - `modules/Window_Type.jai` — vendored with Linux branch rewritten as a
+    tagged union (`union wtype: Window_Tag { .X11 ,, x11: X11.Window;
+    .Wayland ,, wayland: Wayland_Window_State }`). Defines `operator ==`
+    overloads (Window_Type ↔ Window_Type and Window_Type ↔ X11.Window).
+    `Window_Creation/module.jai` re-exports them via
+    `operator == :: WT.operator==;` so importers of Window_Creation can
+    compare values without explicitly importing Window_Type.
+  - `modules/Simp/backend/dispatch.jai` — `Simp_Op_Args` tagged union,
+    `Simp_Backend_Dispatch` function-pointer type, `#add_context
+    simp_dispatch`.
+  - `modules/Simp/backend/x11_dispatch.jai` — `simp_x11_dispatch`; X11/GLX
+    paths relocated out of `backend/gl.jai`'s inline `#if OS == .LINUX`
+    branches.
+  - `modules/Simp/backend/wayland_dispatch.jai` — Stage 2 stub.
+  - `modules/Window_Creation/linux_init.jai` — new file (not vendored).
+    `init_linux_window()` pushes the backend dispatch into context. Called
+    lazily on first `create_window` invocation.
+  - `modules/Input/` — vendored upstream Input module; `x11.jai` patched
+    to construct `Window_Type` values explicitly (required for tagged-union
+    shape).
 
 ## Core Invariants
 
@@ -184,7 +231,17 @@ Known future areas:
 - Deeper Vulkan examples beyond the triangle DMA-BUF smoke path.
 - Vulkan WSI compatibility shim, if a future layer needs swapchains.
 - Vendored `Window_Creation`, `Simp`, `GetRect`, and `GetRect_LeftHanded` with
-  Linux runtime backend selection between Wayland and X11.
+  Linux runtime backend selection between Wayland and X11. **Phase 6 Stage 1
+  complete on `upstream-integration`: context-based backend dispatch wired
+  through vendored Simp; invaders runs identically through
+  `context.simp_dispatch` instead of inline `#if OS == .LINUX` branches in
+  Simp; ldd-clean preserved.** Stage 2 (Wayland dispatcher implementation)
+  is the remaining work — see `docs/plans/2026-05-26-context-dispatch-stage1-design.md`
+  for the architecture this established and
+  `docs/plans/2026-05-26-wayland-backend-question.md` for the Stage-2
+  Layer-3 decision. The load-bearing decision is how GL actually works on
+  Wayland under our "no libwayland linkage" thesis (same fundamental
+  incompatibility as `VK_KHR_wayland_surface`).
 - Server-allocated Wayland object IDs.
 - Fractional scaling.
 - Higher-level "raylib-light" ergonomic layer.

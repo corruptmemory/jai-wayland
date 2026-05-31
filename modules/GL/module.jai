@@ -13,5 +13,7 @@
 // and whatever future examples need. Add more entry points as needed —
 // there's no reason to bind everything up front.
 
+#import "Basic"; // for log + formatInt in DumpGLErrors
+
 #load "gl.jai";
 #load "loader.jai";

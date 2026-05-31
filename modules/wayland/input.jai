@@ -165,3 +165,125 @@ get_pointer_event :: (header: WaylandMessageHeader, pointers: [] Pointer_Info, r
     }
     return .{}, false;
 }
+
+Touch_Info :: struct {
+    seat_index: int;
+    touch: Wl_Touch;
+}
+
+// Acquire touch devices from seats that advertise the TOUCH capability.
+get_touch_info :: (seats: [] Seat_Info) -> [] Touch_Info {
+    touch_count: int;
+    for seats {
+        if it.capabilities & cast(u32) Wl_Seat_Capability.TOUCH  touch_count += 1;
+    }
+    if touch_count == 0  return .[];
+
+    touches: [..] Touch_Info;
+
+    display := Wl_Display.{ id = 1 };
+    batch: MessageBuilder;
+    for seat, si: seats {
+        if seat.capabilities & cast(u32) Wl_Seat_Capability.TOUCH {
+            t := array_add(*touches);
+            t.seat_index = si;
+            t.touch = Wl_Touch.{ id = allocate_id() };
+            wl_seat_get_touch(*batch, *seat.seat, t.touch.id);
+        }
+    }
+    sync_id := allocate_id();
+    wl_display_sync(*batch, *display, sync_id);
+    wayland_send(*batch);
+
+    // Touch has no initial burst — just drain the sync.
+    for session()  if it.object_id == sync_id  break;
+
+    return touches;
+}
+
+// Match a message to a touch device and unmarshal.
+get_touch_event :: (header: WaylandMessageHeader, touches: [] Touch_Info, recv: *ReceiveBuffer) -> Wl_Touch_Event, bool {
+    for touches {
+        if header.object_id == it.touch.id {
+            event: Wl_Touch_Event;
+            unmarshal_event(*event, header.opcode, header.payload, recv);
+            return event, true;
+        }
+    }
+    return .{}, false;
+}
+
+// ─────────────────────── Data device (drag-and-drop / selection) ───────────
+// wl_data_device is the per-seat handle the compositor delivers drag-and-drop
+// and clipboard-selection events through. Acquired alongside keyboards/pointers
+// so the single pump can decode drag sessions. The wl_data_offer objects a drag
+// introduces are SERVER-allocated — the new_id rides in the data_offer event and
+// unmarshal's *Interface path reads the id straight out of it (no client
+// allocation, no collision: server ids live in the 0xFF000000+ range).
+
+Data_Device_Info :: struct {
+    seat_index: int;
+    device: Wl_Data_Device;
+}
+
+// Bind the wl_data_device_manager singleton and acquire a wl_data_device per
+// seat. Returns the devices plus the bound manager (manager.id == 0 if the
+// compositor advertises no wl_data_device_manager). Mirrors get_pointers_info.
+get_data_devices_info :: (seats: [] Seat_Info) -> [] Data_Device_Info, Wl_Data_Device_Manager {
+    _, has_mgr := get_global("wl_data_device_manager");
+    if !has_mgr || seats.count == 0  return .[], .{};
+
+    mgr := Wl_Data_Device_Manager.{ id = allocate_id() };
+    batch: MessageBuilder;
+    if !wl_registry_bind(*batch, registry(), *mgr)  return .[], .{};
+
+    devices: [..] Data_Device_Info;
+    for seat, si: seats {
+        d := array_add(*devices);
+        d.seat_index = si;
+        d.device = Wl_Data_Device.{ id = allocate_id() };
+        wl_data_device_manager_get_data_device(*batch, *mgr, d.device.id, *seat.seat);
+    }
+
+    display := Wl_Display.{ id = 1 };
+    sync_id := allocate_id();
+    wl_display_sync(*batch, *display, sync_id);
+    wayland_send(*batch);
+
+    // Drain the sync. The compositor may introduce a data_offer for the current
+    // clipboard selection in this same burst; we let it fall through (we don't
+    // support paste yet) and only wait for the sync to know acquisition is done.
+    for session()  if it.object_id == sync_id  break;
+
+    return devices, mgr;
+}
+
+// Match a message to a data device and unmarshal its event. Mirrors get_pointer_event.
+get_data_device_event :: (header: WaylandMessageHeader, devices: [] Data_Device_Info, recv: *ReceiveBuffer) -> Wl_Data_Device_Event, bool {
+    for devices {
+        if header.object_id == it.device.id {
+            event: Wl_Data_Device_Event;
+            unmarshal_event(*event, header.opcode, header.payload, recv);
+            return event, true;
+        }
+    }
+    return .{}, false;
+}
+
+// Unmarshal a wl_data_offer event. Unlike the device/keyboard/pointer matchers,
+// a data_offer is created on the fly (server-allocated id from the data_offer
+// event), so the caller matches the object id against its own tracked-offer set
+// and calls this only once it knows the message targets one of those offers.
+get_data_offer_event :: (header: WaylandMessageHeader, recv: *ReceiveBuffer) -> Wl_Data_Offer_Event {
+    event: Wl_Data_Offer_Event;
+    unmarshal_event(*event, header.opcode, header.payload, recv);
+    return event;
+}
+
+// Unmarshal a wl_data_source event (clipboard copy / drag source). Like the
+// offer helper, the caller matches the object id against its own source id first.
+get_data_source_event :: (header: WaylandMessageHeader, recv: *ReceiveBuffer) -> Wl_Data_Source_Event {
+    event: Wl_Data_Source_Event;
+    unmarshal_event(*event, header.opcode, header.payload, recv);
+    return event;
+}

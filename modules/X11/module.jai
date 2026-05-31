@@ -2,6 +2,12 @@
 // Vendored from ~/jai/jai/modules/X11/module.jai, with Xlib/GLX entry points
 // converted from #foreign declarations to runtime-loaded function pointers.
 
+// Window_Type (the tagged union) for the Window_Type overload of
+// enable_drag_and_drop below — upstream GetRect examples call X11.enable_drag_and_drop
+// with a Window_Type (which used to be a u64 alias). Mutual import with Window_Type
+// (which uses X11.Window) is fine: neither reference is size-recursive.
+WT :: #import "Window_Type";
+
 x_global_display: *Display;
 x_global_input_method: XIM;
 x_global_input_context: XIC;
@@ -131,8 +137,16 @@ xdnd_context_reset :: (dnd: *Xdnd_Context) {
 
 
 init_global_display :: () {
+    if !init_x11() {
+        log_error("Failed to load libX11 — cannot initialize X display");
+        exit(1);
+    }
+    if !init_glx() {
+        log_error("Failed to load libGLX/libGL — cannot initialize GL stack");
+        exit(1);
+    }
+
     if x_global_display return;
-    assert(init_x11(), "Could not load libX11 at runtime");
 
     old_locale := setlocale(LC_ALL, null);
     old_xmods  := XSetLocaleModifiers(null);
@@ -258,6 +272,25 @@ init_global_display :: () {
     XFreePixmap(d, pmap);
 
     xdnd_context_reset(*x_global_xdnd_context);
+}
+
+// Window_Type overload — the upstream GetRect example calls X11.enable_drag_and_drop
+// with a Window_Type (now a tagged union, formerly a u64 alias). On X11, unwrap
+// .x11 and set the XdndAware property. On Wayland, drag-and-drop is a SEPARATE
+// protocol (wl_data_device, the XDND analogue) handled by Wayland_Support's data-
+// device pump; there is no per-window property to set, so we just record that the
+// app opted in. Wayland_Support reads this flag to decide whether to ACCEPT drops
+// (it acquires the wl_data_device regardless, but declines drops until opt-in),
+// keeping behaviour at parity with X11 where a window is a drop target only after
+// this call. The typelist is X11-specific (it advertises XDND target atoms); the
+// Wayland path negotiates text/uri-list directly, so it is ignored here.
+enable_drag_and_drop :: (window: WT.Window_Type, typelist: [] string) {
+    if window.wtype == .Wayland {
+        WT.wayland_drag_and_drop_requested = true;
+        log("Wayland drag-and-drop enabled (wl_data_device); text/uri-list file drops will be delivered as Event.DRAG_AND_DROP_FILES.");
+        return;
+    }
+    enable_drag_and_drop(window.x11, typelist);
 }
 
 enable_drag_and_drop :: (window: Window, typelist: [] string) {
@@ -3593,6 +3626,130 @@ glXGetFBConfigAttrib: #type (disp: *Display, config: GLXFBConfig, attribute: s32
 glXGetVisualFromFBConfig: #type (disp: *Display, config: GLXFBConfig) -> *XVisualInfo #c_call;
 glXGetConfig: #type (disp: *Display, vis: *XVisualInfo, attrib: s32, value: *s32) -> s32 #c_call;
 glXCreateWindow: #type (display: *Display, config: GLXFBConfig, window: Window, attrib_list: *s32 = null) -> GLXWindow #c_call;
+
+// glx_create_context — vendored from ~/jai/jai/modules/GL/GL.jai. The upstream
+// version lives in modules/GL and is the X11/Linux path through Simp's
+// backend_init. Lives here in our X11 module because (a) it's entirely a
+// GLX/X11 helper that doesn't need GL function pointers, and (b) our GL
+// module is intentionally minimal — runtime-loaded entry points only, no
+// platform glue.
+//
+// Returns (context, framebuffer config, chosen msaa).
+glx_create_context :: (window: Window, major_version: s32 = 0, minor_version: s32 = 0, compatibility := false, debug := false) -> GLXContext, GLXFBConfig, chosen_msaa: s32 {
+    if !x_global_display init_global_display();
+    XLockDisplay(x_global_display);
+
+    _glXCreateContextAttribsARB: (display: *Display, config: GLXFBConfig, share_context: GLXContext, direct: s32, attrib_list: *s32) -> GLXContext #c_call;
+    _glXCreateContextAttribsARB = xx glXGetProcAddress("glXCreateContextAttribsARB");
+
+    glc: GLXContext;
+    best_fbc: GLXFBConfig;
+    chosen_msaa: s32;
+
+    if (_glXCreateContextAttribsARB == null) {
+        // Legacy GL context (pre-3.x). Almost certainly not what Simp wants.
+        attr := s32.[
+            GLX_RGBA,
+            GLX_DEPTH_SIZE, 24,
+            GLX_DOUBLEBUFFER,
+            0,
+        ];
+
+        vi := glXChooseVisual(x_global_display, 0, attr.data);
+        glc = glXCreateContext(x_global_display, vi, null, 1);  // direct=GL_TRUE
+    } else {
+        // Modern 3.x+ context. Reconstruct an XVisualInfo from the window's
+        // attributes so we can ask GLX for a matching FBConfig.
+        window_attributes: XWindowAttributes;
+        XGetWindowAttributes(x_global_display, window, *window_attributes);
+
+        screen := DefaultScreen(x_global_display);
+        visual := window_attributes.visual;
+        vi: XVisualInfo;
+        vi.visual        = visual;
+        vi.visualid      = visual.visualid;
+        vi.screen        = screen;
+        vi.depth         = window_attributes.depth;
+        vi.class         = window_attributes.class;
+        vi.red_mask      = visual.red_mask;
+        vi.green_mask    = visual.green_mask;
+        vi.blue_mask     = visual.blue_mask;
+        vi.colormap_size = visual.map_entries;
+        vi.bits_per_rgb  = visual.bits_per_rgb;
+
+        FIXED_GLX_ATTRIBUTES :: s32.[
+            GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+            GLX_RENDER_TYPE,   GLX_RGBA_BIT,
+            GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
+        ];
+
+        // FBConfig attributes must match the window's actual visual.
+        COPIED_GLX_ATTRIBUTE_TYPES :: s32.[
+            GLX_RED_SIZE,
+            GLX_GREEN_SIZE,
+            GLX_BLUE_SIZE,
+            GLX_DEPTH_SIZE,
+            GLX_STENCIL_SIZE,
+            GLX_DOUBLEBUFFER,
+            GLX_SAMPLE_BUFFERS,
+            GLX_SAMPLES,
+        ];
+        visual_attribs: [FIXED_GLX_ATTRIBUTES.count + (COPIED_GLX_ATTRIBUTE_TYPES.count * 2) + 1] s32;
+
+        for FIXED_GLX_ATTRIBUTES {
+            visual_attribs[it_index] = it;
+        }
+
+        index := FIXED_GLX_ATTRIBUTES.count;
+        for attribute: COPIED_GLX_ATTRIBUTE_TYPES {
+            value: s32;
+            glXGetConfig(x_global_display, *vi, attribute, *value);
+            visual_attribs[index]     = attribute;
+            visual_attribs[index + 1] = value;
+            index += 2;
+        }
+        visual_attribs[index] = 0;
+
+        fbcount: s32;
+        fbc := glXChooseFBConfig(x_global_display, screen, visual_attribs.data, *fbcount);
+        if !fbc {
+            log_error("glx_create_context: failed to retrieve a framebuffer config");
+            XUnlockDisplay(x_global_display);
+            return null, best_fbc, 0;
+        }
+        best_fbc = fbc[0];
+
+        glXGetFBConfigAttrib(x_global_display, best_fbc, GLX_SAMPLES, *chosen_msaa);
+
+        attribs: [..] s32;
+        defer array_reset(*attribs);
+        {
+            if major_version > 0 {
+                array_add(*attribs, GLX_CONTEXT_MAJOR_VERSION_ARB, major_version);
+                array_add(*attribs, GLX_CONTEXT_MINOR_VERSION_ARB, minor_version);
+            }
+
+            if compatibility array_add(*attribs, cast(s32) GLX_CONTEXT_PROFILE_MASK_ARB, cast(s32) GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB);
+            else             array_add(*attribs, cast(s32) GLX_CONTEXT_PROFILE_MASK_ARB, cast(s32) GLX_CONTEXT_CORE_PROFILE_BIT_ARB);
+
+            if debug array_add(*attribs, cast(s32) GLX_CONTEXT_FLAGS_ARB, cast(s32) GLX_CONTEXT_DEBUG_BIT_ARB);
+
+            // Terminator.
+            array_add(*attribs, 0);
+        }
+
+        glc = _glXCreateContextAttribsARB(x_global_display, best_fbc, null, 1, attribs.data);  // direct=GL_TRUE
+    }
+
+    if !glc {
+        log_error("glx_create_context: could not create context");
+        XUnlockDisplay(x_global_display);
+        return glc, best_fbc, 0;
+    }
+
+    XUnlockDisplay(x_global_display);
+    return glc, best_fbc, chosen_msaa;
+}
 
 #load "loader.jai";
 

@@ -378,7 +378,7 @@ compile_shader :: (kind: GL.GLenum, src: string) -> sh: u32, ok: bool {
 
 paint_gl_frame :: (tri: Triangle, width: s32, height: s32, angle: float) {
     GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0);
-    GL.glViewport(0, 0, width, height);
+    GL.glViewport(0, 0, cast(GL.GLsizei) width, cast(GL.GLsizei) height);
     GL.glClearColor(0.05, 0.05, 0.08, 1.0);
     GL.glClear(GL.GL_COLOR_BUFFER_BIT);
 

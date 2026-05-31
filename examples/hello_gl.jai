@@ -589,7 +589,7 @@ init_slot_mesa :: (slot: *Gl_Slot, egl: EGL_Context, dmabuf: *Zwp_Linux_Dmabuf_V
 {
     GL.glGenTextures(1, *slot.tex);
     GL.glBindTexture(GL.GL_TEXTURE_2D, slot.tex);
-    GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, width, height, 0,
+    GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA8, cast(GL.GLsizei) width, cast(GL.GLsizei) height, 0,
         GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, null);
     GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
     GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
@@ -840,7 +840,7 @@ compile_shader :: (kind: GL.GLenum, src: string) -> sh: u32, ok: bool {
 
 paint_gl_frame :: (slot: *Gl_Slot, tri: Triangle, t: float) {
     GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, slot.fbo);
-    GL.glViewport(0, 0, slot.width, slot.height);
+    GL.glViewport(0, 0, cast(GL.GLsizei) slot.width, cast(GL.GLsizei) slot.height);
     GL.glClearColor(0.05, 0.05, 0.08, 1.0);   // dark background
     GL.glClear(GL.GL_COLOR_BUFFER_BIT);
 

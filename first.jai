@@ -1,6 +1,10 @@
 
 #run,stallable build();
 
+// Set by the `compile_only` CLI flag. When true, build_and_run_* compile the
+// target but skip running it — turns GUI targets into headless compile gates.
+compile_only_flag := false;
+
 build :: () {
     set_working_directory(#filepath);
     options := get_build_options();
@@ -13,6 +17,14 @@ build :: () {
 
     for arg: args {
         if arg == {
+          case "compile_only";
+            // Build-only switch: compile the target workspace(s) but skip the
+            // Autorun/run step. Must appear BEFORE the target in the arg list,
+            // e.g. `./build.sh - compile_only invaders`. Lets GUI targets
+            // (invaders, hello_*) serve as headless compile gates without
+            // launching a window that never exits. CLI flag, not env var,
+            // per project preference.
+            compile_only_flag = true;
           case "test";
             build_tests(options);
           case "gen_test";
@@ -68,8 +80,56 @@ build :: () {
           case "hello_x11_gl";
             build_and_run_test("hello_x11_gl", "hello_x11_gl", "examples/hello_x11_gl.jai", "build");
             set_build_options_dc(.{do_output=false});
+          case "hello_simp";
+            // Our own example, but built like invaders: it pulls in the vendored
+            // Simp + Window_Creation, whose name-based `wayland` imports must
+            // resolve via modules/-first import_path to dedup into one instance.
+            build_and_run_test("hello_simp", "hello_simp", "examples/hello_simp.jai", "build", upstream_import_path());
+            set_build_options_dc(.{do_output=false});
+          case "hello_clipboard";
+            // Same as hello_simp (vendored Simp/Window_Creation/Clipboard) — needs
+            // modules/-first import_path so wayland/Wayland_Support dedup. Exercises
+            // the Wayland clipboard copy/paste path via the Clipboard module API.
+            build_and_run_test("hello_clipboard", "hello_clipboard", "examples/hello_clipboard.jai", "build", upstream_import_path());
+            set_build_options_dc(.{do_output=false});
+          case "invaders";
+            home := to_string(getenv("HOME"));
+            build_and_run_upstream_example(
+                workspace_name  = "invaders",
+                executable_name = "invaders",
+                upstream_dir    = tprint("%/jai/jai/examples/invaders", home),
+                source_subpath  = "source/invaders.jai",
+            );
+            set_build_options_dc(.{do_output=false});
+          case "skeletal_animation";
+            home := to_string(getenv("HOME"));
+            build_and_run_upstream_example(
+                workspace_name  = "skeletal_animation",
+                executable_name = "anim",
+                upstream_dir    = tprint("%/jai/jai/examples/skeletal-animation", home),
+                source_subpath  = "source/main.jai",
+            );
+            set_build_options_dc(.{do_output=false});
+          case "getrect_example";
+            home := to_string(getenv("HOME"));
+            build_and_run_upstream_example(
+                workspace_name  = "getrect_example",
+                executable_name = "getrect_example",
+                upstream_dir    = tprint("%/jai/jai/modules/GetRect/examples", home),
+                source_subpath  = "example.jai",
+            );
+            set_build_options_dc(.{do_output=false});
+          case "getrect_lh_example";
+            home := to_string(getenv("HOME"));
+            build_and_run_upstream_example(
+                workspace_name  = "getrect_lh_example",
+                executable_name = "getrect_lh_example",
+                upstream_dir    = tprint("%/jai/jai/modules/GetRect_LeftHanded/examples", home),
+                source_subpath  = "example.jai",
+            );
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example'.\n", arg));
         }
     }
 }
@@ -90,7 +150,7 @@ build_main :: (options: Build_Options) {
     set_build_options_dc(.{do_output=false});
 }
 
-build_and_run_test :: (workspace_name: string, executable_name: string, test_file: string, build_dir: string) {
+build_and_run_test :: (workspace_name: string, executable_name: string, test_file: string, build_dir: string, import_path: [] string = .[]) {
     w := compiler_create_workspace(workspace_name);
     if !w { print("% workspace creation failed.\n", workspace_name); return; }
 
@@ -99,6 +159,11 @@ build_and_run_test :: (workspace_name: string, executable_name: string, test_fil
     opts.arithmetic_overflow_check = .FATAL;
     opts.output_executable_name = executable_name;
     opts.output_path = build_dir;
+    // Targets that pull in the vendored Simp/Window_Creation stack (which import
+    // `wayland` by NAME so the two share one instance) need `modules/` first on
+    // the import path — same as the upstream-example build. Existing callers
+    // pass nothing and keep the compiler's default path.
+    if import_path.count  opts.import_path = import_path;
     make_directory_if_it_does_not_exist(build_dir);
     set_build_options(opts, w);
 
@@ -114,7 +179,81 @@ build_and_run_test :: (workspace_name: string, executable_name: string, test_fil
         }
     }
     compiler_end_intercept(w);
-    Autorun.run_build_result_of_workspace(w);
+    if !compile_only_flag  Autorun.run_build_result_of_workspace(w);
+}
+
+upstream_import_path :: () -> [] string {
+    home := to_string(getenv("HOME"));
+    return string.[
+        "modules",                              // ours wins
+        tprint("%/jai/jai/modules", home),      // stdlib for everything else
+    ];
+}
+
+build_and_run_upstream_example :: (
+    workspace_name: string,
+    executable_name: string,
+    upstream_dir: string,
+    source_subpath: string,
+) {
+    w := compiler_create_workspace(workspace_name);
+    if !w  { print("% workspace creation failed.\n", workspace_name); return; }
+
+    opts := get_build_options(w);
+    set_optimization(*opts, .DEBUG);
+    opts.arithmetic_overflow_check = .FATAL;
+    opts.output_executable_name = executable_name;
+    opts.output_path = "build";
+    opts.import_path = upstream_import_path();
+    make_directory_if_it_does_not_exist("build");
+    set_build_options(opts, w);
+
+    compiler_begin_intercept(w);
+    add_build_file(tprint("%/%", upstream_dir, source_subpath), w);
+    while true {
+        message := compiler_wait_for_message();
+        if message.kind == {
+            case .COMPLETE;
+                mc := cast(*Message_Complete) message;
+                if mc.error_code != .NONE  exit(1);
+                break;
+        }
+    }
+    compiler_end_intercept(w);
+
+    // invaders (and similar upstream examples) compute their data path from
+    // get_path_of_running_executable() — i.e. they look for `data/` next to
+    // the binary, not next to the source. We build the binary into
+    // jai-wayland/build/, so we need to plant a `data` symlink there that
+    // points at the upstream example's real data folder. Idempotent.
+    ensure_upstream_data_symlink(upstream_dir);
+
+    if compile_only_flag  return;
+
+    binary := tprint("%/build/%", #filepath, executable_name);
+    result := run_command(binary, working_directory = upstream_dir);
+    if result.exit_code != 0  exit(result.exit_code);
+}
+
+ensure_upstream_data_symlink :: (upstream_dir: string) {
+    src := tprint("%/data", upstream_dir);
+    if !file_exists(src) {
+        // Nothing to symlink; upstream example has no data folder.
+        return;
+    }
+
+    dst := tprint("%/build/data", #filepath);
+    src_c := temp_c_string(src);
+    dst_c := temp_c_string(dst);
+    // Always repoint: build/data may be a leftover symlink to a DIFFERENT example
+    // (invaders vs skeletal_animation). unlink removes our prior symlink (not its
+    // target) and harmlessly fails if absent. If dst is a real directory, unlink
+    // fails and the symlink below is skipped — we never rm a real data dir.
+    unlink(dst_c);
+    rc := symlink(src_c, dst_c);
+    if rc != 0 {
+        print("WARNING: could not create symlink % -> % (errno %)\n", dst, src, errno());
+    }
 }
 
 build_tests :: (options: Build_Options) {
@@ -159,5 +298,7 @@ Shader_Spec :: struct {
 #import "Basic";
 #import "Compiler";
 #import "File";
+#import "File_Utilities";
+#import "POSIX";
 #import "Process";
 Autorun :: #import "Autorun";
