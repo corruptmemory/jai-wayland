@@ -1,8 +1,3 @@
-// Vendored from ~/jai/jai/modules/Simp/bitmap.jai.
-// Modified: added init_stb_image()/init_stb_image_write()/
-//           init_stb_image_resize() lazy-init guards at three
-//           consumer entry points. See commit f793b54.
-
 Bitmap :: struct {
     width:  s32;
     height: s32;
@@ -53,11 +48,6 @@ bitmap_load :: (bitmap: *Bitmap, filepath: string) -> bool {
 }
 
 bitmap_load_from_memory :: (bitmap: *Bitmap, memory: [] u8) -> bool {
-    if !init_stb_image() {
-        log_error("Failed to load stb_image runtime library.");
-        return false;
-    }
-
     count32 := cast,trunc(s32) memory.count;
     if count32 != memory.count {
         // We max out at 2GB because stbi_load_from_memory takes an s32 parameter for length.
@@ -94,11 +84,6 @@ bitmap_load_from_memory :: (bitmap: *Bitmap, memory: [] u8) -> bool {
 }
 
 bitmap_save :: (bitmap: *Bitmap, filepath: string, save_alpha := false) -> bool {
-    if !init_stb_image_write() {
-        log_error("Failed to load stb_image_write runtime library.");
-        return false;
-    }
-
     if bitmap.format != .RGB8 && bitmap.format != .RGBA8 {
         log("Attempt to save a bitmap, but the format % is unhandled.", bitmap.format, flags=.ERROR);
         return false;
@@ -141,11 +126,6 @@ bitmap_save :: (bitmap: *Bitmap, filepath: string, save_alpha := false) -> bool 
 }
 
 bitmap_build_mipmaps :: (bitmap: *Bitmap) {
-    if !init_stb_image_resize() {
-        log_error("Failed to load stb_image_resize runtime library.");
-        return;
-    }
-
     channels: s32;
     if bitmap.format == {
         case .R8;    channels = 1;
