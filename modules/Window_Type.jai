@@ -64,6 +64,17 @@
     operator == :: (a: Window_Type, b: X11.Window) -> bool {
         return a.wtype == .X11 && a.x11 == b;
     }
+
+    // Cross-module handoff for the Wayland arm of X11.enable_drag_and_drop. The
+    // GetRect examples call `X11.enable_drag_and_drop(window, typelist)` to opt a
+    // window into file drops; on X11 that sets the XdndAware property, but Wayland
+    // has no per-window drop-target property — instead that overload flips this
+    // flag, and Wayland_Support's data-device pump gates drop ACCEPTANCE on it (so
+    // an app that never opts in is not a drop target, matching the X11 backend).
+    // It lives here because Window_Type is the one module both X11 (the setter)
+    // and Wayland_Support (the reader) already share, so neither backend module
+    // has to import the other.
+    wayland_drag_and_drop_requested: bool;
 } else #if OS == .MACOS {
     #scope_module;
     ObjC :: #import "Objective_C/AppKit";

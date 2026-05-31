@@ -34,6 +34,14 @@ EGL :: #import "EGL";
 Gbm :: #import "gbm";
 Gpu :: #import "gpu";
 
+// Window_Type is the shared window-identity module. We read ONE field from it:
+// wayland_drag_and_drop_requested, the opt-in flag X11.enable_drag_and_drop flips
+// for the Wayland backend (see the DnD section below). Importing it here — rather
+// than having X11 reach into Wayland_Support — keeps the two backend modules from
+// importing each other, and keeps the pure-X11 examples (x11_smoke) from pulling
+// in the EGL/GBM stack this module carries.
+WT :: #import "Window_Type";
+
 // ───────────────────────── Backend selection ──────────────────────────────
 
 // Which display server a Simp/Input/GetRect process is talking to. Simp parks
@@ -698,6 +706,7 @@ Wl_Input_Event_Kind :: enum u8 {
     TOUCH_DOWN;
     TOUCH_UP;
     TOUCH_MOTION;
+    DRAG_DROP;
 }
 
 Wl_Key_Event :: struct {
@@ -736,6 +745,12 @@ Wl_Touch_Point_Event :: struct {
     y:  float;
 }
 
+Wl_Drag_Drop_Event :: struct {
+    uri_list: string;  // raw text/uri-list transfer, heap-allocated by the pump; the consumer parses it (into Event.files) and frees it
+    x:        float;   // surface-local drop position
+    y:        float;
+}
+
 // A decoded, consumer-agnostic input event of our own making (the "stable event"
 // the repackaging vision calls for): Wayland semantics (keysym + evdev codes),
 // each consumer maps it to its own model.
@@ -749,6 +764,7 @@ Wl_Input_Event :: union kind: Wl_Input_Event_Kind {
     .TOUCH_DOWN     ,, touch_down:     Wl_Touch_Point_Event;
     .TOUCH_UP       ,, touch_up:       Wl_Touch_Point_Event;
     .TOUCH_MOTION   ,, touch_motion:   Wl_Touch_Point_Event;
+    .DRAG_DROP      ,, drag_drop:      Wl_Drag_Drop_Event;
 }
 
 wl_keyboards:      [] Wl.Keyboard_Info;   // acquired keyboards; the pump matches object ids against these
@@ -767,6 +783,38 @@ wl_touches:          [] Wl.Touch_Info;    // acquired touch devices (machine-dep
 wl_mouse_x:          float;               // current surface-local pointer position (for get_mouse_pointer_position)
 wl_mouse_y:          float;
 wl_keyboard_focused: bool;                // wl_keyboard.enter/leave -> input_application_has_focus
+
+// ─────────────────────────── Drag-and-drop ────────────────────────────────
+// The destination half of wl_data_device DnD. We acquire a wl_data_device per
+// seat (in wl_acquire_input, beside keyboards/pointers); the single pump decodes
+// a drag session — data_offer → enter → motion* → drop. On drop we pull the
+// text/uri-list transfer across an SCM_RIGHTS pipe fd and emit a DRAG_DROP
+// Wl_Input_Event, which the Input backend turns into Event.DRAG_AND_DROP_FILES
+// (the X11 parity path). Acceptance is gated on the app having opted in via
+// X11.enable_drag_and_drop (WT.wayland_drag_and_drop_requested) — we acquire the
+// device regardless, but decline drops until opt-in, matching the X11 backend
+// where a window is a drop target only after that call.
+
+WL_DND_MIME :: "text/uri-list";  // the only transfer type we negotiate (file drops)
+
+wl_data_devices:        [] Wl.Data_Device_Info;    // one per seat; the pump matches object ids against these
+wl_data_device_manager: Wl.Wl_Data_Device_Manager;
+wl_dnd_version:         u32;                        // negotiated wl_data_device_manager version (finish() requires v3+)
+
+// data_offers the compositor has introduced (data_offer event) but we have not
+// yet consumed. A drag AND a clipboard selection each create their own offer, so
+// we keep a small set and reap on leave/drop/selection — none leak.
+Wl_Dnd_Offer :: struct {
+    id:           u32;
+    has_uri_list: bool;   // saw text/uri-list among this offer's advertised mime types
+}
+wl_dnd_offers: [..] Wl_Dnd_Offer;
+
+// Active drag session (between enter and drop/leave). 0 = no drag in progress.
+wl_dnd_active_offer: u32;
+wl_dnd_enter_serial: u32;
+wl_dnd_x: float;
+wl_dnd_y: float;
 
 // The pump fills this; consumers drain + clear it each frame. It naturally stays
 // empty for render-only apps: Wayland only delivers key events to keyboards you
@@ -793,7 +841,18 @@ wl_acquire_input :: () {
         else     log("Wayland_Support: keymap parse failed; keysyms unavailable", flags=.WARNING);
         close(cast(s32) kb.keymap_fd);  // parse_keymap_fd mmaps a private copy; it does NOT own the fd
     }
-    log("Wayland_Support: acquired % keyboard(s), % pointer(s), % touch", wl_keyboards.count, wl_pointers.count, wl_touches.count);
+
+    // Acquire the data device unconditionally (cheap) so it's ready before any
+    // drag, regardless of whether enable_drag_and_drop ran first; the manager
+    // version gates finish() (a v3 request) in the drop path.
+    wl_data_devices, wl_data_device_manager = Wl.get_data_devices_info(seats);
+    if wl_data_device_manager.id != 0 {
+        g, ok := Wl.get_global("wl_data_device_manager");
+        if ok  wl_dnd_version = ifx g.version < 3 then g.version else 3;
+    }
+
+    log("Wayland_Support: acquired % keyboard(s), % pointer(s), % touch, % data device(s)",
+        wl_keyboards.count, wl_pointers.count, wl_touches.count, wl_data_devices.count);
 }
 
 // Drop the events a consumer has finished processing (keeps array capacity).
@@ -913,6 +972,180 @@ wl_handle_touch_event :: (tev: Wl.Wl_Touch_Event) {
         case;
             // FRAME / CANCEL / SHAPE / ORIENTATION — ignored.
     }
+}
+
+// ─────────────────────── Drag-and-drop decode + transfer ──────────────────
+
+// True if the app opted into DnD (X11.enable_drag_and_drop flips the flag). Gates
+// drop ACCEPTANCE so behaviour matches the X11 backend's XdndAware requirement.
+wl_dnd_enabled :: inline () -> bool {
+    return WT.wayland_drag_and_drop_requested;
+}
+
+wl_dnd_find_offer :: (offer_id: u32) -> *Wl_Dnd_Offer {
+    for * wl_dnd_offers  if it.id == offer_id  return it;
+    return null;
+}
+
+wl_dnd_is_tracked_offer :: (offer_id: u32) -> bool {
+    return wl_dnd_find_offer(offer_id) != null;
+}
+
+wl_dnd_forget_offer :: (offer_id: u32) {
+    for wl_dnd_offers {
+        if it.id == offer_id {
+            array_unordered_remove_by_index(*wl_dnd_offers, it_index);
+            return;
+        }
+    }
+}
+
+// Send wl_data_offer.destroy and stop tracking the offer.
+wl_dnd_destroy_offer :: (offer_id: u32) {
+    if offer_id == 0  return;
+    offer := Wl.Wl_Data_Offer.{ id = offer_id };
+    batch: Wl.MessageBuilder;
+    Wl.wl_data_offer_destroy(*batch, *offer);
+    Wl.wayland_send(*batch);
+    wl_dnd_forget_offer(offer_id);
+}
+
+// Decode a wl_data_device event (drag-session lifecycle + clipboard selection).
+wl_handle_data_device_event :: (ev: Wl.Wl_Data_Device_Event) {
+    if ev.kind == {
+        case .DATA_OFFER;
+            // Compositor introduced a new (server-allocated) wl_data_offer; track
+            // it. Its advertised mime types arrive next as wl_data_offer.offer.
+            array_add(*wl_dnd_offers, .{ id = ev.data_offer.id.id });
+
+        case .ENTER;
+            // A drag entered our surface. Stash the serial (needed to accept) and
+            // tell the source whether we'll take it.
+            wl_dnd_active_offer = ev.enter.id.id;
+            wl_dnd_enter_serial = ev.enter.serial;
+            wl_dnd_x = cast(float) Wl.fixed_to_float(ev.enter.x);
+            wl_dnd_y = cast(float) Wl.fixed_to_float(ev.enter.y);
+
+            off := wl_dnd_find_offer(wl_dnd_active_offer);
+            offer := Wl.Wl_Data_Offer.{ id = wl_dnd_active_offer };
+            batch: Wl.MessageBuilder;
+            if wl_dnd_enabled() && off != null && off.has_uri_list {
+                Wl.wl_data_offer_accept(*batch, *offer, wl_dnd_enter_serial, WL_DND_MIME);
+                // v3: declare a copy action so the source enables the drop.
+                Wl.wl_data_offer_set_actions(*batch, *offer,
+                    cast(u32) Wl.Wl_Data_Device_Manager_Dnd_Action.COPY,
+                    cast(u32) Wl.Wl_Data_Device_Manager_Dnd_Action.COPY);
+            } else {
+                // Decline: NULL (empty) mime, so the source shows a "no drop" cursor.
+                Wl.wl_data_offer_accept(*batch, *offer, wl_dnd_enter_serial, "");
+            }
+            Wl.wayland_send(*batch);
+
+        case .MOTION;
+            wl_dnd_x = cast(float) Wl.fixed_to_float(ev.motion.x);
+            wl_dnd_y = cast(float) Wl.fixed_to_float(ev.motion.y);
+
+        case .LEAVE;
+            // Drag left without dropping — tear the active offer down.
+            wl_dnd_destroy_offer(wl_dnd_active_offer);
+            wl_dnd_active_offer = 0;
+
+        case .DROP;
+            wl_dnd_perform_drop();
+
+        case .SELECTION;
+            // Clipboard selection offer (copy/paste). Not consumed yet — destroy
+            // it so it doesn't leak. Clipboard support can build on this later.
+            if ev.selection.id != null  wl_dnd_destroy_offer(ev.selection.id.id);
+    }
+}
+
+// Decode a wl_data_offer event (mime advertisement + action negotiation). The
+// caller has already matched object_id to a tracked offer.
+wl_handle_data_offer_event :: (ev: Wl.Wl_Data_Offer_Event, offer_id: u32) {
+    if ev.kind == {
+        case .OFFER;
+            off := wl_dnd_find_offer(offer_id);
+            if off != null && ev.offer.mime_type == WL_DND_MIME  off.has_uri_list = true;
+        case;
+            // SOURCE_ACTIONS / ACTION — informational for our copy-only path.
+    }
+}
+
+// Handle a completed drop: pull the text/uri-list across the pipe and hand it to
+// consumers as a DRAG_DROP event. The offer is always torn down afterwards.
+wl_dnd_perform_drop :: () {
+    offer_id := wl_dnd_active_offer;
+    wl_dnd_active_offer = 0;
+    if offer_id == 0  return;
+
+    off := wl_dnd_find_offer(offer_id);
+    offer := Wl.Wl_Data_Offer.{ id = offer_id };
+
+    if !(wl_dnd_enabled() && off != null && off.has_uri_list) {
+        // We never accepted this offer — just discard it.
+        wl_dnd_destroy_offer(offer_id);
+        return;
+    }
+
+    fds: [2] s32;
+    if pipe2(*fds, O_CLOEXEC) != 0 {
+        log_error("Wayland_Support: pipe2 failed for DnD receive");
+        wl_dnd_destroy_offer(offer_id);
+        return;
+    }
+    read_fd  := fds[0];
+    write_fd := fds[1];
+
+    // Ask the source to write the uri-list into write_fd (passed via SCM_RIGHTS),
+    // then close OUR copy so the read hits EOF once the source finishes + closes.
+    rbatch: Wl.MessageBuilder;
+    Wl.wl_data_offer_receive(*rbatch, *offer, WL_DND_MIME, cast(Wl.Fd) write_fd);
+    Wl.wayland_send(*rbatch);
+    close(write_fd);
+
+    uri_list := wl_dnd_read_all(read_fd);
+    close(read_fd);
+
+    // v3+: finish() tells the compositor the DnD completed; then destroy the offer.
+    fbatch: Wl.MessageBuilder;
+    if wl_dnd_version >= 3  Wl.wl_data_offer_finish(*fbatch, *offer);
+    Wl.wl_data_offer_destroy(*fbatch, *offer);
+    Wl.wayland_send(*fbatch);
+    wl_dnd_forget_offer(offer_id);
+
+    if uri_list.count > 0 {
+        array_add(*provisional_input_events, .{
+            kind = .DRAG_DROP,
+            drag_drop = .{ uri_list = uri_list, x = wl_dnd_x, y = wl_dnd_y },
+        });
+    } else {
+        free(uri_list.data);  // nothing transferred
+    }
+}
+
+// Read a pipe fd to EOF into a freshly heap-allocated buffer; returns it as a
+// string VIEW over that buffer (the consumer frees .data). Blocks until the
+// source finishes writing — the same model as X11's selection transfer.
+wl_dnd_read_all :: (fd: s32) -> string {
+    buf: [..] u8;
+    CHUNK :: 4096;
+    while true {
+        old := buf.count;
+        array_resize(*buf, old + CHUNK);
+        n := read(fd, buf.data + old, cast(u64) CHUNK);
+        if n < 0 {
+            if (cast(s32) errno()) == EINTR { buf.count = old; continue; }
+            buf.count = old;
+            break;
+        }
+        buf.count = old + cast(int) n;
+        if n == 0  break;  // EOF
+    }
+    result: string = ---;
+    result.data  = buf.data;
+    result.count = buf.count;
+    return result;
 }
 
 // ─────────────────────────── The single pump ──────────────────────────────
@@ -1076,6 +1309,23 @@ wl_pump :: (blocking: bool) {
                     wl_handle_touch_event(tev);
                     routed = true;
                 }
+            }
+
+            // Drag-and-drop: wl_data_device events (drag-session lifecycle +
+            // selection) match a device id; wl_data_offer events (mime
+            // advertisement, opcode 0 — same byte as buffer.release, but on the
+            // disjoint server-allocated offer-id range) match a tracked offer.
+            if !routed && wl_data_devices.count > 0 {
+                dd_ev, is_dd := Wl.get_data_device_event(header, wl_data_devices, *session.recv);
+                if is_dd {
+                    wl_handle_data_device_event(dd_ev);
+                    routed = true;
+                }
+            }
+            if !routed && wl_dnd_is_tracked_offer(header.object_id) {
+                off_ev := Wl.get_data_offer_event(header, *session.recv);
+                wl_handle_data_offer_event(off_ev, header.object_id);
+                routed = true;
             }
         }
 

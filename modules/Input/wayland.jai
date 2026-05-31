@@ -197,10 +197,63 @@ update_wayland_window_events :: () {
                 tv.touch_index = ev.touch_up.id;
                 array_add(*events_this_frame, tv);
                 wl_set_touch_pointer(ev.touch_up.id, false, 0, 0);
+
+            case .DRAG_DROP;
+                // The pump pulled the raw text/uri-list across the pipe; parse it
+                // into heap-allocated paths (the same shape x11.jai emits, freed by
+                // input_per_frame_event_and_flag_update) and emit one event.
+                files := wl_parse_uri_list(ev.drag_drop.uri_list);
+                free(ev.drag_drop.uri_list.data);  // the pump heap-allocated it; ownership ends here
+                if files.count > 0 {
+                    dev: Event;
+                    dev.type  = .DRAG_AND_DROP_FILES;
+                    dev.files = files;
+                    array_add(*events_this_frame, dev);
+                } else {
+                    array_free(files);
+                }
         }
     }
 
     WS.wl_clear_input_events();
+}
+
+// Parse a text/uri-list (RFC 2483) into heap-allocated file paths — matching the
+// X11 backend's output (copy_string'd; both array and strings freed by Input's
+// per-frame reset). Tolerates CRLF or LF endings and a missing final newline;
+// skips blank lines, '#' comment lines, and non-file:// or hostname'd URIs (the
+// same hostname restriction x11.jai applies).
+wl_parse_uri_list :: (uri_list: string) -> [..] string {
+    files: [..] string;
+    URI_PREFIX :: "file://";
+
+    remaining := uri_list;
+    while remaining.count > 0 {
+        line: string;
+        nl := find_index_from_left(remaining, "\n");
+        if nl == -1 {
+            line = remaining;
+            remaining.count = 0;
+        } else {
+            line = slice(remaining, 0, nl);
+            advance(*remaining, nl + 1);
+        }
+        if line.count > 0 && line[line.count - 1] == #char "\r"  line.count -= 1;  // trim CRLF
+
+        if line.count == 0          continue;  // blank line
+        if line[0] == #char "#"     continue;  // comment line (text/uri-list spec)
+        if !begins_with(line, URI_PREFIX)  continue;
+
+        path := slice(line, URI_PREFIX.count, line.count - URI_PREFIX.count);
+        if path.count == 0  continue;
+        if path[0] != #char "/" {
+            // "file://host/path" — hostname'd URIs unsupported (matches x11.jai).
+            log_error("Wayland drag & drop: file URIs with hostnames are not supported. Ignoring \"%\".", line);
+            continue;
+        }
+        array_add(*files, copy_string(path));
+    }
+    return files;
 }
 
 // Map an xkb/X11 keysym to a Unicode codepoint, or 0 if it is not a text

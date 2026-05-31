@@ -84,10 +84,17 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
   - `hello_vulkan_dmabuf.jai` — rotating Vulkan triangle → DMA-BUF → Wayland presentation smoke test
 - **Tested live against Hyprland + Mesa radeonsi on AMD and on a hybrid Intel iGPU + NVIDIA dGPU laptop.**
 
+**Phase 6 (complete):** Vendored upstream window/graphics stack on Wayland — `Window_Creation` / `Simp` / `Input` / `GetRect` run on the Wayland backend, picking X11 vs Wayland by runtime *value*, not link-time `#if`.
+
+- **`modules/Wayland_Support.jai`** — the GPU-aware support layer above the pure wire `wayland` module, imported by name from Simp/Input/Window_Creation. The Wayland analogue of `modules/X11`: a bag of shared module-scope globals (the `wayland_global_windows` registry, the acquired keyboard/pointer/touch/data-device, the parsed keymap) plus the SINGLE event pump (`wl_pump`) that drains the one compositor connection and routes every message — render (frame callback / buffer release / configure / close) and input (decoded into stable `Wl_Input_Event`s) — in one pass. Backend selection is a `Display_Manager` enum value branched at the backend op sites, replacing the earlier `context.simp_dispatch` function-pointer indirection.
+- **Full input** — keyboard (modifier-aware xkb keysyms + `TEXT_INPUT`), pointer (motion / buttons / wheel / focus), structural touch, compositor-driven resize (`Window_Resize_Record`s), and `.QUIT` / Alt+F4 / close-button quit.
+- **Drag-and-drop** — `wl_data_device` file drops: the pump decodes the drag session (server-allocated `wl_data_offer` ids ride through `unmarshal`'s `*Interface` path), pipes the `text/uri-list` transfer over `SCM_RIGHTS` on drop, and emits `Event.DRAG_AND_DROP_FILES` — full parity with X11's `enable_drag_and_drop`. Verified by dropping a file from PCManFM-Qt onto the GetRect example.
+- **Four upstream-unmodified graphical examples run on Wayland** — `invaders` (2D game), `skeletal-animation` (3D depth-tested skinned mesh + GetRect UI), and the `GetRect` / `GetRect_LeftHanded` immediate-mode widget showcases. Each links zero display-server/GPU libs (`libm` + invaders' `libasound` only — verify with `ldd build/{invaders,getrect_example}`).
+
 **Known gaps (next phases):**
-- **Vendored upstream window/graphics stack (Phase 6).** Stage 1 (X11 backend through context-dispatch) complete on `upstream-integration`: upstream invaders runs identically through `context.simp_dispatch` instead of inline `#if OS == .LINUX` branches inside Simp, ldd-clean. Stage 2 (Wayland dispatcher implementation) is the remaining work. See `docs/plans/2026-05-26-context-dispatch-stage1-design.md` for the architecture established by Stage 1 and `docs/plans/2026-05-26-wayland-backend-question.md` for the Stage-2 Layer-3 decision (the load-bearing question is how GL works on Wayland under our "no libwayland linkage" thesis).
+- **Wayland clipboard / selection** — the `wl_data_device` paste path (copy-and-paste) reuses the drag-and-drop machinery, but selection offers are currently destroyed rather than read.
 - **Explicit fence sync** — current GL presentation uses `glFinish()` before handing buffers to the compositor. `Gl_Slot` has placeholder fence fd fields for future `EGL_KHR_fence_sync` / `wp_linux_drm_syncobj_v1` work.
-- **Explicit Vulkan/Wayland sync**, **server-allocated object IDs**, **fractional scaling** — see `CLAUDE.md` Next Steps.
+- **Explicit Vulkan/Wayland sync**, **AltGr / level-3 keysyms**, **`wp_relative_pointer_v1`**, **fractional scaling** — see `CLAUDE.md` Next Steps.
 - **Ergonomic "raylib-light" layer** on top of the raw primitives is the eventual target; the current `hello_gl.jai` is the proving ground, not the user-facing API.
 
 ## Building

@@ -276,12 +276,18 @@ init_global_display :: () {
 
 // Window_Type overload — the upstream GetRect example calls X11.enable_drag_and_drop
 // with a Window_Type (now a tagged union, formerly a u64 alias). On X11, unwrap
-// .x11. On Wayland, drag-and-drop is a SEPARATE protocol (wl_data_device, the XDND
-// analogue) that is NOT implemented yet — so this is a no-op, but we log it rather
-// than swallow it silently. TODO: implement wl_data_device DnD in the wayland stack.
+// .x11 and set the XdndAware property. On Wayland, drag-and-drop is a SEPARATE
+// protocol (wl_data_device, the XDND analogue) handled by Wayland_Support's data-
+// device pump; there is no per-window property to set, so we just record that the
+// app opted in. Wayland_Support reads this flag to decide whether to ACCEPT drops
+// (it acquires the wl_data_device regardless, but declines drops until opt-in),
+// keeping behaviour at parity with X11 where a window is a drop target only after
+// this call. The typelist is X11-specific (it advertises XDND target atoms); the
+// Wayland path negotiates text/uri-list directly, so it is ignored here.
 enable_drag_and_drop :: (window: WT.Window_Type, typelist: [] string) {
     if window.wtype == .Wayland {
-        log("Wayland drag-and-drop (wl_data_device) is not implemented yet — enable_drag_and_drop is a no-op on Wayland.", flags=.WARNING);
+        WT.wayland_drag_and_drop_requested = true;
+        log("Wayland drag-and-drop enabled (wl_data_device); text/uri-list file drops will be delivered as Event.DRAG_AND_DROP_FILES.");
         return;
     }
     enable_drag_and_drop(window.x11, typelist);
