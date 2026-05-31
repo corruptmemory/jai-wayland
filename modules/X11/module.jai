@@ -2,6 +2,12 @@
 // Vendored from ~/jai/jai/modules/X11/module.jai, with Xlib/GLX entry points
 // converted from #foreign declarations to runtime-loaded function pointers.
 
+// Window_Type (the tagged union) for the Window_Type overload of
+// enable_drag_and_drop below — upstream GetRect examples call X11.enable_drag_and_drop
+// with a Window_Type (which used to be a u64 alias). Mutual import with Window_Type
+// (which uses X11.Window) is fine: neither reference is size-recursive.
+WT :: #import "Window_Type";
+
 x_global_display: *Display;
 x_global_input_method: XIM;
 x_global_input_context: XIC;
@@ -266,6 +272,19 @@ init_global_display :: () {
     XFreePixmap(d, pmap);
 
     xdnd_context_reset(*x_global_xdnd_context);
+}
+
+// Window_Type overload — the upstream GetRect example calls X11.enable_drag_and_drop
+// with a Window_Type (now a tagged union, formerly a u64 alias). On X11, unwrap
+// .x11. On Wayland, drag-and-drop is a SEPARATE protocol (wl_data_device, the XDND
+// analogue) that is NOT implemented yet — so this is a no-op, but we log it rather
+// than swallow it silently. TODO: implement wl_data_device DnD in the wayland stack.
+enable_drag_and_drop :: (window: WT.Window_Type, typelist: [] string) {
+    if window.wtype == .Wayland {
+        log("Wayland drag-and-drop (wl_data_device) is not implemented yet — enable_drag_and_drop is a no-op on Wayland.", flags=.WARNING);
+        return;
+    }
+    enable_drag_and_drop(window.x11, typelist);
 }
 
 enable_drag_and_drop :: (window: Window, typelist: [] string) {

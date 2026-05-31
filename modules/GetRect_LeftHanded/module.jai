@@ -1011,3 +1011,9 @@ using CI :: #import "Color_Interpolation";
 fract :: inline (x: float) -> float { return x - floor(x); }
 
 WT :: #import "Window_Type";
+// The tagged-union Window_Type on Linux defines operator == (and thus !=); named
+// imports don't propagate operators, so re-export it here so GetRect_LeftHanded's
+// `window != INVALID_WINDOW` comparisons resolve. Mirror of GetRect/module.jai.
+#if OS == .LINUX {
+    operator == :: WT.operator==;
+}

@@ -104,8 +104,26 @@ build :: () {
                 source_subpath  = "source/main.jai",
             );
             set_build_options_dc(.{do_output=false});
+          case "getrect_example";
+            home := to_string(getenv("HOME"));
+            build_and_run_upstream_example(
+                workspace_name  = "getrect_example",
+                executable_name = "getrect_example",
+                upstream_dir    = tprint("%/jai/jai/modules/GetRect/examples", home),
+                source_subpath  = "example.jai",
+            );
+            set_build_options_dc(.{do_output=false});
+          case "getrect_lh_example";
+            home := to_string(getenv("HOME"));
+            build_and_run_upstream_example(
+                workspace_name  = "getrect_lh_example",
+                executable_name = "getrect_lh_example",
+                upstream_dir    = tprint("%/jai/jai/modules/GetRect_LeftHanded/examples", home),
+                source_subpath  = "example.jai",
+            );
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'invaders', 'skeletal_animation'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example'.\n", arg));
         }
     }
 }
