@@ -2,6 +2,10 @@
 
 Wayland client support for the [Jai](https://jai.community/) programming language.
 
+> **Built with Jai `beta 0.2.029`** (compiler built 25 April 2026) — the most recent version everything here was compiled and tested against.
+>
+> **A note on paths:** some code and documentation reference a hard-coded path to the unpacked Jai distribution, `~/jai/jai` — but that's just where I unpacked mine. Please update this path in your clone/fork (in `build.sh` and throughout the docs) to point to your own distribution.
+
 ## Design
 
 This library takes the same approach as [zig-wayland](https://github.com/ifreund/zig-wayland) and [wayland-rs](https://github.com/Smithay/wayland-rs): bypass `libwayland-client.so` entirely and speak the Wayland wire protocol directly.
@@ -54,7 +58,7 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
   - `hello_screens.jai` — prints each output's modes, scale, geometry (~30 lines)
   - `hello_window.jai` — double-buffered resizable window, keyboard (r/g/b/q keysyms) + pointer (click cycles color), dynamic resize (~220 lines)
   - `dump_keymap.jai` — diagnostic: prints evdev→keysym mappings from the live compositor's keymap
-- 109 tests across 6 test suites (xml, generator, wire, marshal, unmarshal, compile)
+- 111 tests across 6 test suites (xml, generator, wire, marshal, unmarshal, compile)
 - Tested live against Hyprland compositor on Artix Linux
 
 **Phase 5 (complete, Mesa + NVIDIA/hybrid):** GPU rendering via OpenGL 3.3 core, end-to-end GL → DMA-BUF → Wayland without any libwayland or libGL linkage.
@@ -87,10 +91,11 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 **Phase 6 (complete):** Vendored upstream window/graphics stack on Wayland — `Window_Creation` / `Simp` / `Input` / `GetRect` run on the Wayland backend, picking X11 vs Wayland by runtime *value*, not link-time `#if`.
 
 - **`modules/Wayland_Support.jai`** — the GPU-aware support layer above the pure wire `wayland` module, imported by name from Simp/Input/Window_Creation. The Wayland analogue of `modules/X11`: a bag of shared module-scope globals (the `wayland_global_windows` registry, the acquired keyboard/pointer/touch/data-device, the parsed keymap) plus the SINGLE event pump (`wl_pump`) that drains the one compositor connection and routes every message — render (frame callback / buffer release / configure / close) and input (decoded into stable `Wl_Input_Event`s) — in one pass. Backend selection is a `Display_Manager` enum value branched at the backend op sites, replacing the earlier `context.simp_dispatch` function-pointer indirection.
-- **Full input** — keyboard (modifier-aware xkb keysyms + `TEXT_INPUT`), pointer (motion / buttons / wheel / focus), structural touch, compositor-driven resize (`Window_Resize_Record`s), and `.QUIT` / Alt+F4 / close-button quit.
+- **Full input** — keyboard (modifier-aware xkb keysyms + `TEXT_INPUT`, client-synthesized **autorepeat** replayed at the compositor's `wl_keyboard.repeat_info` rate since Wayland sends no repeat events, and **command-chord suppression** so `Ctrl`/`Alt`/`Meta` + key never inserts a literal character — e.g. `Ctrl+C`/`V`/`X` in a text field), pointer (motion / buttons / wheel / focus), structural touch, compositor-driven resize (`Window_Resize_Record`s), and `.QUIT` / Alt+F4 / close-button quit.
 - **Drag-and-drop** — `wl_data_device` file drops: the pump decodes the drag session (server-allocated `wl_data_offer` ids ride through `unmarshal`'s `*Interface` path), pipes the `text/uri-list` transfer over `SCM_RIGHTS` on drop, and emits `Event.DRAG_AND_DROP_FILES` — full parity with X11's `enable_drag_and_drop`. Verified by dropping a file from PCManFM-Qt onto the GetRect example.
 - **Clipboard copy/paste** — text selection over the same `wl_data_device`, backing the vendored `Clipboard` module's `os_clipboard_get_text` / `set_text` (so GetRect's text-input Ctrl+C/V works). Paste reads the current selection offer; copy owns the selection via a `wl_data_source` and serves `send` requests. Verified end-to-end with `wl-copy` / `wl-paste` + `wtype` against the `hello_clipboard` example.
 - **Four upstream-unmodified graphical examples run on Wayland** — `invaders` (2D game), `skeletal-animation` (3D depth-tested skinned mesh + GetRect UI), and the `GetRect` / `GetRect_LeftHanded` immediate-mode widget showcases. Each links zero display-server/GPU libs (`libm` + invaders' `libasound` only — verify with `ldd build/{invaders,getrect_example}`).
+- **Project Phase 6 smoke examples** — `hello_simp.jai` (vendored Simp + Input on Wayland: an animated quad, compositor-driven resize, `q` to quit) and `hello_clipboard.jai` (clipboard copy/paste through the vendored `Clipboard` module — `c` copies, `p` pastes, `q` quits). `hello_clipboard` also echoes every key press and `TEXT_INPUT` char with its modifier + autorepeat flags, which doubles as the keyboard input smoke test for autorepeat and command-chord suppression. Both accept a `JAI_WAYLAND_{SIMP,CLIPBOARD}_FRAMES=N` cap for bounded headless runs.
 
 **Known gaps (next phases):**
 - **Clipboard bitmaps** — `os_clipboard_set_bitmap` is a logged no-op on the Wayland backend; text copy/paste works.
@@ -100,18 +105,18 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 
 ## Building
 
-Requires the Jai compiler (beta 0.2.028+) at `~/jai/jai/`. The Vulkan triangle
+Requires the Jai compiler (beta 0.2.029 — see the note at the top of this file) at `~/jai/jai/`. The Vulkan triangle
 example also expects `glslc` in `PATH`; `first.jai` invokes it to compile GLSL
 into SPIR-V under `build/shaders/`.
 
 ```bash
 ./build.sh                     # Build → build/main
 ./build.sh - test              # 22 XML/protocol tests
-./build.sh - gen_test          # 36 generator tests
+./build.sh - gen_test          # 35 generator tests
 ./build.sh - wire_test         # 22 wire protocol tests
 ./build.sh - marshal_test      # 9 marshal macro tests
 ./build.sh - unmarshal_test    # 12 unmarshal macro tests
-./build.sh - compile_test      # 8 compilation smoke tests
+./build.sh - compile_test      # 11 compilation smoke tests
 ./build.sh - generate          # Regenerate modules/wayland/ from protocol XML
 ./build.sh - hello_globals     # Build and run: print compositor globals
 ./build.sh - hello_screens     # Build and run: print output discovery
@@ -125,10 +130,20 @@ into SPIR-V under `build/shaders/`.
 ./build.sh - hello_dmabuf      # Build and run: zwp_linux_dmabuf_v1 format discovery
 ./build.sh - hello_gl          # Build and run: GPU-rendered rotating triangle (GL → DMA-BUF → Wayland)
 ./build.sh - hello_vulkan_dmabuf # Build and run: Vulkan triangle → DMA-BUF → Wayland window
+./build.sh - hello_simp        # Build and run: vendored Simp + Input smoke (animated quad, resize, q quits)
+./build.sh - hello_clipboard   # Build and run: clipboard copy/paste + input echo (c copies, p pastes, q quits)
+./build.sh - invaders          # Build and run: upstream invaders (2D game) on the Wayland backend
+./build.sh - skeletal_animation # Build and run: upstream skeletal-animation (3D mesh + GetRect UI) on Wayland
+./build.sh - getrect_example   # Build and run: upstream GetRect immediate-mode UI showcase (RIGHT_HANDED)
+./build.sh - getrect_lh_example # Build and run: upstream GetRect_LeftHanded UI showcase (LEFT_HANDED)
+./build.sh - compile_only <target> # Compile a target headlessly without running it (gate for GUI examples that would otherwise hang)
 ```
 
 The build uses Jai's compile-time metaprogramming via `first.jai`; use the
-project wrapper instead of invoking shader compilers or examples by hand.
+project wrapper instead of invoking shader compilers or examples by hand. The
+`invaders`, `skeletal_animation`, `getrect_example`, and `getrect_lh_example`
+targets compile upstream's unmodified example sources from `~/jai/jai/examples/`
+against the vendored modules.
 
 ## Project Structure
 
@@ -141,11 +156,11 @@ src/
   main.jai           — Validation harness
 tests/
   xml_test.jai       — 22 tests (parser, entities, protocol)
-  generator_test.jai — 36 tests (naming, enums, events, requests, assembly)
+  generator_test.jai — 35 tests (naming, enums, events, requests, assembly)
   wire_test.jai      — 22 tests (primitive read/write, header, string/array, buffers)
   marshal_test.jai   — 9 tests (fixed args, fd, string, array, constructors)
   unmarshal_test.jai — 12 tests (round-trip, tagged union dispatch)
-  compile_test.jai   — 8 tests (imports generated module, verifies types)
+  compile_test.jai   — 11 tests (imports generated module, verifies types)
 examples/
   hello_globals.jai  — ~20 lines: connect, discover globals, print them
   hello_screens.jai  — ~30 lines: output discovery (modes, scale, geometry)
@@ -159,6 +174,8 @@ examples/
   hello_dmabuf.jai   — print compositor format/modifier pairs and dmabuf feedback snapshots
   hello_gl.jai       — GPU-rendered rotating triangle via GL → DMA-BUF → Wayland, BO-backed, resizable, frame-paced, keyboard + pointer input
   hello_vulkan_dmabuf.jai — rotating Vulkan triangle via DRM-modifier DMA-BUF in a Wayland window
+  hello_simp.jai     — ~120 lines: vendored Simp + Input smoke (animated quad, resize, q quits)
+  hello_clipboard.jai — ~105 lines: clipboard copy/paste via the vendored Clipboard module + keyboard echo (autorepeat + command-chord-suppression smoke test)
   shaders/           — GLSL sources compiled by first.jai for Vulkan examples
 modules/
   wayland/           — Generated Jai bindings (56 protocols, 175 interfaces)
@@ -184,6 +201,14 @@ modules/
   GL/                — Runtime-dlopen'd minimal GL 3.3 core bindings (~40 entry points, loaded via eglGetProcAddress)
   Vulkan/            — Vendored Vulkan bindings with runtime-loaded PFN_vk* command pointers and Linux DRM modifier supplement
   X11/               — Vendored Xlib/GLX bindings with runtime-loaded function pointers; no sofd in first pass
+  Wayland_Support.jai — Phase 6 backend layer: shared-globals window registry + single event pump (wl_pump); GL-on-GBM, DMA-BUF present, input decode, drag-and-drop + clipboard
+  Window_Type.jai    — Tagged Window_Type (X11 | Wayland identity) + the drag-and-drop opt-in flag both backends share
+  Window_Creation/   — Vendored upstream window creation; Linux create_window picks Wayland vs X11 by runtime value
+  Simp/              — Vendored upstream Simp renderer; backend/{x11,wayland}_dispatch.jai select per-op by value
+  Input/             — Vendored upstream Input; wayland.jai drains Wayland_Support's decoded input events
+  GetRect/           — Vendored upstream immediate-mode UI toolkit (RIGHT_HANDED)
+  GetRect_LeftHanded/ — Vendored upstream immediate-mode UI toolkit (LEFT_HANDED)
+  Clipboard/         — Vendored upstream Clipboard; Linux os_clipboard_* routes to Wayland_Support under running_wayland()
 vendor/
   wayland-protocols/   — Vendored protocol XML (core, stable, staging, unstable) — regenerated into modules/wayland/
   reference/           — zig-wayland and wayland-rs sources for reference
