@@ -279,3 +279,11 @@ get_data_offer_event :: (header: WaylandMessageHeader, recv: *ReceiveBuffer) -> 
     unmarshal_event(*event, header.opcode, header.payload, recv);
     return event;
 }
+
+// Unmarshal a wl_data_source event (clipboard copy / drag source). Like the
+// offer helper, the caller matches the object id against its own source id first.
+get_data_source_event :: (header: WaylandMessageHeader, recv: *ReceiveBuffer) -> Wl_Data_Source_Event {
+    event: Wl_Data_Source_Event;
+    unmarshal_event(*event, header.opcode, header.payload, recv);
+    return event;
+}

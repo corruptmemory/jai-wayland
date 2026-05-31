@@ -806,7 +806,8 @@ wl_dnd_version:         u32;                        // negotiated wl_data_device
 // we keep a small set and reap on leave/drop/selection — none leak.
 Wl_Dnd_Offer :: struct {
     id:           u32;
-    has_uri_list: bool;   // saw text/uri-list among this offer's advertised mime types
+    has_uri_list: bool;    // saw text/uri-list among this offer's advertised mime types (drag-and-drop)
+    text_mime:    string;  // best clipboard text mime this offer advertises ("" = none); a static WL_CLIPBOARD_TEXT_MIMES entry
 }
 wl_dnd_offers: [..] Wl_Dnd_Offer;
 
@@ -815,6 +816,28 @@ wl_dnd_active_offer: u32;
 wl_dnd_enter_serial: u32;
 wl_dnd_x: float;
 wl_dnd_y: float;
+
+// ─────────────────────────── Clipboard (selection) ────────────────────────
+// Copy/paste over the same wl_data_device, sharing the offer machinery above.
+// PASTE reads the current selection's wl_data_offer (kept alive, unlike a drag
+// offer, which is consumed on drop). COPY creates a wl_data_source we own and
+// serves its wl_data_source.send requests. When we own the selection we return
+// our own buffer directly rather than receiving from our own offer (which would
+// deadlock — serving the receive needs the pump we'd be blocking) — the same
+// trick X11's Clipboard module uses via x_window_is_ours.
+
+WL_CLIPBOARD_TEXT_MIMES :: string.[
+    "text/plain;charset=utf-8",
+    "text/plain",
+    "UTF8_STRING",
+    "STRING",
+    "TEXT",
+];
+
+wl_clipboard_selection_offer: u32;     // current selection's wl_data_offer id, kept alive (0 = none)
+wl_clipboard_source:          u32;     // our wl_data_source id when WE own the selection (0 = we don't)
+wl_clipboard_source_text:     string;  // heap copy of what we put on the clipboard, served on .send
+wl_last_input_serial:         u32;     // most recent key/button serial — set_selection needs one
 
 // The pump fills this; consumers drain + clear it each frame. It naturally stays
 // empty for render-only apps: Wayland only delivers key events to keyboards you
@@ -844,12 +867,18 @@ wl_acquire_input :: () {
 
     // Acquire the data device unconditionally (cheap) so it's ready before any
     // drag, regardless of whether enable_drag_and_drop ran first; the manager
-    // version gates finish() (a v3 request) in the drop path.
+    // version gates finish() (a v3 request) in the drop path. The same device
+    // carries clipboard selection events.
     wl_data_devices, wl_data_device_manager = Wl.get_data_devices_info(seats);
     if wl_data_device_manager.id != 0 {
         g, ok := Wl.get_global("wl_data_device_manager");
         if ok  wl_dnd_version = ifx g.version < 3 then g.version else 3;
     }
+
+    // Serving the clipboard (wl_data_source.send) writes to a pipe whose reader
+    // may close early; without this, that write raises SIGPIPE and kills the
+    // process. Ignore it process-wide — the write loop handles EPIPE instead.
+    signal(SIGPIPE, SIG_IGN);
 
     log("Wayland_Support: acquired % keyboard(s), % pointer(s), % touch, % data device(s)",
         wl_keyboards.count, wl_pointers.count, wl_touches.count, wl_data_devices.count);
@@ -865,6 +894,7 @@ wl_clear_input_events :: () {
 wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
     if kev.kind == {
         case .KEY;
+            wl_last_input_serial = kev.key.serial;  // freshest serial for set_selection (clipboard copy)
             // Resolve the keysym at the modifier-aware shift level: Shift (held or
             // latched) selects level 1; Caps Lock inverts that for alphabetic keys.
             // Covers the common xkb ALPHABETIC / TWO_LEVEL / ONE_LEVEL key types;
@@ -936,6 +966,7 @@ wl_handle_pointer_event :: (pev: Wl.Wl_Pointer_Event) {
             wl_mouse_y = cast(float) Wl.fixed_to_float(pev.motion.surface_y);
             array_add(*provisional_input_events, .{ kind = .POINTER_MOTION, pointer_motion = .{ x = wl_mouse_x, y = wl_mouse_y } });
         case .BUTTON;
+            wl_last_input_serial = pev.button.serial;  // freshest serial for set_selection (clipboard copy)
             array_add(*provisional_input_events, .{ kind = .POINTER_BUTTON, pointer_button = .{
                 button  = pev.button.button,
                 pressed = pev.button.state == cast(u32) Wl.Wl_Pointer_Button_State.PRESSED,
@@ -1054,9 +1085,15 @@ wl_handle_data_device_event :: (ev: Wl.Wl_Data_Device_Event) {
             wl_dnd_perform_drop();
 
         case .SELECTION;
-            // Clipboard selection offer (copy/paste). Not consumed yet — destroy
-            // it so it doesn't leak. Clipboard support can build on this later.
-            if ev.selection.id != null  wl_dnd_destroy_offer(ev.selection.id.id);
+            // Clipboard selection changed. Adopt the new offer (kept alive for
+            // wl_clipboard_get_text — its text mimes were recorded as its offer
+            // events arrived) and destroy the one it replaces. A NULL id means the
+            // selection was cleared.
+            new_offer := ifx ev.selection.id != null then ev.selection.id.id else 0;
+            if wl_clipboard_selection_offer != 0 && wl_clipboard_selection_offer != new_offer {
+                wl_dnd_destroy_offer(wl_clipboard_selection_offer);
+            }
+            wl_clipboard_selection_offer = new_offer;
     }
 }
 
@@ -1066,10 +1103,24 @@ wl_handle_data_offer_event :: (ev: Wl.Wl_Data_Offer_Event, offer_id: u32) {
     if ev.kind == {
         case .OFFER;
             off := wl_dnd_find_offer(offer_id);
-            if off != null && ev.offer.mime_type == WL_DND_MIME  off.has_uri_list = true;
+            if off == null  return;
+            if ev.offer.mime_type == WL_DND_MIME  off.has_uri_list = true;
+            // Record the best (highest-priority) clipboard text mime this offer
+            // carries. Store the STATIC list entry, never ev.offer.mime_type — that
+            // string points into the temp-allocated payload and dies on temp reset.
+            rank := wl_clipboard_mime_rank(ev.offer.mime_type);
+            if rank >= 0 {
+                cur := ifx off.text_mime.count > 0 then wl_clipboard_mime_rank(off.text_mime) else WL_CLIPBOARD_TEXT_MIMES.count;
+                if rank < cur  off.text_mime = WL_CLIPBOARD_TEXT_MIMES[rank];
+            }
         case;
-            // SOURCE_ACTIONS / ACTION — informational for our copy-only path.
+            // SOURCE_ACTIONS / ACTION — informational for our copy path.
     }
+}
+
+wl_clipboard_mime_rank :: (mime: string) -> int {
+    for WL_CLIPBOARD_TEXT_MIMES  if it == mime  return it_index;
+    return -1;  // not a clipboard text mime we handle
 }
 
 // Handle a completed drop: pull the text/uri-list across the pipe and hand it to
@@ -1146,6 +1197,113 @@ wl_dnd_read_all :: (fd: s32) -> string {
     result.data  = buf.data;
     result.count = buf.count;
     return result;
+}
+
+// ──────────────────────────── Clipboard (copy/paste) ──────────────────────
+// Backs the Wayland arm of the vendored Clipboard module's os_clipboard_get_text
+// / os_clipboard_set_text.
+
+// PASTE. Returns a heap-allocated copy of the clipboard's text ("" if empty / not
+// text). Per the os_clipboard_get_text contract the caller frees it.
+wl_clipboard_get_text :: () -> string {
+    // If WE own the selection, hand back our own buffer — receiving from our own
+    // offer would deadlock (serving the receive needs the pump we'd block in).
+    // Mirrors X11's x_window_is_ours short-circuit.
+    if wl_clipboard_source != 0  return copy_string(wl_clipboard_source_text);
+
+    // Catch up on any pending selection event so we read the current clipboard.
+    wl_pump(false);
+    if wl_clipboard_selection_offer == 0  return "";
+    off := wl_dnd_find_offer(wl_clipboard_selection_offer);
+    if off == null || off.text_mime.count == 0  return "";
+
+    offer := Wl.Wl_Data_Offer.{ id = wl_clipboard_selection_offer };
+    fds: [2] s32;
+    if pipe2(*fds, O_CLOEXEC) != 0  return "";
+    read_fd  := fds[0];
+    write_fd := fds[1];
+
+    rbatch: Wl.MessageBuilder;
+    Wl.wl_data_offer_receive(*rbatch, *offer, off.text_mime, cast(Wl.Fd) write_fd);
+    Wl.wayland_send(*rbatch);
+    close(write_fd);
+
+    text := wl_dnd_read_all(read_fd);
+    close(read_fd);
+    return text;
+}
+
+// COPY. Take ownership of the clipboard selection with a wl_data_source offering
+// `text` in the common text mime types. The compositor delivers the bytes to
+// other clients on demand via wl_data_source.send (handled in the pump).
+wl_clipboard_set_text :: (text: string) {
+    if wl_data_device_manager.id == 0 || wl_data_devices.count == 0  return;
+
+    wl_clipboard_release_source();                 // drop any previous source we owned
+    wl_clipboard_source_text = copy_string(text);  // freed in release_source / on .cancelled
+
+    src_id := Wl.allocate_id();
+    batch: Wl.MessageBuilder;
+    Wl.wl_data_device_manager_create_data_source(*batch, *wl_data_device_manager, src_id);
+    source := Wl.Wl_Data_Source.{ id = src_id };
+    for WL_CLIPBOARD_TEXT_MIMES  Wl.wl_data_source_offer(*batch, *source, it);
+    Wl.wl_data_device_set_selection(*batch, *wl_data_devices[0].device, *source, wl_last_input_serial);
+    Wl.wayland_send(*batch);
+
+    wl_clipboard_source = src_id;
+}
+
+// Clear the clipboard selection we own (os_clipboard_empty's Wayland arm).
+wl_clipboard_empty :: () {
+    wl_clipboard_release_source();
+}
+
+// Destroy our data source (if any) and free its served text.
+wl_clipboard_release_source :: () {
+    if wl_clipboard_source != 0 {
+        source := Wl.Wl_Data_Source.{ id = wl_clipboard_source };
+        b: Wl.MessageBuilder;
+        Wl.wl_data_source_destroy(*b, *source);
+        Wl.wayland_send(*b);
+        wl_clipboard_source = 0;
+    }
+    if wl_clipboard_source_text.data != null {
+        free(wl_clipboard_source_text.data);
+        wl_clipboard_source_text = "";
+    }
+}
+
+// Decode a wl_data_source event (our own clipboard source). The caller has
+// matched object_id to wl_clipboard_source.
+wl_handle_data_source_event :: (ev: Wl.Wl_Data_Source_Event) {
+    if ev.kind == {
+        case .SEND;
+            // A client is pasting our selection — write the bytes and close the fd.
+            fd := cast(s32) ev.send.fd;
+            wl_write_all(fd, wl_clipboard_source_text);
+            close(fd);
+        case .CANCELLED;
+            // Another client took the selection (or our source was replaced).
+            wl_clipboard_release_source();
+        case;
+            // TARGET / ACTION / DND_DROP_PERFORMED / DND_FINISHED — not for clipboard.
+    }
+}
+
+// Write a whole string to a (blocking) fd, tolerating short writes + EINTR.
+// SIGPIPE is ignored process-wide (wl_acquire_input), so a closed reader yields
+// EPIPE here instead of killing us.
+wl_write_all :: (fd: s32, s: string) {
+    written := 0;
+    while written < s.count {
+        n := write(fd, s.data + written, cast(u64)(s.count - written));
+        if n < 0 {
+            if (cast(s32) errno()) == EINTR  continue;
+            break;
+        }
+        if n == 0  break;
+        written += cast(int) n;
+    }
 }
 
 // ─────────────────────────── The single pump ──────────────────────────────
@@ -1325,6 +1483,12 @@ wl_pump :: (blocking: bool) {
             if !routed && wl_dnd_is_tracked_offer(header.object_id) {
                 off_ev := Wl.get_data_offer_event(header, *session.recv);
                 wl_handle_data_offer_event(off_ev, header.object_id);
+                routed = true;
+            }
+            // Our own clipboard source: serve wl_data_source.send / .cancelled.
+            if !routed && wl_clipboard_source != 0 && header.object_id == wl_clipboard_source {
+                src_ev := Wl.get_data_source_event(header, *session.recv);
+                wl_handle_data_source_event(src_ev);
                 routed = true;
             }
         }

@@ -86,6 +86,12 @@ build :: () {
             // resolve via modules/-first import_path to dedup into one instance.
             build_and_run_test("hello_simp", "hello_simp", "examples/hello_simp.jai", "build", upstream_import_path());
             set_build_options_dc(.{do_output=false});
+          case "hello_clipboard";
+            // Same as hello_simp (vendored Simp/Window_Creation/Clipboard) — needs
+            // modules/-first import_path so wayland/Wayland_Support dedup. Exercises
+            // the Wayland clipboard copy/paste path via the Clipboard module API.
+            build_and_run_test("hello_clipboard", "hello_clipboard", "examples/hello_clipboard.jai", "build", upstream_import_path());
+            set_build_options_dc(.{do_output=false});
           case "invaders";
             home := to_string(getenv("HOME"));
             build_and_run_upstream_example(
@@ -123,7 +129,7 @@ build :: () {
             );
             set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example'.\n", arg));
         }
     }
 }
