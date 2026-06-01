@@ -100,9 +100,9 @@ Wl_Gl_Slot :: struct {
     release_fence_fd: s32 = -1;
 }
 
-// The per-window EGL display/context + GBM device + drm fd. (hello_gl.jai:363
-// EGL_Context.) One render device per window; with Simp's effectively-single
-// window that is one device. Lives inside Wayland_Window below.
+// EGL display/context + GBM device + drm fd. Simp's GL objects (shaders, VBOs,
+// font/texture handles) are process-global, matching the stock X11 backend's
+// single GLX context, so all Wayland windows render through one shared context.
 Wl_Egl_State :: struct {
     drm_fd: s32 = -1;
     gbm:    Gbm.Gbm_Device;
@@ -199,6 +199,32 @@ wl_egl_destroy :: (egl: *Wl_Egl_State) {
     if egl.dpy != EGL.EGL_NO_DISPLAY  EGL.eglTerminate(egl.dpy);
     if egl.gbm  Gbm.gbm_device_destroy(egl.gbm);
     if egl.drm_fd >= 0  close(egl.drm_fd);
+}
+
+wl_shared_egl: Wl_Egl_State;
+wl_shared_egl_initialized: bool;
+
+wl_ensure_shared_egl :: () -> bool {
+    if !wl_shared_egl_initialized {
+        if !wl_egl_init(*wl_shared_egl)  return false;
+        wl_shared_egl_initialized = true;
+    }
+
+    return true;
+}
+
+wl_make_current :: () -> bool {
+    if !wl_ensure_shared_egl()  return false;
+
+    if EGL.eglMakeCurrent(wl_shared_egl.dpy, EGL.EGL_NO_SURFACE, EGL.EGL_NO_SURFACE, wl_shared_egl.ctx) != EGL.EGL_TRUE {
+        log_error("Wayland_Support: eglMakeCurrent failed");
+        return false;
+    }
+    return true;
+}
+
+wl_shared_context :: () -> EGL.EGLContext {
+    return wl_shared_egl.ctx;
 }
 
 // ─────────────────── Format / modifier selection ──────────────────────────
@@ -490,12 +516,12 @@ wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
 // ──────────────────────── Window registry ─────────────────────────────────
 
 // The shared per-window record — the Wayland analogue of an entry in X11's
-// x_global_windows, but RICHER: it bundles window identity (surface/xdg roles)
-// AND the GPU render state (EGL ctx, BO slots), because the single event pump
-// must reach both — it routes wl_buffer.release to a slot in the SAME pass it
-// routes a key press, all off this one record. Created by
-// Window_Creation.create_window (register_wayland_window); the EGL/slot fields
-// are filled in by Simp's wl_backend_init.
+// x_global_windows. It bundles window identity (surface/xdg roles) with the
+// per-window render state (BO slots, chosen dmabuf format, frame callbacks),
+// because the single event pump must route wl_buffer.release, configure, close,
+// and input events in one pass. The EGL/GBM display/context is module-global.
+// Created by Window_Creation.create_window (register_wayland_window); the slot
+// fields are filled in by Simp's wl_backend_init.
 Wayland_Window :: struct {
     id          : u32;          // == surface.id; the window's identity key
     width       : s32;          // current size (source of truth; pump updates on configure)
@@ -505,8 +531,8 @@ Wayland_Window :: struct {
     xdg_surface : Wl.Xdg_Surface;
     toplevel    : Wl.Xdg_Toplevel;
 
-    // GPU render state — filled by Simp's wl_backend_init.
-    wl_egl:      Wl_Egl_State;                  // EGL display/context + GBM device + drm fd
+    // Per-window GPU render state — filled by Simp's wl_backend_init. The EGL
+    // display/context + GBM device live in wl_shared_egl above.
     wl_slots:    [SIMP_WL_SLOT_COUNT] Wl_Gl_Slot;
     wl_current:  s32 = -1;                       // index of the slot currently being rendered
     wl_initted:  bool;
@@ -567,6 +593,46 @@ register_wayland_window :: (surface_id: u32, xdg_surface_id: u32, toplevel_id: u
     return ww;
 }
 
+// Used by Window_Creation while it is synchronously waiting for a newly-created
+// window's first configure. A compositor may reconfigure already-registered
+// windows during that wait (multiple_windows does this when the second window is
+// tiled). Those events still belong to the shared Wayland state and must not be
+// consumed by the creation loop and dropped.
+wl_route_registered_window_control_event :: (header: Wl.WaylandMessageHeader, recv: *Wl.ReceiveBuffer) -> bool {
+    for * ww: wayland_global_windows {
+        if header.object_id == ww.xdg_surface.id && header.opcode == Wl.XDG_SURFACE_CONFIGURE {
+            serial := Wl.read_u32(header.payload);
+            ack_batch: Wl.MessageBuilder;
+            Wl.xdg_surface_ack_configure(*ack_batch, *ww.xdg_surface, serial);
+            Wl.wayland_send(*ack_batch);
+            return true;
+        }
+        if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
+            args: Wl.Xdg_Toplevel_Configure_Args;
+            Wl.unmarshal(*args, header.payload, recv);
+            if args.width > 0 && args.height > 0 && (args.width != ww.width || args.height != ww.height) {
+                ww.width      = args.width;
+                ww.height     = args.height;
+                ww.size_dirty = true;
+            }
+            return true;
+        }
+        if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CLOSE {
+            ww.wl_close_requested = true;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+wl_any_window_needs_app_turn :: () -> bool {
+    for wayland_global_windows {
+        if it.size_dirty || it.wl_close_requested  return true;
+    }
+    return false;
+}
+
 // ─────────────────────────── Present + pace ───────────────────────────────
 
 // Attach the current slot, request a frame callback, commit, then block draining
@@ -588,13 +654,29 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
     // This is exactly GLX's triple-buffered swap behaviour. See
     // docs/plans/2026-05-31-wayland-async-present.md.
     if ww.wl_pending_frame_callback != 0 {
+        pending_frame_callback := ww.wl_pending_frame_callback;
         while !ww.wl_frame_done {
             sess := context.wayland_session;
             if !sess || sess.connection_lost  break;
             wl_pump(true);   // stops when the pending callback's wl_callback.done arrives
+            if !ww.wl_frame_done && wl_any_window_needs_app_turn()  break;
         }
-        Wl.cache_free(*ww.wl_frame_cache, ww.wl_pending_frame_callback);
+
+        if ww.wl_frame_done {
+            Wl.cache_free(*ww.wl_frame_cache, pending_frame_callback);
+        }
         ww.wl_pending_frame_callback = 0;
+        ww.wl_frame_done = false;
+    }
+
+    if wl_any_window_needs_app_turn() {
+        // A configure/close arrived while pacing the previous frame. Return to
+        // the app without committing another stale-size buffer; Input will emit
+        // resize/quit on the next frame. If the old callback later arrives, its
+        // id is intentionally not recycled because it may still be live server-side.
+        ww.wl_pending_frame_callback = 0;
+        ww.wl_frame_done = false;
+        return;
     }
 
     slot := *ww.wl_slots[ww.wl_current];
@@ -627,18 +709,21 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
 }
 
 // ─────────────────── Per-window GL bring-up / ops ─────────────────────────
-// These hold ALL the EGL/GBM/wire work for a window so the Simp dispatch glue
+// These hold the Wayland GL backend work so the Simp dispatch glue
 // (modules/Simp/backend/wayland_dispatch.jai) stays a thin display_manager
-// branch. Each takes the shared registry record. (Old simp_wayland_dispatch
-// BACKEND_INIT / RESIZE / SET bodies, retargeted off info.specific onto *Wayland_Window.)
+// branch. EGL/GBM/context state is shared module-wide; each Wayland_Window owns
+// only its surface roles, chosen dmabuf format, slots, and frame state. (Old
+// simp_wayland_dispatch BACKEND_INIT / RESIZE / SET bodies, retargeted off
+// info.specific onto *Wayland_Window.)
 
 // Bring up EGL-on-GBM, negotiate a dmabuf format, allocate the double-buffered
 // slots at the window's current size. Leaves wl_initted=true on success.
 wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
-    if !wl_egl_init(*ww.wl_egl) {
+    if !wl_ensure_shared_egl() {
         log_error("Wayland_Support: EGL/GBM init failed");
         return false;
     }
+    if !wl_make_current()  return false;
 
     dmabuf_info, dmabuf_ok := Wl.get_dmabuf_info();
     if !dmabuf_ok {
@@ -647,7 +732,7 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     }
     ww.wl_dmabuf_info = dmabuf_info;
 
-    format, modifier, have_format := wl_choose_dmabuf_format(ww.wl_egl.gbm, ww.wl_dmabuf_info, *ww.surface);
+    format, modifier, have_format := wl_choose_dmabuf_format(wl_shared_egl.gbm, ww.wl_dmabuf_info, *ww.surface);
     if !have_format {
         log_error("Wayland_Support: no GBM-usable ABGR/XBGR 8888 dmabuf format advertised");
         return false;
@@ -660,7 +745,7 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     backend := wl_choose_gl_backend();
     batch: Wl.MessageBuilder;
     for * slot, i: ww.wl_slots {
-        if !wl_slot_init(slot, ww.wl_egl, *ww.wl_dmabuf_info.dmabuf, *batch,
+        if !wl_slot_init(slot, wl_shared_egl, *ww.wl_dmabuf_info.dmabuf, *batch,
                          ww.wl_format, ww.wl_modifier, ww.width, ww.height, backend) {
             // An earlier slot's batched create messages are abandoned unsent, yet
             // allocate_id() advanced next_id — a hole in the contiguous client-ID
@@ -685,15 +770,6 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     return true;
 }
 
-// Make the window's EGL context current. (BACKEND_SET_RENDER_TARGET body.)
-wl_make_current :: (ww: *Wayland_Window) -> bool {
-    if EGL.eglMakeCurrent(ww.wl_egl.dpy, EGL.EGL_NO_SURFACE, EGL.EGL_NO_SURFACE, ww.wl_egl.ctx) != EGL.EGL_TRUE {
-        log_error("Wayland_Support: eglMakeCurrent failed");
-        return false;
-    }
-    return true;
-}
-
 // Retire current slots (compositor may still hold an in-flight buffer → wl_retired,
 // torn down on their wl_buffer.release in the pump) and reallocate at the new size,
 // reusing the negotiated format/modifier. Returns true if it actually reallocated
@@ -701,15 +777,16 @@ wl_make_current :: (ww: *Wayland_Window) -> bool {
 // window is disabled via wl_initted=false). (BACKEND_RESIZE body.)
 wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
     if ww.wl_slots[0].width == new_w && ww.wl_slots[0].height == new_h  return false;
+    if !wl_make_current()  return false;
 
     retire_batch: Wl.MessageBuilder;
-    wl_retire_slots(*retire_batch, *ww.wl_retired, ww.wl_slots, ww.wl_egl);
+    wl_retire_slots(*retire_batch, *ww.wl_retired, ww.wl_slots, wl_shared_egl);
     Wl.wayland_send(*retire_batch);
 
     backend := wl_choose_gl_backend();
     alloc_batch: Wl.MessageBuilder;
     for * slot, i: ww.wl_slots {
-        if !wl_slot_init(slot, ww.wl_egl, *ww.wl_dmabuf_info.dmabuf, *alloc_batch,
+        if !wl_slot_init(slot, wl_shared_egl, *ww.wl_dmabuf_info.dmabuf, *alloc_batch,
                          ww.wl_format, ww.wl_modifier, new_w, new_h, backend) {
             log_error("Wayland_Support: resize slot % realloc failed (%x%) — window disabled", i, new_w, new_h);
             ww.wl_initted = false;
@@ -1546,12 +1623,14 @@ wl_pump :: (blocking: bool) {
                         ww.width      = args.width;
                         ww.height     = args.height;
                         ww.size_dirty = true;
+                        done = true;
                     }
                     routed = true;
                     break;
                 }
                 if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CLOSE {
                     ww.wl_close_requested = true;
+                    done = true;
                     routed = true;
                     break;
                 }
@@ -1573,7 +1652,7 @@ wl_pump :: (blocking: bool) {
                     }
                     if routed  break;
                     release_batch: Wl.MessageBuilder;
-                    if wl_release_retired_slot(*release_batch, *ww.wl_retired, header.object_id, ww.wl_egl) {
+                    if wl_release_retired_slot(*release_batch, *ww.wl_retired, header.object_id, wl_shared_egl) {
                         Wl.wayland_send(*release_batch);
                         routed = true;
                         break;

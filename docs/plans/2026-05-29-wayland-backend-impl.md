@@ -1,5 +1,13 @@
 # Wayland Backend (Stage 2) Implementation Plan
 
+> **Current implementation note (2026-06-01):** the final shipped backend moved
+> this plan's early per-window EGL sketch out of `Window_Info.specific`.
+> `Wayland_Support` now owns one shared EGL/GBM/GL context for all Simp Wayland
+> windows, while `Wayland_Window` owns per-window surface roles, BO slots,
+> dmabuf format/modifier, frame pacing, resize, and close state. Multi-window
+> startup also routes configure/close events for already-registered windows
+> while a new window waits for its first configure.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 > Before writing or modifying ANY Jai code, invoke the `jai-language` skill (project CLAUDE.md mandate).
 

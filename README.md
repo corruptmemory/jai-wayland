@@ -90,12 +90,13 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 
 **Phase 6 (complete):** Vendored upstream window/graphics stack on Wayland — `Window_Creation` / `Simp` / `Input` / `GetRect` run on the Wayland backend, picking X11 vs Wayland by runtime *value*, not link-time `#if`.
 
-- **`modules/Wayland_Support.jai`** — the GPU-aware support layer above the pure wire `wayland` module, imported by name from Simp/Input/Window_Creation. The Wayland analogue of `modules/X11`: a bag of shared module-scope globals (the `wayland_global_windows` registry, the acquired keyboard/pointer/touch/data-device, the parsed keymap) plus the SINGLE event pump (`wl_pump`) that drains the one compositor connection and routes every message — render (frame callback / buffer release / configure / close) and input (decoded into stable `Wl_Input_Event`s) — in one pass. Backend selection is a `Display_Manager` enum value branched at the backend op sites, replacing the earlier `context.simp_dispatch` function-pointer indirection.
+- **`modules/Wayland_Support.jai`** — the GPU-aware support layer above the pure wire `wayland` module, imported by name from Simp/Input/Window_Creation. The Wayland analogue of `modules/X11`: shared module-scope globals for the `wayland_global_windows` registry, the single shared EGL/GBM/GL context used by all Simp Wayland windows, per-window BO slots/dmabuf choices/frame state, acquired keyboard/pointer/touch/data-device objects, the parsed keymap, plus the SINGLE event pump (`wl_pump`) that drains the one compositor connection and routes every message — render (frame callback / buffer release / configure / close) and input (decoded into stable `Wl_Input_Event`s) — in one pass. Backend selection is a `Display_Manager` enum value branched at the backend op sites, replacing the earlier `context.simp_dispatch` function-pointer indirection.
 - **Asynchronous, triple-buffered present** — `wl_present_and_pace` paces to vsync via the *previous* frame's `wl_surface.frame` callback: a CPU-bound app never blocks (the prior callback already fired → no per-frame latency), a fast app caps to vsync (no uncapped GPU burn) — the same shape as GLX's triple-buffered swap. 3 BO slots give the render-ahead headroom. This replaced an earlier synchronous block-on-the-frame-callback present that cost ~3.3 ms/frame; dragging now matches XWayland's feel. (Profiling found the present path was *not* the frame-rate bottleneck — the ~28.5 ms/frame backend-agnostic GetRect+Simp CPU work caps both backends at ~30–34 fps. See `docs/plans/2026-05-31-wayland-async-present.md`.)
 - **Full input** — keyboard (modifier-aware xkb keysyms + `TEXT_INPUT`, client-synthesized **autorepeat** replayed at the compositor's `wl_keyboard.repeat_info` rate since Wayland sends no repeat events, and **command-chord suppression** so `Ctrl`/`Alt`/`Meta` + key never inserts a literal character — e.g. `Ctrl+C`/`V`/`X` in a text field), pointer (motion / buttons / wheel / focus), structural touch, compositor-driven resize (`Window_Resize_Record`s), and `.QUIT` / Alt+F4 / close-button quit.
 - **Drag-and-drop** — `wl_data_device` file drops: the pump decodes the drag session (server-allocated `wl_data_offer` ids ride through `unmarshal`'s `*Interface` path), pipes the `text/uri-list` transfer over `SCM_RIGHTS` on drop, and emits `Event.DRAG_AND_DROP_FILES` — full parity with X11's `enable_drag_and_drop`. Verified by dropping a file from PCManFM-Qt onto the GetRect example.
 - **Clipboard copy/paste** — text selection over the same `wl_data_device`, backing the vendored `Clipboard` module's `os_clipboard_get_text` / `set_text` (so GetRect's text-input Ctrl+C/V works). Paste reads the current selection offer; copy owns the selection via a `wl_data_source` and serves `send` requests. Verified end-to-end with `wl-copy` / `wl-paste` + `wtype` against the `hello_clipboard` example.
-- **Six upstream-unmodified graphical examples run on Wayland** — `invaders` (2D game), `skeletal-animation` (3D depth-tested skinned mesh + GetRect UI), the `GetRect` / `GetRect_LeftHanded` immediate-mode widget showcases, `treemap`, and `codex_view`. Each links zero display-server/GPU libs (`libm` + invaders' `libasound` only — verify with `ldd build/{invaders,getrect_example,treemap,codex_view}`).
+- **Nine upstream-unmodified graphical examples run on Wayland** — `invaders` (2D game), `skeletal-animation` (3D depth-tested skinned mesh + GetRect UI), the `GetRect` / `GetRect_LeftHanded` immediate-mode widget showcases, `treemap`, `codex_view`, and the upstream Simp examples `simp_example`, `simp_multiple_windows`, and `simp_render_to_texture`. Each links zero display-server/GPU libs (`libm` + invaders' `libasound` only — verify with `ldd build/{invaders,anim,getrect_example,treemap,codex_view,simp_multiple_windows}`).
+- **Multi-window Simp on Wayland** — `simp_multiple_windows` uses the shared Wayland EGL context with per-window BO slots; compositor resize/close events wake the app out of frame pacing so animation, color cycling, resize, and close requests keep flowing under Hyprland tiling.
 - **Upstream runtime assets are staged by the build** — `treemap` gets `OpenSans-BoldItalic.ttf` next to the `build/` executable; `codex_view` gets its `data/` directory plus sample `.codex` recordings (`codex_view.codex`, `sokoban.codex`) linked into `build/`.
 - **Project Phase 6 smoke examples** — `hello_simp.jai` (vendored Simp + Input on Wayland: an animated quad, compositor-driven resize, `q` to quit) and `hello_clipboard.jai` (clipboard copy/paste through the vendored `Clipboard` module — `c` copies, `p` pastes, `q` quits). `hello_clipboard` also echoes every key press and `TEXT_INPUT` char with its modifier + autorepeat flags, which doubles as the keyboard input smoke test for autorepeat and command-chord suppression. Both accept a `JAI_WAYLAND_{SIMP,CLIPBOARD}_FRAMES=N` cap for bounded headless runs.
 
@@ -142,13 +143,17 @@ into SPIR-V under `build/shaders/`.
 ./build.sh - getrect_lh_example # Build and run: upstream GetRect_LeftHanded UI showcase (LEFT_HANDED)
 ./build.sh - treemap           # Build and run: upstream treemap example; stages OpenSans-BoldItalic.ttf
 ./build.sh - codex_view        # Build and run: upstream codex_view; stages data/ and sample .codex files
+./build.sh - simp_example      # Build and run: upstream Simp example; stages font + image assets
+./build.sh - simp_multiple_windows # Build and run: upstream Simp multiple-windows example; stages font asset
+./build.sh - simp_render_to_texture # Build and run: upstream Simp render-to-texture example
 ./build.sh - compile_only <target> # Compile a target headlessly without running it (gate for GUI examples that would otherwise hang)
 ```
 
 The build uses Jai's compile-time metaprogramming via `first.jai`; use the
 project wrapper instead of invoking shader compilers or examples by hand. The
 `invaders`, `skeletal_animation`, `getrect_example`, `getrect_lh_example`,
-`treemap`, and `codex_view` targets build and run upstream's unmodified example
+`treemap`, `codex_view`, `simp_example`, `simp_multiple_windows`, and
+`simp_render_to_texture` targets build and run upstream's unmodified example
 sources from the Jai distribution against the vendored modules.
 
 ## Project Structure
@@ -208,7 +213,7 @@ modules/
   GL/                — Runtime-dlopen'd minimal GL 3.3 core bindings (~40 entry points, loaded via eglGetProcAddress)
   Vulkan/            — Vendored Vulkan bindings with runtime-loaded PFN_vk* command pointers and Linux DRM modifier supplement
   X11/               — Vendored Xlib/GLX bindings with runtime-loaded function pointers; no sofd in first pass
-  Wayland_Support.jai — Phase 6 backend layer: shared-globals window registry + single event pump (wl_pump); GL-on-GBM, DMA-BUF present, input decode, drag-and-drop + clipboard
+  Wayland_Support.jai — Phase 6 backend layer: shared-globals window registry + shared EGL/GBM context + single event pump (wl_pump); GL-on-GBM, DMA-BUF present, input decode, drag-and-drop + clipboard
   Window_Type.jai    — Tagged Window_Type (X11 | Wayland identity) + the drag-and-drop opt-in flag both backends share
   Window_Creation/   — Vendored upstream window creation; Linux create_window picks Wayland vs X11 by runtime value
   Simp/              — Vendored upstream Simp renderer; backend/{x11,wayland}_dispatch.jai select per-op by value

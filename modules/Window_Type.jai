@@ -28,10 +28,12 @@
     // Window IDENTITY for the Wayland backend — the analogue of X11's bare
     // X11.Window handle. Just the wl_surface id: the stable key into the shared
     // WS.wayland_global_windows registry (Wayland_Support), which owns the full
-    // per-window state — xdg roles, current size, EGL ctx, BO slots. Window_Type
-    // is a freely-copied VALUE, so it must stay a lightweight handle, not a copy
-    // of state that would go stale the instant it is copied. Resolve the full
-    // record with WS.find_wayland_window(surface).
+    // per-window state — xdg roles, current size, BO slots, frame state.
+    // The EGL/GBM display/context is process-global in Wayland_Support, matching
+    // Simp's process-global GL objects. Window_Type is a freely-copied VALUE, so
+    // it must stay a lightweight handle, not a copy of state that would go stale
+    // the instant it is copied. Resolve the full record with
+    // WS.find_wayland_window(surface).
     Wayland_Window_State :: struct {
         surface: u32;    // wl_surface id — identity key into WS.wayland_global_windows
     }
@@ -96,4 +98,3 @@
     Window_Type :: *Android.ANativeWindow;
     INVALID_WINDOW : Window_Type : null;
 }
-

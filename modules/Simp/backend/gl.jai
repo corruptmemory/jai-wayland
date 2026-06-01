@@ -71,7 +71,8 @@ backend_init :: (info: *Window_Info) {
     #if OS == .LINUX {
         // Branch to the active Linux backend for context creation + window-surface
         // setup + make-current. Each backend internally decides whether first-time
-        // init applies (the_gl_context for X11 / wl_initted for Wayland).
+        // init applies; both X11 and Wayland publish a process-wide GL context
+        // through the_gl_context.
         if context.simp.specific.display_manager == {
             case .X11;     x11_backend_init(info);
             case .WAYLAND; wl_backend_init(info);
@@ -1161,12 +1162,13 @@ backend_texture_destroy :: (texture: *Texture) {
     Window_Info_Platform_Specific :: struct {
         glx_window: GLXWindow;          // X11 path — Simp's per-window GLX handle.
 
-        // The Wayland render state (EGL ctx, BO slots, dmabuf negotiation, frame
-        // pacing, close signal) does NOT live here. It lives in the SHARED
-        // WS.wayland_global_windows registry, keyed by info.window.wayland.surface,
-        // so the single Wayland_Support pump — driven by BOTH Simp (render) and
-        // Input — can reach it over the one compositor connection. Look it up with
-        // WS.find_wayland_window(info.window.wayland.surface) (see wayland_dispatch.jai).
+        // The Wayland render state does NOT live here. Wayland_Support owns a
+        // shared EGL/GBM context plus the per-window BO slots, dmabuf negotiation,
+        // frame pacing, and close signal in WS.wayland_global_windows, keyed by
+        // info.window.wayland.surface, so the single pump — driven by BOTH Simp
+        // (render) and Input — can reach it over the one compositor connection.
+        // Look it up with WS.find_wayland_window(info.window.wayland.surface)
+        // (see wayland_dispatch.jai).
     }
 } else #if OS == .MACOS {
     Backend_Platform_Specific :: struct {

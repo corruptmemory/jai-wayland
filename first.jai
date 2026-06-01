@@ -159,8 +159,45 @@ build :: () {
                 ],
             );
             set_build_options_dc(.{do_output=false});
+          case "simp_example";
+            home := to_string(getenv("HOME"));
+            upstream_dir := tprint("%/jai/jai/modules/Simp/examples", home);
+            build_and_run_upstream_example(
+                workspace_name  = "simp_example",
+                executable_name = "simp_example",
+                upstream_dir    = upstream_dir,
+                source_subpath  = "example.jai",
+                runtime_links   = Runtime_Link.[
+                    .{ source = tprint("%/OpenSans-BoldItalic.ttf", upstream_dir), destination = "OpenSans-BoldItalic.ttf" },
+                    .{ source = tprint("%/image_test.jpg", upstream_dir), destination = "image_test.jpg" },
+                ],
+            );
+            set_build_options_dc(.{do_output=false});
+          case "simp_multiple_windows";
+            home := to_string(getenv("HOME"));
+            upstream_dir := tprint("%/jai/jai/modules/Simp/examples", home);
+            build_and_run_upstream_example(
+                workspace_name  = "simp_multiple_windows",
+                executable_name = "simp_multiple_windows",
+                upstream_dir    = upstream_dir,
+                source_subpath  = "multiple_windows.jai",
+                runtime_links   = Runtime_Link.[
+                    .{ source = tprint("%/OpenSans-BoldItalic.ttf", upstream_dir), destination = "OpenSans-BoldItalic.ttf" },
+                ],
+            );
+            set_build_options_dc(.{do_output=false});
+          case "simp_render_to_texture";
+            home := to_string(getenv("HOME"));
+            upstream_dir := tprint("%/jai/jai/modules/Simp/examples", home);
+            build_and_run_upstream_example(
+                workspace_name  = "simp_render_to_texture",
+                executable_name = "simp_render_to_texture",
+                upstream_dir    = upstream_dir,
+                source_subpath  = "render_to_texture.jai",
+            );
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
         }
     }
 }

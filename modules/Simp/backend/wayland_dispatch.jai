@@ -32,7 +32,17 @@ wl_backend_init :: (info: *Window_Info) {
     // set_render_target calls backend_init BEFORE update_window populates
     // info.window_width. wl_window_init_gl reads ww.width/height (set at
     // create-time / updated by the pump on configure).
-    if !WS.wl_window_init_gl(ww)  log_error("Simp Wayland: GL bring-up failed");
+    if !WS.wl_window_init_gl(ww) {
+        log_error("Simp Wayland: GL bring-up failed");
+        return;
+    }
+
+    // Simp's GL backend uses `the_gl_context` as the process-wide "did we do
+    // one-time GL object setup?" sentinel. X11 stores the single GLX context
+    // there; Wayland stores the shared EGL context pointer there so shaders,
+    // VAO/VBOs, and font textures are initialized exactly once and then reused
+    // across multiple Wayland windows.
+    if !the_gl_context  the_gl_context = xx WS.wl_shared_context();
 }
 
 wl_set_render_target :: (info: *Window_Info) {
@@ -42,7 +52,7 @@ wl_set_render_target :: (info: *Window_Info) {
     // half-built context. ONLY make current here; the FBO bind is gl.jai's job via
     // window_framebuffer (mirrors how the X11 op only does glXMakeCurrent).
     if !ww || !ww.wl_initted  return;
-    WS.wl_make_current(ww);
+    WS.wl_make_current();
 }
 
 wl_resize_render_target :: (info: *Window_Info) {
@@ -52,7 +62,7 @@ wl_resize_render_target :: (info: *Window_Info) {
     // slots actually reallocated, bind the new current slot's FBO so the next
     // clear/draw targets it (the old FBO was just retired); gl.jai's glViewport
     // follows this dispatch.
-    if WS.wl_window_resize_gl(ww, info.window_width, info.window_height) {
+    if WS.wl_window_resize_gl(ww, info.window_width, info.window_height) && context.simp.current_window_info.window == info.window {
         glBindFramebuffer(GL_FRAMEBUFFER, window_framebuffer(info));
     }
 }
