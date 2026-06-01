@@ -95,7 +95,8 @@ This library takes the same approach as [zig-wayland](https://github.com/ifreund
 - **Full input** — keyboard (modifier-aware xkb keysyms + `TEXT_INPUT`, client-synthesized **autorepeat** replayed at the compositor's `wl_keyboard.repeat_info` rate since Wayland sends no repeat events, and **command-chord suppression** so `Ctrl`/`Alt`/`Meta` + key never inserts a literal character — e.g. `Ctrl+C`/`V`/`X` in a text field), pointer (motion / buttons / wheel / focus), structural touch, compositor-driven resize (`Window_Resize_Record`s), and `.QUIT` / Alt+F4 / close-button quit.
 - **Drag-and-drop** — `wl_data_device` file drops: the pump decodes the drag session (server-allocated `wl_data_offer` ids ride through `unmarshal`'s `*Interface` path), pipes the `text/uri-list` transfer over `SCM_RIGHTS` on drop, and emits `Event.DRAG_AND_DROP_FILES` — full parity with X11's `enable_drag_and_drop`. Verified by dropping a file from PCManFM-Qt onto the GetRect example.
 - **Clipboard copy/paste** — text selection over the same `wl_data_device`, backing the vendored `Clipboard` module's `os_clipboard_get_text` / `set_text` (so GetRect's text-input Ctrl+C/V works). Paste reads the current selection offer; copy owns the selection via a `wl_data_source` and serves `send` requests. Verified end-to-end with `wl-copy` / `wl-paste` + `wtype` against the `hello_clipboard` example.
-- **Four upstream-unmodified graphical examples run on Wayland** — `invaders` (2D game), `skeletal-animation` (3D depth-tested skinned mesh + GetRect UI), and the `GetRect` / `GetRect_LeftHanded` immediate-mode widget showcases. Each links zero display-server/GPU libs (`libm` + invaders' `libasound` only — verify with `ldd build/{invaders,getrect_example}`).
+- **Six upstream-unmodified graphical examples run on Wayland** — `invaders` (2D game), `skeletal-animation` (3D depth-tested skinned mesh + GetRect UI), the `GetRect` / `GetRect_LeftHanded` immediate-mode widget showcases, `treemap`, and `codex_view`. Each links zero display-server/GPU libs (`libm` + invaders' `libasound` only — verify with `ldd build/{invaders,getrect_example,treemap,codex_view}`).
+- **Upstream runtime assets are staged by the build** — `treemap` gets `OpenSans-BoldItalic.ttf` next to the `build/` executable; `codex_view` gets its `data/` directory plus sample `.codex` recordings (`codex_view.codex`, `sokoban.codex`) linked into `build/`.
 - **Project Phase 6 smoke examples** — `hello_simp.jai` (vendored Simp + Input on Wayland: an animated quad, compositor-driven resize, `q` to quit) and `hello_clipboard.jai` (clipboard copy/paste through the vendored `Clipboard` module — `c` copies, `p` pastes, `q` quits). `hello_clipboard` also echoes every key press and `TEXT_INPUT` char with its modifier + autorepeat flags, which doubles as the keyboard input smoke test for autorepeat and command-chord suppression. Both accept a `JAI_WAYLAND_{SIMP,CLIPBOARD}_FRAMES=N` cap for bounded headless runs.
 
 **Known gaps (next phases):**
@@ -139,14 +140,16 @@ into SPIR-V under `build/shaders/`.
 ./build.sh - skeletal_animation # Build and run: upstream skeletal-animation (3D mesh + GetRect UI) on Wayland
 ./build.sh - getrect_example   # Build and run: upstream GetRect immediate-mode UI showcase (RIGHT_HANDED)
 ./build.sh - getrect_lh_example # Build and run: upstream GetRect_LeftHanded UI showcase (LEFT_HANDED)
+./build.sh - treemap           # Build and run: upstream treemap example; stages OpenSans-BoldItalic.ttf
+./build.sh - codex_view        # Build and run: upstream codex_view; stages data/ and sample .codex files
 ./build.sh - compile_only <target> # Compile a target headlessly without running it (gate for GUI examples that would otherwise hang)
 ```
 
 The build uses Jai's compile-time metaprogramming via `first.jai`; use the
 project wrapper instead of invoking shader compilers or examples by hand. The
-`invaders`, `skeletal_animation`, `getrect_example`, and `getrect_lh_example`
-targets compile upstream's unmodified example sources from `~/jai/jai/examples/`
-against the vendored modules.
+`invaders`, `skeletal_animation`, `getrect_example`, `getrect_lh_example`,
+`treemap`, and `codex_view` targets build and run upstream's unmodified example
+sources from the Jai distribution against the vendored modules.
 
 ## Project Structure
 

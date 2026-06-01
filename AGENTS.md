@@ -80,6 +80,8 @@ Live compositor / GPU examples:
 ./build.sh - skeletal_animation
 ./build.sh - getrect_example
 ./build.sh - getrect_lh_example
+./build.sh - treemap
+./build.sh - codex_view
 ./build.sh - compile_only <target>
 ```
 
@@ -87,6 +89,9 @@ The lone `-` separates Jai compiler arguments from metaprogram arguments. Do not
 repeat it before each target.
 `compile_only` must appear before the target; use it as the headless compile
 gate for GUI examples that would otherwise open a live window.
+The `treemap` target stages `OpenSans-BoldItalic.ttf` next to `build/treemap`.
+The `codex_view` target stages `data/`, `codex_view.codex`, and
+`sokoban.codex` next to `build/codex_view`.
 
 ## Architecture
 
@@ -164,10 +169,10 @@ gate for GUI examples that would otherwise open a live window.
   `libGLX`, `libGL`, or `libxcb`. Use `JAI_WAYLAND_X11_GL_FRAMES=N` for
   bounded live smoke runs.
 - Preserve the vendored-stack linkage invariant for `hello_simp`,
-  `hello_clipboard`, `invaders`, `anim`, `getrect_example`, and
-  `getrect_lh_example`: no `libwayland`, `libX11`, `libxcb`, `libGL`,
-  `libGLX`, `libEGL`, `libgbm`, or `libvulkan`. `libm` and invaders'
-  `libasound` linkage are expected.
+  `hello_clipboard`, `invaders`, `anim`, `getrect_example`,
+  `getrect_lh_example`, `treemap`, and `codex_view`: no `libwayland`,
+  `libX11`, `libxcb`, `libGL`, `libGLX`, `libEGL`, `libgbm`, or
+  `libvulkan`. `libm` and invaders' `libasound` linkage are expected.
 - `hello_vulkan_dmabuf` is the first live Vulkan presentation smoke: Vulkan
   renders a rotating triangle into DRM-modifier images, exports them as DMA-BUF,
   wraps them as Wayland `wl_buffer` objects, and presents them through
@@ -262,7 +267,9 @@ Use focused tests first:
   `./build.sh - compile_only invaders`,
   `./build.sh - compile_only skeletal_animation`,
   `./build.sh - compile_only getrect_example`,
-  `./build.sh - compile_only getrect_lh_example`
+  `./build.sh - compile_only getrect_lh_example`,
+  `./build.sh - compile_only treemap`,
+  `./build.sh - compile_only codex_view`
 - Bounded live smokes use frame caps where available:
   `JAI_WAYLAND_SIMP_FRAMES=N ./build.sh - hello_simp`,
   `JAI_WAYLAND_CLIPBOARD_FRAMES=N ./build.sh - hello_clipboard`,
