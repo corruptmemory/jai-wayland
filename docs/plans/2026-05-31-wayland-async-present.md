@@ -4,6 +4,13 @@
 > Perf + gross-render verified autonomously; tearing + drag feel verified by a
 > human eyeball pass.
 > Date: 2026-05-31. Built with Jai `beta 0.2.029`.
+>
+> **Follow-up (2026-06-01):** multi-window Simp under Hyprland exposed one more
+> pacing edge case: configure/close can arrive while waiting on the previous
+> frame callback, and Hyprland may not deliver that callback until the client
+> handles the configure. `wl_present_and_pace` now yields back to the app when
+> configure/close is observed, so resize records, animation, color cycling, and
+> compositor close continue flowing.
 
 ## Motivation
 

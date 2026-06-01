@@ -131,8 +131,73 @@ build :: () {
                 source_subpath  = "example.jai",
             );
             set_build_options_dc(.{do_output=false});
+          case "treemap";
+            home := to_string(getenv("HOME"));
+            upstream_dir := tprint("%/jai/jai/examples/treemap", home);
+            build_and_run_upstream_example(
+                workspace_name  = "treemap",
+                executable_name = "treemap",
+                upstream_dir    = upstream_dir,
+                source_subpath  = "build.jai",
+                runtime_links   = Runtime_Link.[
+                    .{ source = tprint("%/OpenSans-BoldItalic.ttf", upstream_dir), destination = "OpenSans-BoldItalic.ttf" },
+                ],
+            );
+            set_build_options_dc(.{do_output=false});
+          case "codex_view";
+            home := to_string(getenv("HOME"));
+            upstream_dir := tprint("%/jai/jai/examples/codex_view", home);
+            build_and_run_upstream_example(
+                workspace_name  = "codex_view",
+                executable_name = "codex_view",
+                upstream_dir    = upstream_dir,
+                source_subpath  = "src/main.jai",
+                runtime_links   = Runtime_Link.[
+                    .{ source = tprint("%/run/data", upstream_dir), destination = "data" },
+                    .{ source = tprint("%/run/codex_view.codex", upstream_dir), destination = "codex_view.codex" },
+                    .{ source = tprint("%/run/sokoban.codex", upstream_dir), destination = "sokoban.codex" },
+                ],
+            );
+            set_build_options_dc(.{do_output=false});
+          case "simp_example";
+            home := to_string(getenv("HOME"));
+            upstream_dir := tprint("%/jai/jai/modules/Simp/examples", home);
+            build_and_run_upstream_example(
+                workspace_name  = "simp_example",
+                executable_name = "simp_example",
+                upstream_dir    = upstream_dir,
+                source_subpath  = "example.jai",
+                runtime_links   = Runtime_Link.[
+                    .{ source = tprint("%/OpenSans-BoldItalic.ttf", upstream_dir), destination = "OpenSans-BoldItalic.ttf" },
+                    .{ source = tprint("%/image_test.jpg", upstream_dir), destination = "image_test.jpg" },
+                ],
+            );
+            set_build_options_dc(.{do_output=false});
+          case "simp_multiple_windows";
+            home := to_string(getenv("HOME"));
+            upstream_dir := tprint("%/jai/jai/modules/Simp/examples", home);
+            build_and_run_upstream_example(
+                workspace_name  = "simp_multiple_windows",
+                executable_name = "simp_multiple_windows",
+                upstream_dir    = upstream_dir,
+                source_subpath  = "multiple_windows.jai",
+                runtime_links   = Runtime_Link.[
+                    .{ source = tprint("%/OpenSans-BoldItalic.ttf", upstream_dir), destination = "OpenSans-BoldItalic.ttf" },
+                ],
+            );
+            set_build_options_dc(.{do_output=false});
+          case "simp_render_to_texture";
+            home := to_string(getenv("HOME"));
+            upstream_dir := tprint("%/jai/jai/modules/Simp/examples", home);
+            build_and_run_upstream_example(
+                workspace_name  = "simp_render_to_texture",
+                executable_name = "simp_render_to_texture",
+                upstream_dir    = upstream_dir,
+                source_subpath  = "render_to_texture.jai",
+            );
+            set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
         }
     }
 }
@@ -198,6 +263,7 @@ build_and_run_upstream_example :: (
     executable_name: string,
     upstream_dir: string,
     source_subpath: string,
+    runtime_links: [] Runtime_Link = .[],
 ) {
     w := compiler_create_workspace(workspace_name);
     if !w  { print("% workspace creation failed.\n", workspace_name); return; }
@@ -230,12 +296,18 @@ build_and_run_upstream_example :: (
     // jai-wayland/build/, so we need to plant a `data` symlink there that
     // points at the upstream example's real data folder. Idempotent.
     ensure_upstream_data_symlink(upstream_dir);
+    for runtime_links  ensure_build_runtime_symlink(it.source, it.destination);
 
     if compile_only_flag  return;
 
     binary := tprint("%/build/%", #filepath, executable_name);
     result := run_command(binary, working_directory = upstream_dir);
     if result.exit_code != 0  exit(result.exit_code);
+}
+
+Runtime_Link :: struct {
+    source: string;
+    destination: string;  // Relative to jai-wayland/build/.
 }
 
 ensure_upstream_data_symlink :: (upstream_dir: string) {
@@ -245,13 +317,23 @@ ensure_upstream_data_symlink :: (upstream_dir: string) {
         return;
     }
 
-    dst := tprint("%/build/data", #filepath);
+    ensure_build_runtime_symlink(src, "data");
+}
+
+ensure_build_runtime_symlink :: (src: string, destination: string) {
+    if !file_exists(src) {
+        print("WARNING: runtime asset '%' does not exist; skipping symlink.\n", src);
+        return;
+    }
+
+    dst := tprint("%/build/%", #filepath, destination);
     src_c := temp_c_string(src);
     dst_c := temp_c_string(dst);
-    // Always repoint: build/data may be a leftover symlink to a DIFFERENT example
-    // (invaders vs skeletal_animation). unlink removes our prior symlink (not its
-    // target) and harmlessly fails if absent. If dst is a real directory, unlink
-    // fails and the symlink below is skipped — we never rm a real data dir.
+    // Always repoint generated runtime links: build/data may be a leftover symlink
+    // to a different example, and build/*.codex/font links may likewise be stale.
+    // unlink removes our prior symlink (not its target) and harmlessly fails if
+    // absent. If dst is a real directory, unlink fails and the symlink below is
+    // skipped — we never rm a real data dir.
     unlink(dst_c);
     rc := symlink(src_c, dst_c);
     if rc != 0 {

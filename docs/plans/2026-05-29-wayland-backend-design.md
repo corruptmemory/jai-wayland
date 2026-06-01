@@ -1,6 +1,12 @@
 # Wayland Backend for Vendored Simp — Stage 2 Design
 
 > **Status:** validated through conversation, ready to implement.
+> **Current implementation note (2026-06-01):** the final backend keeps the same
+> broad shape but uses a shared `Wayland_Support` EGL/GBM/GL context for all
+> Simp Wayland windows. Per-window state is limited to surface roles, BO slots,
+> dmabuf choices, frame pacing, resize, and close state in
+> `wayland_global_windows`; `Window_Type.wayland` remains only a copy-safe
+> wl_surface identity handle.
 > Supersedes `docs/plans/2026-05-26-wayland-backend-question.md` (the Layer-3
 > "open question" doc), whose central uncertainty no longer exists.
 > Continues `docs/plans/2026-05-26-context-dispatch-stage1-design.md` (Stage 1,

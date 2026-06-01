@@ -250,14 +250,17 @@ update_window :: (window: Window_Type) {
     if !info return;  // Ignore windows we don't understand.
 
     window_width, window_height := get_render_dimensions(window);
+    size_changed := (window_width != info.window_width) || (window_height != info.window_height);
     info.window_width  = window_width;
     info.window_height = window_height;
-
     c := *state.current_window_info;
-    if c.window == window {
-        if (window_width != c.window_width) || (window_height != c.window_height) {
-            backend_resize_render_target(info);  // *Window_Info: the backend may mutate per-window state (Wayland slot realloc)
 
+    if size_changed && info.backend_initted_for_this_window {
+        backend_resize_render_target(info);  // *Window_Info: the backend may mutate per-window state (Wayland slot realloc)
+    }
+
+    if c.window == window {
+        if size_changed {
             // If the user changes the window after setting a shader,
             // the projection will be out-of-date, so, update it here.
             // We check state.current_shader because immediate_set_2d_projection will error
@@ -402,5 +405,3 @@ find_or_add_window_info :: (window: Window_Type) -> *Window_Info, bool {
     info.window = window;
     return info, true;
 }
-
-

@@ -80,6 +80,11 @@ Live compositor / GPU examples:
 ./build.sh - skeletal_animation
 ./build.sh - getrect_example
 ./build.sh - getrect_lh_example
+./build.sh - treemap
+./build.sh - codex_view
+./build.sh - simp_example
+./build.sh - simp_multiple_windows
+./build.sh - simp_render_to_texture
 ./build.sh - compile_only <target>
 ```
 
@@ -87,6 +92,11 @@ The lone `-` separates Jai compiler arguments from metaprogram arguments. Do not
 repeat it before each target.
 `compile_only` must appear before the target; use it as the headless compile
 gate for GUI examples that would otherwise open a live window.
+The `treemap` target stages `OpenSans-BoldItalic.ttf` next to `build/treemap`.
+The `codex_view` target stages `data/`, `codex_view.codex`, and
+`sokoban.codex` next to `build/codex_view`.
+The `simp_example` target stages `OpenSans-BoldItalic.ttf` and
+`image_test.jpg`; `simp_multiple_windows` stages `OpenSans-BoldItalic.ttf`.
 
 ## Architecture
 
@@ -124,9 +134,11 @@ gate for GUI examples that would otherwise open a live window.
   `wayland` wire module. It is the Wayland analogue of `modules/X11`: shared
   module-scope globals plus the single `wl_pump` that drains the compositor
   connection and routes render, resize, input, data-device, clipboard, and
-  drag-and-drop events. It owns `wayland_global_windows`, GL-on-GBM setup,
-  triple-buffered async `wl_present_and_pace`, the parsed keymap, acquired
-  seats/devices, and the stable `Wl_Input_Event` queue consumed by `Input`.
+  drag-and-drop events. It owns `wayland_global_windows`, the shared
+  EGL/GBM/GL context used by all Simp Wayland windows, per-window BO slots and
+  dmabuf choices, triple-buffered async `wl_present_and_pace`, the parsed
+  keymap, acquired seats/devices, and the stable `Wl_Input_Event` queue
+  consumed by `Input`.
 - `modules/Window_Type.jai` vendors the upstream Linux window type as a tagged
   union (`X11 | Wayland`) with equality overloads and the shared
   `wayland_drag_and_drop_requested` opt-in flag used by X11 and Wayland paths.
@@ -164,10 +176,11 @@ gate for GUI examples that would otherwise open a live window.
   `libGLX`, `libGL`, or `libxcb`. Use `JAI_WAYLAND_X11_GL_FRAMES=N` for
   bounded live smoke runs.
 - Preserve the vendored-stack linkage invariant for `hello_simp`,
-  `hello_clipboard`, `invaders`, `anim`, `getrect_example`, and
-  `getrect_lh_example`: no `libwayland`, `libX11`, `libxcb`, `libGL`,
-  `libGLX`, `libEGL`, `libgbm`, or `libvulkan`. `libm` and invaders'
-  `libasound` linkage are expected.
+  `hello_clipboard`, `invaders`, `anim`, `getrect_example`,
+  `getrect_lh_example`, `treemap`, `codex_view`, `simp_example`,
+  `simp_multiple_windows`, and `simp_render_to_texture`: no `libwayland`,
+  `libX11`, `libxcb`, `libGL`, `libGLX`, `libEGL`, `libgbm`, or
+  `libvulkan`. `libm` and invaders' `libasound` linkage are expected.
 - `hello_vulkan_dmabuf` is the first live Vulkan presentation smoke: Vulkan
   renders a rotating triangle into DRM-modifier images, exports them as DMA-BUF,
   wraps them as Wayland `wl_buffer` objects, and presents them through
@@ -224,6 +237,19 @@ gate for GUI examples that would otherwise open a live window.
 - `wl_present_and_pace` is asynchronous and triple-buffered: it throttles on the
   previous frame callback. Do not restore the old synchronous wait-on-this-frame
   present path.
+- Simp's Wayland GL context is process-global, matching Simp's process-global
+  shader/VBO/font GL objects and the X11 backend's single GLX context. Do not
+  put `Wl_Egl_State` back on `Wayland_Window`; that struct owns per-window
+  surface roles, BO slots, dmabuf format/modifier, resize/close state, and
+  frame pacing only.
+- `wl_present_and_pace` must yield back to the app when configure/close arrives
+  while waiting on a previous frame callback. Hyprland can withhold the callback
+  until the client handles the configure; continuing to wait stalls animation,
+  resize handling, and compositor close on multi-window Simp examples.
+- `create_window_wayland` can receive configure/close events for already
+  registered windows while synchronously waiting for a new window's first
+  configure. Route those through `Wayland_Support` rather than consuming and
+  dropping them.
 - Code under `modules/` should use `log` / `log_error`, not `print`; examples
   may still print user-facing diagnostics.
 
@@ -262,7 +288,12 @@ Use focused tests first:
   `./build.sh - compile_only invaders`,
   `./build.sh - compile_only skeletal_animation`,
   `./build.sh - compile_only getrect_example`,
-  `./build.sh - compile_only getrect_lh_example`
+  `./build.sh - compile_only getrect_lh_example`,
+  `./build.sh - compile_only treemap`,
+  `./build.sh - compile_only codex_view`,
+  `./build.sh - compile_only simp_example`,
+  `./build.sh - compile_only simp_multiple_windows`,
+  `./build.sh - compile_only simp_render_to_texture`
 - Bounded live smokes use frame caps where available:
   `JAI_WAYLAND_SIMP_FRAMES=N ./build.sh - hello_simp`,
   `JAI_WAYLAND_CLIPBOARD_FRAMES=N ./build.sh - hello_clipboard`,

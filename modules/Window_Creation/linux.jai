@@ -242,8 +242,9 @@ create_window :: (width: int, height: int, window_name: string, window_x := 0, w
 // (wl_surface / xdg_surface / xdg_toplevel), commits, then blocks until the
 // first xdg configure to learn the initial size. Ported from
 // examples/hello_gl.jai:99-127. This builds ONLY the window identity; the GL
-// backend state (EGL ctx, GBM, BO slots) is created later in Simp's
-// BACKEND_INIT, exactly as the X11 path leaves GL to Simp.
+// backend state is created later in Simp's BACKEND_INIT: Wayland_Support owns
+// the shared EGL/GBM context and the per-window BO slots, exactly as the X11
+// path leaves GL to Simp.
 //
 // Slice 1 has no teardown hook: the WaylandSession created here is leaked at
 // process exit. That is acceptable for now — end_wayland_session is a Stage-2
@@ -301,6 +302,8 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
             configure_serial = Wl.read_u32(it.payload);
             got_configure = true;
             break;
+        } else {
+            WS.wl_route_registered_window_control_event(it, recv);
         }
     }
 
