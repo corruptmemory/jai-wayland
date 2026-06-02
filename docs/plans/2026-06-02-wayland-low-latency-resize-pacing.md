@@ -88,5 +88,17 @@ open for further pacing/profiling.
 - Decide whether active-resize pacing should be per-window only, global, or
   dependent on present mode.
 - Measure BO/EGL/GL/wl_buffer recreation separately from app-side CPU work.
+- Explore bucketed GPU slot capacity instead of reallocating on every resize:
+  keep per-window logical size separate from each slot's allocation capacity,
+  allocate BO/EGLImage/GL texture/FBO/wl_buffer slots in growth buckets
+  (possibly output-sized or next-power-ish buckets), and only recreate slots when
+  the new logical size exceeds capacity. Render only the logical rectangle with
+  `glViewport`/`glScissor`. Do not rely on `wl_surface.damage_buffer` as a crop;
+  damage only describes changed pixels. Oversized buffers need `wp_viewporter`
+  source/destination state, otherwise the compositor will treat the attached
+  buffer size as the surface size.
+- If bucketed slots work, consider delayed shrink-after-quiescence rather than
+  shrinking on every smaller configure. That preserves reuse during drag-resize
+  while bounding worst-case memory after the window settles.
 - Profile GetRect/Simp CPU work independently of Wayland present pacing.
 - Revisit explicit sync/fence work; this experiment does not replace it.

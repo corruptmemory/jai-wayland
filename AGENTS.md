@@ -247,6 +247,13 @@ The `simp_example` target stages `OpenSans-BoldItalic.ttf` and
   resize immediate; do not restore the abandoned coalesced/delayed resize path.
   Use `JAI_WAYLAND_TRACE_RESIZE=1` to log configure, input resize record,
   GL resize, no-op resize, and active-resize pacing events.
+- The next resize-performance direction to explore is bucketed GPU slot capacity:
+  separate logical window size from BO/EGLImage/GL texture/FBO/wl_buffer
+  allocation size, grow slots in buckets, and only recreate when the logical size
+  exceeds capacity. Use `glViewport`/`glScissor` for rendering into the logical
+  region and `wp_viewporter` source/destination state for presentation cropping.
+  `wl_surface.damage_buffer` is not a crop; an oversized attached buffer changes
+  the surface size unless viewporter constrains it.
 - `wl_present_and_pace` is asynchronous and triple-buffered. Do not restore the
   old synchronous wait-on-this-frame present path. In FIFO mode it throttles on
   the previous frame callback; in mailbox/immediate mode it uses buffer release
