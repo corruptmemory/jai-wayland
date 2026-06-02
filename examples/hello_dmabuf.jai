@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Diagnostic — print the (format, modifier) pairs the compositor advertises
 // via zwp_linux_dmabuf_v1. Useful for validating Task 5's discovery helper
 // and for sanity-checking what formats are actually available before

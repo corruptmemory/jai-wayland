@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Registry discovery helpers — plain functions, no inversion of control.
 
 #import "Basic";

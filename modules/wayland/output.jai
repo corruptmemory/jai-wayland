@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Output discovery — typed wl_output event processing using unmarshal.
 
 #import "Basic";

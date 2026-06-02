@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // hello_x11_gl — X11 + GLX + runtime-loaded GL spinning triangle smoke.
 //
 // This is intentionally separate from the Wayland path. It proves the vendored

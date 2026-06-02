@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // GPU selection policy helpers.
 //
 // This module is intentionally outside the Wayland protocol generator. It owns

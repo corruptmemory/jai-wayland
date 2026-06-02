@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // x11_smoke — smoke test for the runtime-loaded X11 binding.
 //
 // This intentionally does not create a window. It proves the vendored X11

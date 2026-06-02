@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Compile-time marshal macro: walks arg structs via type_info at compile time
 // and emits type-specific serialization code via #insert #run.
 

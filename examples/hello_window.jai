@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // hello_window — resizable window with pooled shared memory buffers.
 // Discovers native screen resolution, allocates one shm pool sized to it,
 // and creates cheap wl_buffer objects on resize. No remapping, no syscalls

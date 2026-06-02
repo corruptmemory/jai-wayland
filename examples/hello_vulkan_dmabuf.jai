@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // hello_vulkan_dmabuf — present a Vulkan-rendered DRM-modifier DMA-BUF in a
 // Wayland window. This deliberately avoids VK_KHR_wayland_surface: that WSI path
 // wants libwayland-client proxy pointers, while jai-wayland owns only the wire

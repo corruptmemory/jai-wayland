@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // EGL bindings — types + runtime dlopen loader.
 // No build-time linkage; libEGL.so.1 is loaded at runtime by init_egl().
 

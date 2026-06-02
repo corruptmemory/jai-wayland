@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Input discovery — seat, keyboard, and pointer acquisition.
 
 #import "Basic";

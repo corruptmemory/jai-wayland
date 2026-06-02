@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // examples/hello_clipboard.jai — exercises the Wayland clipboard (copy/paste) path
 // through the vendored Clipboard module's public API (os_clipboard_get_text /
 // os_clipboard_set_text), exactly as a real app (GetRect's text input) would.

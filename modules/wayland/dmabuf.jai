@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // linux-dmabuf-v1 discovery helper — parallel to output.jai / input.jai.
 //
 // Binds zwp_linux_dmabuf_v1 from the registry and collects the

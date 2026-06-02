@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // headless_vulkan — smoke test for the runtime-loaded Vulkan binding.
 //
 // This intentionally does not create a window or Wayland surface. It proves the

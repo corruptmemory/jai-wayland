@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Wayland Unix socket connection and object ID allocator.
 
 #import "Basic";

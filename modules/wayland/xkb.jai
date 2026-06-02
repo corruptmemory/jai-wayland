@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // XKB keymap parser — extracts evdev keycode → keysym mappings from
 // the xkb_keymap text format sent by the compositor via wl_keyboard.keymap.
 

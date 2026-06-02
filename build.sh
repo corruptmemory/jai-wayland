@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Jim Powers
 set -euo pipefail
 cd "$(dirname "$0")"
 # NOTE: `~/jai/jai/bin/jai-linux` is just where I unpacked the Jai compiler

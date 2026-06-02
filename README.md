@@ -239,4 +239,21 @@ first.jai            — Build metaprogram
 
 ## License
 
-MIT
+The original code authored for jai-wayland is licensed under the
+[MIT License](LICENSE) — the protocol XML parser and code generator (`src/`),
+the hand-written wire/session/discovery layer and the generated bindings
+(`modules/wayland/`), the runtime GPU loaders (`modules/gpu`, `modules/EGL`,
+`modules/gbm`), the `Wayland_Support` backend layer, and the `examples/` and
+`tests/`.
+
+The repository also bundles third-party code that keeps its own license; the
+MIT grant does **not** extend to it:
+
+- **`vendor/wayland-protocols/`** — upstream Wayland protocol XML, each file under
+  its own copyright/permission notice (MIT/HPND-style). The generated bindings
+  reproduce each protocol's notice in their file headers.
+- **`modules/{Simp, GetRect, GetRect_LeftHanded, Input, Window_Creation,
+  Clipboard, X11, Vulkan, Window_Type, GL}`** — vendored from, or derived from,
+  the Jai compiler distribution; © Thekla, Inc. (and their respective upstreams),
+  under that distribution's terms. They are included only so the upstream
+  graphical examples build, and are not relicensed here.

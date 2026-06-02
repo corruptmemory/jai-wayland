@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Wayland_Support — the GPU-aware support layer that sits ABOVE the pure
 // wire-protocol `wayland` module and is imported by the windowing consumers
 // (Simp, Input, GetRect). It is the Wayland analogue of `modules/X11`: a bag of

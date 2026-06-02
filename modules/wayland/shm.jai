@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Shared memory helpers for wl_shm buffer allocation.
 
 #import "POSIX";

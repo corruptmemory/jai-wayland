@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 #import "Basic";
 #import "POSIX";
 Wayland :: #import,dir "../modules/wayland";
