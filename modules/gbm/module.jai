@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // libgbm bindings — types + runtime dlopen loader.
 // Includes gbm_device plus optional BO entry points for GBM-backed DMA-BUF paths.
 

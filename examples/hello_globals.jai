@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // hello_globals — connect to compositor, print available globals.
 // The simplest possible Wayland client.
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Runtime loader: dlopen libEGL.so.1 and resolve function pointers.
 // init_egl()            — core entry points (safe to call before eglInitialize)
 // init_egl_extensions() — extension entry points (requires an initialized display)

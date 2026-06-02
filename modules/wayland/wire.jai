@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Wire protocol primitives for Wayland message framing.
 // All writes are native-endian (both sides on same machine).
 

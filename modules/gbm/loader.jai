@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Runtime loader: dlopen libgbm.so.1 and resolve function pointers.
 
 #import "POSIX";

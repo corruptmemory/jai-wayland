@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // hello_gl — GPU-rendered Wayland window, double-buffered via dmabuf,
 // paced by wl_surface.frame callbacks.
 //

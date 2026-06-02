@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // examples/hello_simp.jai — Slice 1 proving vehicle for the Wayland Simp backend.
 //
 // The minimal program that exercises the WHOLE Wayland backend path through

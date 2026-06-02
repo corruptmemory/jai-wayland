@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Compile-time unmarshal macro: walks event arg structs via type_info at compile time
 // and emits type-specific deserialization code via #insert #run.
 // This is the mirror of marshal.jai — marshal serializes requests, unmarshal

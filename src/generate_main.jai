@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 #import "Basic";
 #import "File";
 #import "File_Utilities";
@@ -130,7 +133,7 @@ main :: () {
 
         // Write each interface file
         for * iface: proto.interfaces {
-            iface_content := generate_interface_file(iface);
+            iface_content := generate_interface_file(iface, proto.copyright);
             // Avoid self-referencing #load: if interface name == protocol name,
             // append _interface suffix to the filename.
             file_base := ifx iface.name == proto.name then tprint("%_interface", iface.name) else iface.name;

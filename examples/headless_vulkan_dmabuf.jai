@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // headless_vulkan_dmabuf — smoke test for Vulkan external-memory export.
 //
 // This is the first Vulkan path that fits jai-wayland's architecture: create a

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // EGL types + enum constants + function-pointer declarations.
 // Ported from ~/jai/jai/modules/Android/EGL/bindings.jai, with these differences:
 //   - no #foreign libegl hard link (we runtime-dlopen in loader.jai)

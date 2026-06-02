@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // headless_gl — smoke test for the EGL+GL+gbm stack.
 //
 // Selects a DRM render node, creates a gbm_device, creates an EGL display via

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // libgbm types + DRM fourcc helpers + function-pointer declarations.
 
 Gbm_Device :: *void;

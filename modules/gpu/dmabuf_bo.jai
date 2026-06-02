@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Jim Powers
+
 // Shared GBM BO allocation and EGLImage import helpers.
 
 #import "Basic";
