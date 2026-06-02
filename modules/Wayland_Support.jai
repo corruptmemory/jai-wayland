@@ -562,6 +562,15 @@ Wayland_Window :: struct {
     // docs/plans/2026-05-31-wayland-async-present.md.
     wl_pending_frame_callback: u32;
     wl_frame_done: bool;
+
+    // Set when a present timed out waiting for this window's frame callback —
+    // i.e. the compositor is not presenting this surface (occluded: a hidden tab
+    // in a Hyprland group, minimized, or on another workspace), so it sends no
+    // wl_surface.frame callbacks. While starved, wl_present_and_pace does not
+    // block on this window's callback, so a VISIBLE sibling keeps full vsync
+    // pacing. Cleared by the pump the instant a callback returns (the surface is
+    // being presented again). See wl_present_and_pace.
+    wl_pacing_starved: bool;
 }
 
 // THE shared global window registry — one instance across Simp/Input/GetRect
@@ -635,10 +644,56 @@ wl_any_window_needs_app_turn :: () -> bool {
 
 // ─────────────────────────── Present + pace ───────────────────────────────
 
-// Attach the current slot, request a frame callback, commit, then block draining
-// the session until that callback fires — vsync-equivalent pacing. The caller
-// (Simp's swap) does the glFinish before and the FBO rebind after. Ported from
-// hello_gl.jai's steady-state present + the SWAP_BUFFERS path.
+// Upper bound on how long a present waits for a window's frame callback before
+// concluding the compositor is not presenting that surface. Must be >= one
+// display refresh so a VISIBLE window still paces to vsync (its callback arrives
+// well inside this); 50 ms (≈ 3-4 refreshes) leaves slack for a momentarily
+// janky-but-visible window without false-flagging it as occluded.
+PRESENT_PACE_TIMEOUT_MS :: 50;
+
+// Block up to timeout_ms for compositor data, then route whatever arrived
+// (non-blocking). Unlike wl_pump(true) this NEVER blocks past the timeout:
+// wl_pump(true) loops back into a blocking recvmsg whenever its buffer drains,
+// so it can't bound a wait. Here we poll the fd, then do a single recvmsg +
+// non-blocking drain only when data is actually ready. timeout_ms == 0 is a
+// non-blocking poll; we never pass -1 (that would block forever).
+wl_pump_timed :: (timeout_ms: s32) {
+    sess := context.wayland_session;
+    if !sess || sess.connection_lost  return;
+
+    // Already-buffered data: route it without polling.
+    msg, _ := Wl.receive_peek_message(*sess.recv);
+    if msg != null {
+        wl_pump(false);
+        return;
+    }
+
+    pfd: pollfd;
+    pfd.fd     = sess.conn.socket_fd;
+    pfd.events = POLLIN;
+    n := poll(*pfd, xx 1, timeout_ms);
+    if n <= 0  return;   // 0 = timed out, <0 = EINTR/error
+    if (pfd.revents & POLLIN) != 0 {
+        bts := Wl.wayland_receive(*sess.conn, *sess.recv);
+        if bts <= 0 { sess.connection_lost = true; return; }
+        wl_pump(false);
+    }
+}
+
+// True when EVERY registered window is starved — i.e. the whole app is occluded.
+// In that case present keeps the full timeout (rather than the starved fast-path)
+// so the render loop idles instead of busy-spinning the GPU on invisible frames.
+wl_all_windows_starved :: () -> bool {
+    if wayland_global_windows.count == 0  return false;
+    for wayland_global_windows  if !it.wl_pacing_starved  return false;
+    return true;
+}
+
+// Attach the current slot, request a frame callback, commit, then wait (BOUNDED)
+// for the previous frame's callback — vsync-equivalent pacing that degrades
+// gracefully for occluded windows (see the wait below). The caller (Simp's swap)
+// does the glFinish before and the FBO rebind after. Ported from hello_gl.jai's
+// steady-state present + the SWAP_BUFFERS path.
 wl_present_and_pace :: (ww: *Wayland_Window) {
     if ww.wl_current < 0  return;
 
@@ -655,15 +710,45 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
     // docs/plans/2026-05-31-wayland-async-present.md.
     if ww.wl_pending_frame_callback != 0 {
         pending_frame_callback := ww.wl_pending_frame_callback;
+
+        // BOUNDED vsync wait. A surface the compositor is not presenting (an
+        // occluded window: a hidden tab in a Hyprland group, minimized, or on
+        // another workspace) receives NO wl_surface.frame callbacks, so an
+        // unbounded wait here would stall this whole single-threaded render loop
+        // on that one window — freezing every other (visible) window with it.
+        //
+        // Wait at most PRESENT_PACE_TIMEOUT_MS for the callback; on timeout, flag
+        // the window starved and stop pacing it (it is invisible — we owe it no
+        // vsync). A starved window then skips the wait (timeout 0) so a VISIBLE
+        // sibling keeps full vsync smoothness — UNLESS every window is starved
+        // (the whole app is occluded), where we keep the full timeout so the loop
+        // idles rather than busy-spinning the GPU on invisible frames. The pump
+        // clears wl_pacing_starved the instant a callback returns, so normal
+        // pacing resumes as soon as the window is presented again.
+        timeout_ms: s32 = PRESENT_PACE_TIMEOUT_MS;
+        if ww.wl_pacing_starved && !wl_all_windows_starved()  timeout_ms = 0;
+        deadline := seconds_since_init() + (cast(float64) timeout_ms) / 1000.0;
+
         while !ww.wl_frame_done {
             sess := context.wayland_session;
             if !sess || sess.connection_lost  break;
-            wl_pump(true);   // stops when the pending callback's wl_callback.done arrives
-            if !ww.wl_frame_done && wl_any_window_needs_app_turn()  break;
+            if wl_any_window_needs_app_turn()  break;
+
+            remaining := cast(s32)((deadline - seconds_since_init()) * 1000.0);
+            if remaining < 0  remaining = 0;
+            wl_pump_timed(remaining);
+            if ww.wl_frame_done  break;
+            if remaining <= 0  break;   // deadline reached (or starved fast-path: timeout 0)
         }
 
         if ww.wl_frame_done {
             Wl.cache_free(*ww.wl_frame_cache, pending_frame_callback);
+            ww.wl_pacing_starved = false;
+        } else {
+            // No callback within the budget → the surface isn't being presented.
+            // Leave the id unrecycled (it may still be live server-side, like the
+            // app-turn yield) and mark starved so subsequent frames don't block.
+            ww.wl_pacing_starved = true;
         }
         ww.wl_pending_frame_callback = 0;
         ww.wl_frame_done = false;
@@ -1596,8 +1681,11 @@ wl_pump :: (blocking: bool) {
                 if ww.wl_pending_frame_callback != 0 && header.object_id == ww.wl_pending_frame_callback && header.opcode == Wl.WL_CALLBACK_DONE {
                     // The frame we're pacing on fired. Flag it (wl_present_and_pace's
                     // vsync throttle loops on wl_frame_done) and stop the blocking
-                    // wait. SWAP owns the id recycle (cache_free).
+                    // wait. SWAP owns the id recycle (cache_free). A callback means
+                    // the compositor is presenting this surface again, so clear the
+                    // starvation flag (it may have been read during a sibling's wait).
                     ww.wl_frame_done = true;
+                    ww.wl_pacing_starved = false;
                     done = true;
                     routed = true;
                     break;
