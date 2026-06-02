@@ -11,6 +11,16 @@
 > handles the configure. `wl_present_and_pace` now yields back to the app when
 > configure/close is observed, so resize records, animation, color cycling, and
 > compositor close continue flowing.
+>
+> **Follow-up 2 (2026-06-01):** the "Occlusion" open item below is now FIXED.
+> Grouped Simp windows under Hyprland (only one tab visible) starved — a hidden
+> window gets no frame callbacks, so the unbounded pacing wait blocked the
+> single-threaded render loop and froze the *visible* window too (it advanced one
+> frame per tab toggle). The wait is now bounded (`PRESENT_PACE_TIMEOUT_MS` =
+> 50 ms) with a per-window `wl_pacing_starved` flag: a starved window is skipped
+> so a visible sibling keeps full vsync pacing, while an all-occluded app keeps
+> the timeout so the loop idles instead of busy-spinning the GPU on invisible
+> frames.
 
 ## Motivation
 
@@ -80,9 +90,13 @@ capped to vsync instead of burning the GPU. Does **not** touch the 28.5 ms GetRe
 ceiling — this closes the Wayland-vs-X11 gap, it does not make GetRect "smooth."
 
 ## Risks / open items
-- **Occlusion**: if the compositor stops sending the frame callback (occluded
-  surface), the throttle blocks until it resumes — same as the old code, not a
-  regression.
+- **Occlusion** — **FIXED 2026-06-01** (see "Follow-up 2" at top). Originally: if
+  the compositor stops sending the frame callback (occluded surface), the throttle
+  blocks until it resumes. Grouped Simp windows under Hyprland hit exactly this.
+  The pacing wait is now bounded at `PRESENT_PACE_TIMEOUT_MS` (50 ms); on timeout
+  the window is flagged `wl_pacing_starved` and skipped so a visible sibling keeps
+  full vsync pacing, while an all-occluded app keeps the full timeout so the loop
+  idles instead of busy-spinning.
 - **Subtle tearing + drag feel** — NOT verifiable autonomously. **Needs human
   eyes before commit.** (Gross render verified clean via grim for both examples;
   perf verified; no crash/hang over multi-second runs.)
