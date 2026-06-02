@@ -43,9 +43,11 @@ update_wayland_window_events :: () {
     // age the START/END flags on input_button_states.
     input_per_frame_event_and_flag_update();
 
-    // Drain anything buffered since last frame. swap_buffers' blocking pump
-    // already decoded keys that arrived during frame pacing; this sweeps the rest.
-    WS.wl_pump(false);
+    // Drain anything ready since last frame. FIFO swap does a blocking receive
+    // while pacing on frame callbacks, but MAILBOX / IMMEDIATE present modes do
+    // not; use the timed zero-timeout pump so input, pings, and buffer releases
+    // are still read from the socket in low-latency modes.
+    WS.wl_pump_timed(0);
 
     // Emit Window_Resize_Records for any window the pump flagged as resized
     // (xdg_toplevel.configure changed its size). This is the Wayland equivalent of
@@ -56,7 +58,14 @@ update_wayland_window_events :: () {
     for * ww: WS.wayland_global_windows {
         if ww.size_dirty {
             ww.size_dirty = false;
-            rec := array_add(*pending_resizes);
+            rec: *Window_Resize_Record;
+            for * pending_resizes {
+                if it.window.wtype == .Wayland && it.window.wayland.surface == ww.surface.id {
+                    rec = it;
+                    break;
+                }
+            }
+            if !rec  rec = array_add(*pending_resizes);
             rec.window = .{ wtype = .Wayland, wayland = .{ surface = ww.surface.id } };
             rec.width  = ww.width;
             rec.height = ww.height;

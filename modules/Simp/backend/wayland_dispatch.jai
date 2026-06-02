@@ -77,10 +77,10 @@ wl_swap_buffers :: (info: *Window_Info) {
     // Explicit fences are a future item (slot.acquire/release_fence_fd placeholders).
     glFinish();
 
-    // Present the current slot. Asynchronous + vsync-paced: wl_present_and_pace
-    // throttles on the PREVIOUS frame's callback (no per-frame block for a
-    // CPU-bound app; capped to vsync for a fast one) and rotates ww.wl_current to
-    // a free slot. See docs/plans/2026-05-31-wayland-async-present.md.
+    // Present the current slot. wl_present_and_pace dispatches by
+    // JAI_WAYLAND_PRESENT_MODE: FIFO uses the previous frame callback as a
+    // bounded vsync throttle; MAILBOX / IMMEDIATE skip that callback wait and
+    // drop rendered frames when the BO queue is full. See Wayland_Support.jai.
     WS.wl_present_and_pace(ww);
 
     // Leave the NEW current slot's FBO bound as the render target. On X11 the
