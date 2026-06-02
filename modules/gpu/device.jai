@@ -31,11 +31,12 @@ discover_render_nodes :: (nodes: *[..] Render_Node_Info) -> bool {
         vendor_id, parsed := parse_hex_u32(contents);
         if !parsed  vendor_id = 0;
 
-        node: Render_Node_Info;
-        node.path = copy_string(tprint("/dev/dri/%", name));
-        node.name = copy_string(name);
-        node.vendor_id = vendor_id;
-        node.vendor = vendor_from_id(vendor_id);
+        node := Render_Node_Info.{
+            path      = copy_string(tprint("/dev/dri/%", name)),
+            name      = copy_string(name),
+            vendor_id = vendor_id,
+            vendor    = vendor_from_id(vendor_id),
+        };
         array_add(nodes, node);
     }
 
@@ -155,41 +156,12 @@ render_node_name_from_path :: (path: string) -> string {
 }
 
 parse_hex_u32 :: (text: string) -> u32, bool {
-    s := trim_ascii_whitespace(text);
+    s := trim(text);
     if starts_with(s, "0x") || starts_with(s, "0X")  advance(*s, 2);
-    if !s  return 0, false;
 
-    value: u32;
-    for i: 0..s.count-1 {
-        digit, ok := hex_digit_value(s[i]);
-        if !ok  return 0, false;
-        value = value * 16 + digit;
-    }
-
-    return value, true;
-}
-
-hex_digit_value :: (c: u8) -> u32, bool {
-    if c >= #char "0" && c <= #char "9"  return cast(u32)(c - #char "0"), true;
-    if c >= #char "a" && c <= #char "f"  return cast(u32)(c - #char "a" + 10), true;
-    if c >= #char "A" && c <= #char "F"  return cast(u32)(c - #char "A" + 10), true;
-    return 0, false;
-}
-
-trim_ascii_whitespace :: (s: string) -> string {
-    result := s;
-
-    while result {
-        c := result[0];
-        if c != #char " " && c != 9 && c != 10 && c != 13  break;
-        advance(*result, 1);
-    }
-
-    while result {
-        c := result[result.count - 1];
-        if c != #char " " && c != 9 && c != 10 && c != 13  break;
-        result.count -= 1;
-    }
-
-    return result;
+    // string_to_int is permissive (stops at the first non-hex byte and reports
+    // success-if-any-consumed); !remainder restores our strict "whole string
+    // must be hex" contract.
+    value, success, remainder := string_to_int(s, 16, u32);
+    return value, success && !remainder;
 }

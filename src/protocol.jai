@@ -234,39 +234,18 @@ parse_copyright :: (p: *Xml_Parser) -> string {
 // ── Helpers ──
 
 parse_u32 :: (s: string) -> u32 {
-    if s.count == 0 return 0;
+    if !s  return 0;
 
-    // Handle hex prefix
+    // Hex prefix → parse the remainder as base 16.
     if s.count > 2 && s[0] == #char "0" && (s[1] == #char "x" || s[1] == #char "X") {
-        result: u64 = 0;
-        for 2..s.count-1 {
-            c := s[it];
-            result *= 16;
-            if c >= #char "0" && c <= #char "9"      result += cast(u64)(c - #char "0");
-            else if c >= #char "a" && c <= #char "f"  result += cast(u64)(c - #char "a" + 10);
-            else if c >= #char "A" && c <= #char "F"  result += cast(u64)(c - #char "A" + 10);
-        }
-        return cast(u32) result;
+        value := string_to_int(advance(s, 2), 16, u64);
+        return cast(u32) value;
     }
 
-    // Handle negative numbers (treat as signed then cast)
-    start := 0;
-    negative := false;
-    if s[0] == #char "-" { negative = true; start = 1; }
-
-    result: u64 = 0;
-    for start..s.count-1 {
-        c := s[it];
-        if c >= #char "0" && c <= #char "9" {
-            result = result * 10 + cast(u64)(c - #char "0");
-        }
-    }
-
-    if negative {
-        signed_val := -cast(s32) result;
-        return cast(u32) signed_val;
-    }
-    return cast(u32) result;
+    // Decimal; string_to_int handles an optional leading '-' for the signed form,
+    // and the cast to u32 reproduces the old negative-then-truncate behaviour.
+    value := string_to_int(s, 10, s64);
+    return cast(u32) value;
 }
 
 string_to_arg_type :: (s: string) -> Arg_Type {

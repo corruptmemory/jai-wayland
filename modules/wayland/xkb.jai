@@ -62,9 +62,7 @@ parse_keymap_fd :: (fd: Fd, size: u32) -> Keymap, bool {
     if data == cast(*void) -1  return .{}, false;
     defer munmap(data, cast(u64) size);
 
-    text: string;
-    text.data = cast(*u8) data;
-    text.count = cast(s64) size;
+    text := string.{ data = cast(*u8) data, count = cast(s64) size };
     // Strip null terminator if present
     if text.count > 0 && text.data[text.count - 1] == 0  text.count -= 1;
 
@@ -119,9 +117,7 @@ parse_keycodes_section :: (text: string, start: s64, end: s64, names: *[..] Keyc
         name_start := i;
         while i < end && text.data[i] != #char ">"  i += 1;
         if i >= end  break;
-        name: string;
-        name.data = text.data + name_start;
-        name.count = i - name_start;
+        name := string.{ data = text.data + name_start, count = i - name_start };
         i += 1;  // skip '>'
 
         // Skip to '='
@@ -146,13 +142,7 @@ parse_keycodes_section :: (text: string, start: s64, end: s64, names: *[..] Keyc
 // Look up an xkb keycode number by name
 find_xkb_code :: (names: [] Keycode_Name, name: string) -> s32, bool {
     for names {
-        if it.name.count == name.count {
-            match := true;
-            for j: 0..name.count-1 {
-                if it.name.data[j] != name.data[j] { match = false; break; }
-            }
-            if match  return it.xkb_code, true;
-        }
+        if it.name == name  return it.xkb_code, true;
     }
     return 0, false;
 }
@@ -183,9 +173,7 @@ parse_symbols_section :: (text: string, start: s64, end: s64,
         name_start := i;
         while i < end && text.data[i] != #char ">"  i += 1;
         if i >= end  break;
-        name: string;
-        name.data = text.data + name_start;
-        name.count = i - name_start;
+        name := string.{ data = text.data + name_start, count = i - name_start };
         i += 1;  // skip '>'
 
         // Look up evdev keycode
@@ -224,9 +212,7 @@ parse_symbols_section :: (text: string, start: s64, end: s64,
                   text.data[j] != #char " " && text.data[j] != #char "\t" && text.data[j] != #char "\n"
                 j += 1;
 
-            token: string;
-            token.data = text.data + token_start;
-            token.count = j - token_start;
+            token := string.{ data = text.data + token_start, count = j - token_start };
 
             val, parsed := parse_keysym_token(token);
             if !parsed  val = 0;  // Preserve level positions for unknown names.
@@ -271,22 +257,9 @@ parse_keysym_token :: (token: string) -> u32, bool {
     }
 
     if token.count >= 2 && token.data[0] == #char "0" && token.data[1] == #char "x" {
-        val: u32 = 0;
-        i: s64 = 2;
-        while i < token.count {
-            c := token.data[i];
-            if c >= #char "0" && c <= #char "9" {
-                val = (val << 4) | cast(u32)(c - #char "0");
-            } else if c >= #char "a" && c <= #char "f" {
-                val = (val << 4) | cast(u32)(c - #char "a" + 10);
-            } else if c >= #char "A" && c <= #char "F" {
-                val = (val << 4) | cast(u32)(c - #char "A" + 10);
-            } else {
-                return 0, false;
-            }
-            i += 1;
-        }
-        return val, true;
+        val, ok, remainder := string_to_int(advance(token, 2), 16, u32);
+        if ok && !remainder  return val, true;
+        return 0, false;
     }
 
     if token.data[0] == #char "F" && token.count >= 2 {
@@ -385,23 +358,12 @@ parse_keysym_token :: (token: string) -> u32, bool {
 
 parse_decimal_suffix :: (token: string, start: s64) -> s32, bool {
     if start >= token.count  return 0, false;
-    n: s32 = 0;
-    i := start;
-    while i < token.count {
-        c := token.data[i];
-        if c < #char "0" || c > #char "9"  return 0, false;
-        n = n * 10 + cast(s32)(c - #char "0");
-        i += 1;
-    }
-    return n, true;
+    n, success, remainder := string_to_int(advance(token, start), 10, s32);
+    return n, success && !remainder;
 }
 
 match_token :: (token: string, literal: string) -> bool {
-    if token.count != literal.count  return false;
-    for i: 0..token.count-1 {
-        if token.data[i] != literal.data[i]  return false;
-    }
-    return true;
+    return token == literal;
 }
 
 match_keyword :: (text: string, pos: s64, end: s64, keyword: string) -> bool {
