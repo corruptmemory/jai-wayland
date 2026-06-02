@@ -57,8 +57,7 @@ wayland_connect :: (conn: *Connection) -> bool {
     fd := socket(AF_LOCAL, .STREAM, cast(IPPROTO) 0);
     if fd < 0  return false;
 
-    addr: sockaddr_un;
-    addr.sun_family = AF_LOCAL;
+    addr := sockaddr_un.{ sun_family = AF_LOCAL };
     memcpy(addr.sun_path.data, path.data, path.count);
     addr.sun_path[path.count] = 0;  // NUL terminate
 
@@ -185,13 +184,8 @@ receive_pop_fd :: (buf: *ReceiveBuffer) -> s32 {
 wayland_send :: (conn: *Connection, batch: *MessageBuilder) -> bool {
     if batch.out_used == 0  return true;
 
-    iov: iovec;
-    iov.iov_base = batch.out_buf.data;
-    iov.iov_len = cast(u64) batch.out_used;
-
-    msg: msghdr;
-    msg.msg_iov = *iov;
-    msg.msg_iovlen = 1;
+    iov := iovec.{ iov_base = batch.out_buf.data, iov_len = cast(u64) batch.out_used };
+    msg := msghdr.{ msg_iov = *iov, msg_iovlen = 1 };
 
     // Set up ancillary data for fd passing if we have queued fds.
     cmsg_buf: [CMSG_BUF_SIZE] u8;
@@ -241,13 +235,8 @@ wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
     buf.in_fds_read = 0;
 
     // Set up iovec for remaining buffer space.
-    iov: iovec;
-    iov.iov_base = buf.in_buf.data + buf.in_used;
-    iov.iov_len = cast(u64)(buf.in_buf.count - buf.in_used);
-
-    msg: msghdr;
-    msg.msg_iov = *iov;
-    msg.msg_iovlen = 1;
+    iov := iovec.{ iov_base = buf.in_buf.data + buf.in_used, iov_len = cast(u64)(buf.in_buf.count - buf.in_used) };
+    msg := msghdr.{ msg_iov = *iov, msg_iovlen = 1 };
 
     // Set up ancillary data buffer for receiving fds.
     cmsg_buf: [CMSG_BUF_SIZE] u8;

@@ -68,9 +68,7 @@ write_string :: (dst: *u8, s: string) -> u32 {
 read_string :: (src: *u8) -> string, u32 {
     length := read_u32(src);
     if length == 0  return "", 4;
-    result: string;
-    result.data = src + 4;
-    result.count = cast(s64)(length - 1);  // exclude NUL
+    result := string.{ data = src + 4, count = cast(s64)(length - 1) };  // count excludes NUL
     return result, 4 + align4(length);
 }
 
@@ -79,9 +77,7 @@ read_string :: (src: *u8) -> string, u32 {
 //          and total bytes consumed (always 4-byte aligned).
 read_array :: (src: *u8) -> [] u8, u32 {
     length := read_u32(src);
-    result: [] u8;
-    result.data = src + 4;
-    result.count = cast(s64) length;
+    result := ([] u8).{ data = src + 4, count = cast(s64) length };
     return result, 4 + align4(length);
 }
 
