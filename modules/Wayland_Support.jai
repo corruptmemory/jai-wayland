@@ -121,6 +121,18 @@ Wl_Gl_Backend :: enum {
     MESA_TEXTURE_EXPORT; // EGL_MESA_image_dma_buf_export path
 }
 
+// Presentation policy for Simp's Wayland backend. FIFO is the current
+// conservative frame-callback path and remains the default. MAILBOX and
+// IMMEDIATE skip the frame-callback wait; they keep one free render slot and
+// drop rendered-but-not-yet-committed frames when the compositor is still holding
+// every other slot. IMMEDIATE additionally requests tearing-control-v1 ASYNC
+// when the compositor advertises it.
+Wl_Present_Mode :: enum u8 {
+    FIFO;
+    MAILBOX;
+    IMMEDIATE;
+}
+
 wl_gl_backend_name :: (b: Wl_Gl_Backend) -> string {
     if b == {
         case .GBM_BO;              return "gbm_bo";
@@ -128,6 +140,44 @@ wl_gl_backend_name :: (b: Wl_Gl_Backend) -> string {
         case .AUTO;                return "auto";
     }
     return "unknown";
+}
+
+wl_present_mode_name :: (m: Wl_Present_Mode) -> string {
+    if m == {
+        case .FIFO;      return "fifo";
+        case .MAILBOX;   return "mailbox";
+        case .IMMEDIATE; return "immediate";
+    }
+    return "unknown";
+}
+
+wl_present_mode_initialized: bool;
+wl_default_present_mode: Wl_Present_Mode = .FIFO;
+
+wl_get_default_present_mode :: () -> Wl_Present_Mode {
+    if wl_present_mode_initialized  return wl_default_present_mode;
+
+    wl_present_mode_initialized = true;
+    mode_ptr := getenv("JAI_WAYLAND_PRESENT_MODE");
+    if mode_ptr == null {
+        wl_default_present_mode = .FIFO;
+        return wl_default_present_mode;
+    }
+
+    mode := to_string(mode_ptr);
+    if mode == "fifo" || mode == "FIFO" || mode == "vsync" || mode == "VSYNC" {
+        wl_default_present_mode = .FIFO;
+    } else if mode == "mailbox" || mode == "MAILBOX" {
+        wl_default_present_mode = .MAILBOX;
+    } else if mode == "immediate" || mode == "IMMEDIATE" || mode == "async" || mode == "ASYNC" {
+        wl_default_present_mode = .IMMEDIATE;
+    } else {
+        log("Wayland_Support: unknown JAI_WAYLAND_PRESENT_MODE='%', using fifo", mode, flags=.WARNING);
+        wl_default_present_mode = .FIFO;
+    }
+
+    log("Wayland_Support: present mode %", wl_present_mode_name(wl_default_present_mode));
+    return wl_default_present_mode;
 }
 
 // Which backend AUTO would resolve to given the currently-loaded extensions.
@@ -228,6 +278,67 @@ wl_make_current :: () -> bool {
 
 wl_shared_context :: () -> EGL.EGLContext {
     return wl_shared_egl.ctx;
+}
+
+// ─────────────────────── Present protocol helpers ─────────────────────────
+
+wl_present_extensions_initialized: bool;
+wl_tearing_manager: Wl.Wp_Tearing_Control_Manager_V1;
+wl_have_tearing_manager: bool;
+
+wl_ensure_present_extensions :: () {
+    if wl_present_extensions_initialized  return;
+    wl_present_extensions_initialized = true;
+
+    mode := wl_get_default_present_mode();
+    if mode != .IMMEDIATE  return;
+
+    _, tearing_ok := Wl.get_global("wp_tearing_control_manager_v1");
+    if !tearing_ok {
+        log("Wayland_Support: immediate present requested, but tearing-control-v1 is not advertised; using mailbox semantics", flags=.WARNING);
+        return;
+    }
+
+    wl_tearing_manager = .{ id = Wl.allocate_id() };
+    batch: Wl.MessageBuilder;
+    if !Wl.wl_registry_bind(*batch, Wl.registry(), *wl_tearing_manager) {
+        log("Wayland_Support: failed to bind tearing-control-v1; using mailbox semantics", flags=.WARNING);
+        wl_tearing_manager = .{};
+        return;
+    }
+
+    if !Wl.wayland_send(*batch) {
+        log("Wayland_Support: failed to send tearing-control-v1 bind; using mailbox semantics", flags=.WARNING);
+        wl_tearing_manager = .{};
+        return;
+    }
+
+    wl_have_tearing_manager = true;
+    log("Wayland_Support: tearing-control-v1 available; immediate mode will request async presentation");
+}
+
+wl_window_init_presentation :: (ww: *Wayland_Window) {
+    ww.wl_present_mode = wl_get_default_present_mode();
+    wl_ensure_present_extensions();
+
+    if ww.wl_present_mode != .IMMEDIATE  return;
+    if !wl_have_tearing_manager  return;
+
+    ww.wl_tearing_control = .{ id = Wl.allocate_id() };
+    batch: Wl.MessageBuilder;
+    Wl.wp_tearing_control_manager_v1_get_tearing_control(*batch, *wl_tearing_manager, ww.wl_tearing_control.id, *ww.surface);
+    Wl.wp_tearing_control_v1_set_presentation_hint(
+        *batch,
+        *ww.wl_tearing_control,
+        cast(u32) Wl.Wp_Tearing_Control_V1_Presentation_Hint.ASYNC);
+
+    if Wl.wayland_send(*batch) {
+        ww.wl_have_tearing_control = true;
+        log("Wayland_Support: surface % requested tearing-control async presentation", ww.surface.id);
+    } else {
+        ww.wl_tearing_control = .{};
+        log("Wayland_Support: failed to request tearing-control async presentation for surface %", ww.surface.id, flags=.WARNING);
+    }
 }
 
 // ─────────────────── Format / modifier selection ──────────────────────────
@@ -516,6 +627,14 @@ wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
     return -1;
 }
 
+wl_find_free_slot_except :: (slots: [] Wl_Gl_Slot, except_index: s32) -> int {
+    for slots {
+        if cast(s32) it_index == except_index  continue;
+        if !it.in_flight  return it_index;
+    }
+    return -1;
+}
+
 // ──────────────────────── Window registry ─────────────────────────────────
 
 // The shared per-window record — the Wayland analogue of an entry in X11's
@@ -539,11 +658,22 @@ Wayland_Window :: struct {
     wl_slots:    [SIMP_WL_SLOT_COUNT] Wl_Gl_Slot;
     wl_current:  s32 = -1;                       // index of the slot currently being rendered
     wl_initted:  bool;
+    wl_slot_width:  s32;                          // current BO/FBO allocation size
+    wl_slot_height: s32;
 
     // Per-window dmabuf negotiation result, kept for slot (re)allocation.
     wl_dmabuf_info: Wl.Dmabuf_Info;              // bound zwp_linux_dmabuf_v1 + advertised formats
     wl_format:      u32;                         // chosen DRM fourcc
     wl_modifier:    u64;                         // chosen DRM modifier
+
+    // Presentation policy. FIFO is frame-callback paced; MAILBOX / IMMEDIATE
+    // present opportunistically and drop rendered frames instead of blocking when
+    // every non-current slot is still compositor-owned. IMMEDIATE also tries to
+    // set tearing-control-v1 ASYNC on this surface.
+    wl_present_mode: Wl_Present_Mode = .FIFO;
+    wl_tearing_control: Wl.Wp_Tearing_Control_V1;
+    wl_have_tearing_control: bool;
+    wl_low_latency_dropped_frames: u64;
 
     // Frame-callback id recycler. cache_alloc per present, cache_free after
     // wl_pump(true) returns — keeps the client-id stream contiguous.
@@ -692,12 +822,22 @@ wl_all_windows_starved :: () -> bool {
     return true;
 }
 
+// Existing Simp call site. Dispatches to the selected Wayland presentation
+// policy while preserving the old public support-layer name.
+wl_present_and_pace :: (ww: *Wayland_Window) {
+    if ww.wl_present_mode == .FIFO {
+        wl_present_fifo(ww);
+    } else {
+        wl_present_low_latency(ww);
+    }
+}
+
 // Attach the current slot, request a frame callback, commit, then wait (BOUNDED)
 // for the previous frame's callback — vsync-equivalent pacing that degrades
 // gracefully for occluded windows (see the wait below). The caller (Simp's swap)
 // does the glFinish before and the FBO rebind after. Ported from hello_gl.jai's
 // steady-state present + the SWAP_BUFFERS path.
-wl_present_and_pace :: (ww: *Wayland_Window) {
+wl_present_fifo :: (ww: *Wayland_Window) {
     if ww.wl_current < 0  return;
 
     // VSYNC PACING on the PREVIOUS frame's callback. The old path requested a
@@ -796,6 +936,55 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
     if nxt >= 0  ww.wl_current = cast(s32) nxt;
 }
 
+// MAILBOX / IMMEDIATE present. This intentionally does not request or wait on a
+// wl_surface.frame callback. The compositor still owns final presentation, but
+// the app loop is no longer paced by callback delivery: if a spare BO slot is
+// available, commit immediately; if the queue is full, keep the current free slot
+// and drop this rendered frame so the next app frame overwrites it with fresher
+// content. IMMEDIATE differs only by the persistent tearing-control-v1 ASYNC
+// hint installed during window init when the compositor supports it.
+wl_present_low_latency :: (ww: *Wayland_Window) {
+    if ww.wl_current < 0  return;
+
+    if wl_any_window_needs_app_turn() {
+        // Do not submit a stale-size buffer after a configure/close; let the app
+        // process the resize/quit and render the next frame into the correct slot.
+        return;
+    }
+
+    // Drain releases/control before deciding whether the queue has room. In
+    // FIFO mode the frame-callback wait regularly reads the socket; low-latency
+    // modes do not have that blocking receive, so they must actively poll with a
+    // zero timeout. Plain wl_pump(false) only drains already-buffered messages.
+    wl_pump_timed(0);
+
+    // Keep one free non-current slot available after the commit. If none exists,
+    // all other slots are still compositor-owned. Do not commit the current slot:
+    // leaving it free lets the app overwrite it next frame with fresher content,
+    // which is the "latest frame wins" behavior we want from mailbox/immediate.
+    next := wl_find_free_slot_except(ww.wl_slots, ww.wl_current);
+    if next < 0 {
+        ww.wl_low_latency_dropped_frames += 1;
+        return;
+    }
+
+    slot := *ww.wl_slots[ww.wl_current];
+    if slot.in_flight {
+        log("Wayland_Support: current render slot is unexpectedly in flight; dropping frame", flags=.WARNING);
+        ww.wl_current = cast(s32) next;
+        return;
+    }
+
+    batch: Wl.MessageBuilder;
+    Wl.wl_surface_attach(*batch, *ww.surface, *slot.buffer, 0, 0);
+    Wl.wl_surface_damage_buffer(*batch, *ww.surface, 0, 0, slot.width, slot.height);
+    Wl.wl_surface_commit(*batch, *ww.surface);
+    Wl.wayland_send(*batch);
+    slot.in_flight = true;
+
+    ww.wl_current = cast(s32) next;
+}
+
 // ─────────────────── Per-window GL bring-up / ops ─────────────────────────
 // These hold the Wayland GL backend work so the Simp dispatch glue
 // (modules/Simp/backend/wayland_dispatch.jai) stays a thin display_manager
@@ -830,6 +1019,8 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     log("Wayland_Support: using format=0x% modifier=0x%",
         formatInt(format, base=16), formatInt(modifier, base=16));
 
+    wl_window_init_presentation(ww);
+
     backend := wl_choose_gl_backend();
     batch: Wl.MessageBuilder;
     for * slot, i: ww.wl_slots {
@@ -854,6 +1045,8 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     Wl.wayland_send(*batch);
 
     ww.wl_current = 0;
+    ww.wl_slot_width  = ww.width;
+    ww.wl_slot_height = ww.height;
     ww.wl_initted = true;
     return true;
 }
@@ -864,7 +1057,7 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
 // (caller rebinds the FBO); false on a no-op (size unchanged) or on failure (the
 // window is disabled via wl_initted=false). (BACKEND_RESIZE body.)
 wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
-    if ww.wl_slots[0].width == new_w && ww.wl_slots[0].height == new_h  return false;
+    if ww.wl_slot_width == new_w && ww.wl_slot_height == new_h  return false;
     if !wl_make_current()  return false;
 
     retire_batch: Wl.MessageBuilder;
@@ -883,6 +1076,8 @@ wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
     }
     Wl.wayland_send(*alloc_batch);
     ww.wl_current = 0;
+    ww.wl_slot_width  = new_w;
+    ww.wl_slot_height = new_h;
     return true;
 }
 

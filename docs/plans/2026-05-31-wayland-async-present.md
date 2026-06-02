@@ -21,6 +21,19 @@
 > so a visible sibling keeps full vsync pacing, while an all-occluded app keeps
 > the timeout so the loop idles instead of busy-spinning the GPU on invisible
 > frames.
+>
+> **Follow-up 3 (2026-06-02):** Simp Wayland present is now selectable with
+> `JAI_WAYLAND_PRESENT_MODE=fifo|mailbox|immediate`. `fifo` keeps the bounded
+> previous-frame-callback throttle described here. `mailbox` and `immediate`
+> skip the callback wait, commit only when a spare BO slot exists, and drop
+> rendered frames when the queue is full so the app loop is not callback-paced.
+> `immediate` additionally requests `tearing-control-v1` async presentation when
+> advertised. Because these low-latency paths no longer have FIFO's blocking
+> frame-callback receive, swap and input must call `wl_pump_timed(0)` rather than
+> only `wl_pump(false)`, or pings, input, and buffer releases can sit unread on
+> the socket. The same follow-up tracks allocated slot size separately from the
+> current requested size and coalesces Wayland resize records to avoid repeated
+> BO reallocations during compositor resize bursts.
 
 ## Motivation
 

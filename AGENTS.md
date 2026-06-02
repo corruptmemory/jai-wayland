@@ -25,9 +25,10 @@ stack now runs on Wayland through `modules/Wayland_Support.jai`, with runtime
 selection between Wayland and X11 by value (`Display_Manager` /
 `running_wayland()`), not compile-time Linux branches or the old
 `context.simp_dispatch` plan. Current examples cover SHM windows, GL and Vulkan
-DMA-BUF presentation, runtime-loaded X11/GLX, async triple-buffered Simp present,
-keyboard/pointer/touch-structural input, XKB keysyms, text clipboard,
-drag-and-drop, compositor resize, and upstream-unmodified graphical examples.
+DMA-BUF presentation, runtime-loaded X11/GLX, selectable Simp Wayland present
+modes (`fifo`, `mailbox`, `immediate`), keyboard/pointer/touch-structural input,
+XKB keysyms, text clipboard, drag-and-drop, compositor resize, and
+upstream-unmodified graphical examples.
 
 ## Required Skill
 
@@ -136,9 +137,10 @@ The `simp_example` target stages `OpenSans-BoldItalic.ttf` and
   connection and routes render, resize, input, data-device, clipboard, and
   drag-and-drop events. It owns `wayland_global_windows`, the shared
   EGL/GBM/GL context used by all Simp Wayland windows, per-window BO slots and
-  dmabuf choices, triple-buffered async `wl_present_and_pace`, the parsed
-  keymap, acquired seats/devices, and the stable `Wl_Input_Event` queue
-  consumed by `Input`.
+  dmabuf choices, selectable present-mode state, optional `tearing-control-v1`
+  async hints, triple-buffered `wl_present_and_pace`, the parsed keymap,
+  acquired seats/devices, and the stable `Wl_Input_Event` queue consumed by
+  `Input`.
 - `modules/Window_Type.jai` vendors the upstream Linux window type as a tagged
   union (`X11 | Wayland`) with equality overloads and the shared
   `wayland_drag_and_drop_requested` opt-in flag used by X11 and Wayland paths.
@@ -234,9 +236,20 @@ The `simp_example` target stages `OpenSans-BoldItalic.ttf` and
   paths continue to work.
 - Use `JAI_WAYLAND_LOG_KEYS=1` for temporary Wayland keyboard traces. It logs
   raw `wl_keyboard` keys/modifiers and the final `Input` key events.
-- `wl_present_and_pace` is asynchronous and triple-buffered: it throttles on the
-  previous frame callback. Do not restore the old synchronous wait-on-this-frame
-  present path.
+- `JAI_WAYLAND_PRESENT_MODE=fifo|mailbox|immediate` selects Simp's Wayland
+  present policy. `fifo` is the default bounded previous-frame-callback throttle.
+  `mailbox` and `immediate` skip the callback wait, commit only when a spare BO
+  slot exists, and drop rendered frames when the queue is full so the app loop is
+  not callback-paced. `immediate` additionally requests `tearing-control-v1`
+  async presentation when advertised; the compositor may ignore that hint.
+- `wl_present_and_pace` is asynchronous and triple-buffered. Do not restore the
+  old synchronous wait-on-this-frame present path. In FIFO mode it throttles on
+  the previous frame callback; in mailbox/immediate mode it uses buffer release
+  as backpressure and keeps one free render slot instead of blocking on callbacks.
+- In mailbox/immediate present modes, use `wl_pump_timed(0)` where the loop needs
+  to drain the compositor connection. `wl_pump(false)` only consumes already
+  buffered messages; without FIFO's blocking frame-callback receive, socket
+  events such as input, pings, and buffer releases can otherwise starve.
 - Simp's Wayland GL context is process-global, matching Simp's process-global
   shader/VBO/font GL objects and the X11 backend's single GLX context. Do not
   put `Wl_Egl_State` back on `Wayland_Window`; that struct owns per-window
@@ -299,6 +312,8 @@ Use focused tests first:
   `JAI_WAYLAND_CLIPBOARD_FRAMES=N ./build.sh - hello_clipboard`,
   `JAI_WAYLAND_X11_GL_FRAMES=N ./build.sh - hello_x11_gl`,
   `JAI_WAYLAND_VULKAN_FRAMES=N ./build.sh - hello_vulkan_dmabuf`
+  Add `JAI_WAYLAND_PRESENT_MODE=mailbox` or `immediate` to exercise the
+  low-latency Wayland Simp present paths.
 
 For substantial changes, run:
 
