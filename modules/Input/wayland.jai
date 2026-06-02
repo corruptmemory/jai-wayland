@@ -69,6 +69,10 @@ update_wayland_window_events :: () {
             rec.window = .{ wtype = .Wayland, wayland = .{ surface = ww.surface.id } };
             rec.width  = ww.width;
             rec.height = ww.height;
+            if WS.wl_trace_resize_enabled() {
+                log("TRACE input_resize_record surface=% size=%x% pending=%",
+                    ww.surface.id, ww.width, ww.height, pending_resizes.count);
+            }
         }
         // Compositor-requested close (xdg_toplevel.close: Hyprland killactive/Super+Q,
         // a title-bar X, etc.) -> emit a .QUIT event so apps that watch

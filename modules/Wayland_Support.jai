@@ -69,6 +69,27 @@ running_wayland :: () -> bool {
     return to_string(wd).count > 0;
 }
 
+wl_trace_resize_initialized: bool;
+wl_trace_resize: bool;
+
+wl_trace_resize_enabled :: () -> bool {
+    if wl_trace_resize_initialized  return wl_trace_resize;
+
+    wl_trace_resize_initialized = true;
+    v := getenv("JAI_WAYLAND_TRACE_RESIZE");
+    if !v  return false;
+
+    s := to_string(v);
+    wl_trace_resize = s.count > 0 && s != "0" && s != "false" && s != "FALSE";
+    return wl_trace_resize;
+}
+
+wl_monotonic_milliseconds :: () -> u64 {
+    ts: timespec;
+    if clock_gettime(.MONOTONIC, *ts) != 0  return 0;
+    return (cast(u64) ts.tv_sec * 1000) + (cast(u64) ts.tv_nsec / 1000000);
+}
+
 // ───────────────────────── EGL / GL state ─────────────────────────────────
 
 // Triple-buffered for the asynchronous (non-blocking) present: the compositor
@@ -77,6 +98,13 @@ running_wayland :: () -> bool {
 // marks a slot free again. (Was 2 under the old synchronous frame-callback
 // present; see docs/plans/2026-05-31-wayland-async-present.md.)
 SIMP_WL_SLOT_COUNT :: 3;
+
+// Low-latency present normally lets the app run as fast as it can. During an
+// interactive compositor resize, that can turn a configure stream into a hot
+// loop of render/realloc/present. Keep resize application immediate for visual
+// smoothness, but add a tiny sleep while configure events are actively streaming.
+WL_ACTIVE_RESIZE_WINDOW_MS :: 120;
+WL_ACTIVE_RESIZE_PACE_MS   :: 4;
 
 // One slot holds a GL texture + FBO + EGLImage + (optional) GBM BO + the
 // exported DMA-BUF fd wrapped as a wl_buffer. (hello_gl.jai:31-51 Gl_Slot.)
@@ -649,6 +677,7 @@ Wayland_Window :: struct {
     width       : s32;          // current size (source of truth; pump updates on configure)
     height      : s32;
     size_dirty  : bool;         // set by the pump when a configure CHANGES the size; consumers (Input) emit a resize event and clear it
+    wl_last_configure_ms: u64;
     surface     : Wl.Wl_Surface;
     xdg_surface : Wl.Xdg_Surface;
     toplevel    : Wl.Xdg_Toplevel;
@@ -735,6 +764,32 @@ register_wayland_window :: (surface_id: u32, xdg_surface_id: u32, toplevel_id: u
     return ww;
 }
 
+wl_note_configure_size :: (ww: *Wayland_Window, width: s32, height: s32) -> bool {
+    if width <= 0 || height <= 0 {
+        if wl_trace_resize_enabled() {
+            log("TRACE configure_ignore surface=% args=%x% current=%x%",
+                ww.surface.id, width, height, ww.width, ww.height);
+        }
+        return false;
+    }
+
+    changed := width != ww.width || height != ww.height;
+
+    if wl_trace_resize_enabled() {
+        log("TRACE configure surface=% args=%x% current=%x% slots=%x% changed=%",
+            ww.surface.id, width, height, ww.width, ww.height,
+            ww.wl_slot_width, ww.wl_slot_height, changed);
+    }
+
+    if changed {
+        ww.width = width;
+        ww.height = height;
+        ww.size_dirty = true;
+        ww.wl_last_configure_ms = wl_monotonic_milliseconds();
+    }
+    return changed;
+}
+
 // Used by Window_Creation while it is synchronously waiting for a newly-created
 // window's first configure. A compositor may reconfigure already-registered
 // windows during that wait (multiple_windows does this when the second window is
@@ -752,11 +807,7 @@ wl_route_registered_window_control_event :: (header: Wl.WaylandMessageHeader, re
         if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
             args: Wl.Xdg_Toplevel_Configure_Args;
             Wl.unmarshal(*args, header.payload, recv);
-            if args.width > 0 && args.height > 0 && (args.width != ww.width || args.height != ww.height) {
-                ww.width      = args.width;
-                ww.height     = args.height;
-                ww.size_dirty = true;
-            }
+            wl_note_configure_size(ww, args.width, args.height);
             return true;
         }
         if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CLOSE {
@@ -769,10 +820,27 @@ wl_route_registered_window_control_event :: (header: Wl.WaylandMessageHeader, re
 }
 
 wl_any_window_needs_app_turn :: () -> bool {
-    for wayland_global_windows {
-        if it.size_dirty || it.wl_close_requested  return true;
-    }
+    for wayland_global_windows  if it.size_dirty || it.wl_close_requested  return true;
     return false;
+}
+
+wl_active_resize_recent :: (ww: *Wayland_Window) -> bool {
+    if ww.wl_last_configure_ms == 0  return false;
+
+    now := wl_monotonic_milliseconds();
+    if now == 0 || now < ww.wl_last_configure_ms  return false;
+
+    return now - ww.wl_last_configure_ms <= WL_ACTIVE_RESIZE_WINDOW_MS;
+}
+
+wl_maybe_pace_active_resize :: (ww: *Wayland_Window) {
+    if WL_ACTIVE_RESIZE_PACE_MS <= 0  return;
+    if !wl_active_resize_recent(ww)  return;
+
+    if wl_trace_resize_enabled() {
+        log("TRACE resize_pace surface=% sleep_ms=%", ww.surface.id, WL_ACTIVE_RESIZE_PACE_MS);
+    }
+    sleep_milliseconds(WL_ACTIVE_RESIZE_PACE_MS);
 }
 
 // ─────────────────────────── Present + pace ───────────────────────────────
@@ -965,6 +1033,7 @@ wl_present_low_latency :: (ww: *Wayland_Window) {
     next := wl_find_free_slot_except(ww.wl_slots, ww.wl_current);
     if next < 0 {
         ww.wl_low_latency_dropped_frames += 1;
+        wl_maybe_pace_active_resize(ww);
         return;
     }
 
@@ -972,6 +1041,7 @@ wl_present_low_latency :: (ww: *Wayland_Window) {
     if slot.in_flight {
         log("Wayland_Support: current render slot is unexpectedly in flight; dropping frame", flags=.WARNING);
         ww.wl_current = cast(s32) next;
+        wl_maybe_pace_active_resize(ww);
         return;
     }
 
@@ -983,6 +1053,7 @@ wl_present_low_latency :: (ww: *Wayland_Window) {
     slot.in_flight = true;
 
     ww.wl_current = cast(s32) next;
+    wl_maybe_pace_active_resize(ww);
 }
 
 // ─────────────────── Per-window GL bring-up / ops ─────────────────────────
@@ -1057,7 +1128,15 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
 // (caller rebinds the FBO); false on a no-op (size unchanged) or on failure (the
 // window is disabled via wl_initted=false). (BACKEND_RESIZE body.)
 wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
-    if ww.wl_slot_width == new_w && ww.wl_slot_height == new_h  return false;
+    trace := wl_trace_resize_enabled();
+    if trace {
+        log("TRACE resize_gl_call surface=% requested=%x% slots=%x% registry=%x% size_dirty=%",
+            ww.surface.id, new_w, new_h, ww.wl_slot_width, ww.wl_slot_height, ww.width, ww.height, ww.size_dirty);
+    }
+    if ww.wl_slot_width == new_w && ww.wl_slot_height == new_h {
+        if trace  log("TRACE resize_gl_noop surface=% size=%x%", ww.surface.id, new_w, new_h);
+        return false;
+    }
     if !wl_make_current()  return false;
 
     retire_batch: Wl.MessageBuilder;
@@ -1905,12 +1984,7 @@ wl_pump :: (blocking: bool) {
                     // get_window_resizes() returns (invaders/GetRect re-layout off it).
                     args: Wl.Xdg_Toplevel_Configure_Args;
                     Wl.unmarshal(*args, header.payload, *session.recv);
-                    if args.width > 0 && args.height > 0 && (args.width != ww.width || args.height != ww.height) {
-                        ww.width      = args.width;
-                        ww.height     = args.height;
-                        ww.size_dirty = true;
-                        done = true;
-                    }
+                    if wl_note_configure_size(ww, args.width, args.height)  done = true;
                     routed = true;
                     break;
                 }

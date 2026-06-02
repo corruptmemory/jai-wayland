@@ -242,6 +242,11 @@ The `simp_example` target stages `OpenSans-BoldItalic.ttf` and
   slot exists, and drop rendered frames when the queue is full so the app loop is
   not callback-paced. `immediate` additionally requests `tearing-control-v1`
   async presentation when advertised; the compositor may ignore that hint.
+- On the `pacing-experiments` branch, mailbox/immediate add a tiny active-resize
+  sleep while compositor configure events are actively streaming. Keep app-visible
+  resize immediate; do not restore the abandoned coalesced/delayed resize path.
+  Use `JAI_WAYLAND_TRACE_RESIZE=1` to log configure, input resize record,
+  GL resize, no-op resize, and active-resize pacing events.
 - `wl_present_and_pace` is asynchronous and triple-buffered. Do not restore the
   old synchronous wait-on-this-frame present path. In FIFO mode it throttles on
   the previous frame callback; in mailbox/immediate mode it uses buffer release
