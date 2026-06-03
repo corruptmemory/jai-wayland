@@ -339,12 +339,13 @@ wl_window_init_viewport :: (ww: *Wayland_Window) {
 
 // Crop the (possibly oversized) buffer down to the logical region and set the
 // surface (logical) size. Simp renders the logical content into glViewport(0,0,
-// log_w,log_h) — the GL bottom-LEFT of the capacity-sized FBO. wp_viewport.set_source
-// coordinates are in the buffer space AFTER set_buffer_transform(FLIPPED_180), in
-// which that content lands at the TOP-RIGHT: the transform's horizontal-flip
-// component moves it to the right (src_x = cap_w - log_w), while vertically it maps
-// to the top (src_y = 0). Confirmed empirically with grim (Task 4) at non-step,
-// sub-output sizes where cap > logical in both dimensions.
+// log_w,log_h) — the GL bottom-LEFT of the capacity-sized FBO — so the logical
+// content occupies the buffer's [0,log_w] x [0,log_h] corner. set_buffer_transform
+// (FLIPPED_180) is a pure VERTICAL flip (X unchanged), so in post-transform surface
+// space the logical content stays at the origin corner: src = (0, 0, log_w, log_h).
+// (The earlier (cap_w-log_w, 0) offset was wrong — it passed a meaningless test
+// because glClear ignores the viewport and fills the WHOLE capacity buffer, so any
+// src_x crop shows solid clear; the off-centre QUAD in hello_simp is the real probe.)
 wl_update_viewport_crop :: (ww: *Wayland_Window) {
     if !ww.wl_have_viewport  return;
 
@@ -354,12 +355,9 @@ wl_update_viewport_crop :: (ww: *Wayland_Window) {
     log_h := ww.height;
     if log_w <= 0 || log_h <= 0 || cap_w <= 0 || cap_h <= 0  return;
 
-    src_x := cap_w - log_w;
-    src_y: s32 = 0;
-
     batch: Wl.MessageBuilder;
     Wl.wp_viewport_set_source(*batch, *ww.wl_viewport,
-        wl_fixed_from_int(src_x), wl_fixed_from_int(src_y),
+        wl_fixed_from_int(0), wl_fixed_from_int(0),
         wl_fixed_from_int(log_w), wl_fixed_from_int(log_h));
     Wl.wp_viewport_set_destination(*batch, *ww.wl_viewport, log_w, log_h);
     Wl.wayland_send(*batch);
