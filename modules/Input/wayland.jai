@@ -43,10 +43,9 @@ update_wayland_window_events :: () {
     // age the START/END flags on input_button_states.
     input_per_frame_event_and_flag_update();
 
-    // Drain anything ready since last frame. FIFO swap does a blocking receive
-    // while pacing on frame callbacks, but MAILBOX / IMMEDIATE present modes do
-    // not; use the timed zero-timeout pump so input, pings, and buffer releases
-    // are still read from the socket in low-latency modes.
+    // Drain anything ready since last frame with a non-blocking (zero-timeout)
+    // pump, so input, pings, and buffer releases that arrived since the last
+    // present are read from the socket before the app reads this frame's events.
     WS.wl_pump_timed(0);
 
     // Emit Window_Resize_Records for any window the pump flagged as resized
@@ -69,10 +68,6 @@ update_wayland_window_events :: () {
             rec.window = .{ wtype = .Wayland, wayland = .{ surface = ww.surface.id } };
             rec.width  = ww.width;
             rec.height = ww.height;
-            if WS.wl_trace_resize_enabled() {
-                log("TRACE input_resize_record surface=% size=%x% pending=%",
-                    ww.surface.id, ww.width, ww.height, pending_resizes.count);
-            }
         }
         // Compositor-requested close (xdg_toplevel.close: Hyprland killactive/Super+Q,
         // a title-bar X, etc.) -> emit a .QUIT event so apps that watch

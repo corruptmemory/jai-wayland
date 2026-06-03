@@ -77,10 +77,9 @@ wl_swap_buffers :: (info: *Window_Info) {
     // Explicit fences are a future item (slot.acquire/release_fence_fd placeholders).
     glFinish();
 
-    // Present the current slot. wl_present_and_pace dispatches by
-    // JAI_WAYLAND_PRESENT_MODE: FIFO uses the previous frame callback as a
-    // bounded vsync throttle; MAILBOX / IMMEDIATE skip that callback wait and
-    // drop rendered frames when the BO queue is full. See Wayland_Support.jai.
+    // Present the current slot. wl_present_and_pace uses the previous frame
+    // callback as a bounded vsync throttle — the blocking, vsync-locked swap Simp
+    // inherits from the platform default elsewhere. See Wayland_Support.jai.
     WS.wl_present_and_pace(ww);
 
     // Leave the NEW current slot's FBO bound as the render target. On X11 the

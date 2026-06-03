@@ -3,6 +3,16 @@
 Date: 2026-06-02
 Branch: `pacing-experiments`
 
+> **Status update (2026-06-03): the active-resize-sleep experiment below is
+> ABANDONED.** It only ever ran in the `mailbox`/`immediate` present modes, and
+> those modes were removed (see
+> `docs/plans/2026-05-31-wayland-async-present.md`, Follow-up 4 — vsync-paced FIFO
+> is the faithful Simp contract). What survives from this doc is the **bucketed GPU
+> slot capacity** direction in "Open Questions" below, which is independent of
+> present mode (resize churn happens in FIFO too). That is now the active work and
+> gets its own design/impl doc. The text below is preserved as the dated record of
+> the sleep experiment that motivated it.
+
 ## Context
 
 `JAI_WAYLAND_PRESENT_MODE=mailbox|immediate` intentionally removes the
