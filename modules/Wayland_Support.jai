@@ -281,6 +281,77 @@ wl_shared_context :: () -> EGL.EGLContext {
     return wl_shared_egl.ctx;
 }
 
+// ─────────────────────── Viewporter (bucketed crop) ───────────────────────
+// wp_viewporter lets us present only the logical sub-rect of an oversized
+// (bucketed) buffer, so the slot allocation size can exceed the surface size.
+// Bound once; absent on a compositor that does not advertise it (we then fall
+// back to realloc-per-resize). See the design doc.
+
+wl_viewporter: Wl.Wp_Viewporter;
+wl_have_viewporter: bool;
+wl_viewporter_initialized: bool;
+
+wl_fixed_from_int :: (v: s32) -> Wl.Fixed {
+    return .{ raw = v << 8 };
+}
+
+wl_ensure_viewporter :: () {
+    if wl_viewporter_initialized  return;
+    wl_viewporter_initialized = true;
+
+    _, ok := Wl.get_global("wp_viewporter");
+    if !ok  return;
+
+    wl_viewporter = .{ id = Wl.allocate_id() };
+    batch: Wl.MessageBuilder;
+    if !Wl.wl_registry_bind(*batch, Wl.registry(), *wl_viewporter) {
+        wl_viewporter = .{};
+        return;
+    }
+    if !Wl.wayland_send(*batch) {
+        wl_viewporter = .{};
+        return;
+    }
+    wl_have_viewporter = true;
+    log("Wayland_Support: wp_viewporter available; using bucketed slot capacity");
+}
+
+// Create a wp_viewport for this surface (once). No-op if viewporter is absent.
+wl_window_init_viewport :: (ww: *Wayland_Window) {
+    wl_ensure_viewporter();
+    if !wl_have_viewporter  return;
+
+    ww.wl_viewport = .{ id = Wl.allocate_id() };
+    batch: Wl.MessageBuilder;
+    Wl.wp_viewporter_get_viewport(*batch, *wl_viewporter, ww.wl_viewport.id, *ww.surface);
+    if Wl.wayland_send(*batch)  ww.wl_have_viewport = true;
+    else                        ww.wl_viewport = .{};
+}
+
+// Crop the (possibly oversized) buffer down to the logical region and set the
+// surface (logical) size. Source coords are post-transform: under FLIPPED_180 the
+// GL-bottom-left content lands at the opposite corner, so the source origin is
+// (cap - logical). The (src_x, src_y) offset is CONFIRMED WITH GRIM in Task 4.
+wl_update_viewport_crop :: (ww: *Wayland_Window) {
+    if !ww.wl_have_viewport  return;
+
+    cap_w := ww.wl_slot_width;
+    cap_h := ww.wl_slot_height;
+    log_w := ww.width;
+    log_h := ww.height;
+    if log_w <= 0 || log_h <= 0 || cap_w <= 0 || cap_h <= 0  return;
+
+    src_x := cap_w - log_w;   // Task 4 confirms/adjusts this offset.
+    src_y := cap_h - log_h;
+
+    batch: Wl.MessageBuilder;
+    Wl.wp_viewport_set_source(*batch, *ww.wl_viewport,
+        wl_fixed_from_int(src_x), wl_fixed_from_int(src_y),
+        wl_fixed_from_int(log_w), wl_fixed_from_int(log_h));
+    Wl.wp_viewport_set_destination(*batch, *ww.wl_viewport, log_w, log_h);
+    Wl.wayland_send(*batch);
+}
+
 // ─────────────────── Format / modifier selection ──────────────────────────
 // (Ported from hello_gl.jai:433-504.)
 
@@ -597,6 +668,10 @@ Wayland_Window :: struct {
     wl_dmabuf_info: Wl.Dmabuf_Info;              // bound zwp_linux_dmabuf_v1 + advertised formats
     wl_format:      u32;                         // chosen DRM fourcc
     wl_modifier:    u64;                         // chosen DRM modifier
+
+    // wp_viewport crops the bucketed buffer to the logical surface size.
+    wl_viewport:      Wl.Wp_Viewport;
+    wl_have_viewport: bool;
 
     // Frame-callback id recycler. cache_alloc per present, cache_free after
     // wl_pump(true) returns — keeps the client-id stream contiguous.
