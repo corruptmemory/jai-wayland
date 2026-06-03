@@ -103,7 +103,13 @@ wl_output_cap :: () -> (w: s32, h: s32) {
     if wl_output_cap_initialized  return wl_output_cap_w, wl_output_cap_h;
     wl_output_cap_initialized = true;
 
-    screens := Wl.get_screens_info();
+    // get_screens_info allocates with the default allocator; this is a one-shot
+    // cache read of int dimensions, so run it on temp and let the block free it.
+    screens: [] Wl.Screen_Info;
+    {
+        push_allocator(temp);
+        screens = Wl.get_screens_info();
+    }
     max_w: s32 = 0;
     max_h: s32 = 0;
     for screens {
@@ -317,6 +323,9 @@ wl_ensure_viewporter :: () {
 }
 
 // Create a wp_viewport for this surface (once). No-op if viewporter is absent.
+// TODO(teardown): the per-window wp_viewport created here should be destroyed in a
+// future per-window teardown pass (like the surface roles, it is process-lifetime-
+// owned today).
 wl_window_init_viewport :: (ww: *Wayland_Window) {
     wl_ensure_viewporter();
     if !wl_have_viewporter  return;
@@ -331,7 +340,7 @@ wl_window_init_viewport :: (ww: *Wayland_Window) {
 // Crop the (possibly oversized) buffer down to the logical region and set the
 // surface (logical) size. Source coords are post-transform: under FLIPPED_180 the
 // GL-bottom-left content lands at the opposite corner, so the source origin is
-// (cap - logical). The (src_x, src_y) offset is CONFIRMED WITH GRIM in Task 4.
+// (cap - logical). The (src_x, src_y) offset will be confirmed with grim in Task 4.
 wl_update_viewport_crop :: (ww: *Wayland_Window) {
     if !ww.wl_have_viewport  return;
 
@@ -967,11 +976,19 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     log("Wayland_Support: using format=0x% modifier=0x%",
         formatInt(format, base=16), formatInt(modifier, base=16));
 
+    // Decide the slot allocation capacity. With wp_viewporter we allocate at the
+    // bucketed (grow-only) capacity and present only the logical sub-rect via the
+    // viewport crop; without it we fall back to allocating at the exact logical size.
+    cap_w := ww.width;
+    cap_h := ww.height;
+    wl_window_init_viewport(ww);
+    if ww.wl_have_viewport  cap_w, cap_h = wl_target_capacity(ww.width, ww.height, 0, 0);
+
     backend := wl_choose_gl_backend();
     batch: Wl.MessageBuilder;
     for * slot, i: ww.wl_slots {
         if !wl_slot_init(slot, wl_shared_egl, *ww.wl_dmabuf_info.dmabuf, *batch,
-                         ww.wl_format, ww.wl_modifier, ww.width, ww.height, backend) {
+                         ww.wl_format, ww.wl_modifier, cap_w, cap_h, backend) {
             // An earlier slot's batched create messages are abandoned unsent, yet
             // allocate_id() advanced next_id — a hole in the contiguous client-ID
             // stream. Tolerable only because we leave wl_initted=false, so SWAP /
@@ -991,19 +1008,18 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     Wl.wayland_send(*batch);
 
     ww.wl_current = 0;
-    ww.wl_slot_width  = ww.width;
-    ww.wl_slot_height = ww.height;
+    ww.wl_slot_width  = cap_w;
+    ww.wl_slot_height = cap_h;
     ww.wl_initted = true;
+    wl_update_viewport_crop(ww);
     return true;
 }
 
-// Retire current slots (compositor may still hold an in-flight buffer → wl_retired,
-// torn down on their wl_buffer.release in the pump) and reallocate at the new size,
-// reusing the negotiated format/modifier. Returns true if it actually reallocated
-// (caller rebinds the FBO); false on a no-op (size unchanged) or on failure (the
-// window is disabled via wl_initted=false). (BACKEND_RESIZE body.)
-wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
-    if ww.wl_slot_width == new_w && ww.wl_slot_height == new_h  return false;
+// Retire current slots (compositor may still hold an in-flight buffer) and
+// reallocate all of them at (w, h), reusing the negotiated format/modifier.
+// Sets wl_current=0 and wl_slot_width/height. Returns true on success; on failure
+// disables the window (wl_initted=false) and returns false.
+wl_realloc_slots :: (ww: *Wayland_Window, w: s32, h: s32) -> bool {
     if !wl_make_current()  return false;
 
     retire_batch: Wl.MessageBuilder;
@@ -1014,17 +1030,49 @@ wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
     alloc_batch: Wl.MessageBuilder;
     for * slot, i: ww.wl_slots {
         if !wl_slot_init(slot, wl_shared_egl, *ww.wl_dmabuf_info.dmabuf, *alloc_batch,
-                         ww.wl_format, ww.wl_modifier, new_w, new_h, backend) {
-            log_error("Wayland_Support: resize slot % realloc failed (%x%) — window disabled", i, new_w, new_h);
+                         ww.wl_format, ww.wl_modifier, w, h, backend) {
+            log_error("Wayland_Support: slot % realloc failed (%x%) — window disabled", i, w, h);
             ww.wl_initted = false;
             return false;
         }
     }
     Wl.wayland_send(*alloc_batch);
     ww.wl_current = 0;
-    ww.wl_slot_width  = new_w;
-    ww.wl_slot_height = new_h;
+    ww.wl_slot_width  = w;
+    ww.wl_slot_height = h;
     return true;
+}
+
+// Resize the window's render slots to the new LOGICAL size (new_w, new_h).
+//
+// With wp_viewporter (ww.wl_have_viewport): slot allocation is bucketed and
+// grow-only — we reallocate only when the bucketed target capacity must grow past
+// the current capacity, and otherwise just re-crop the existing oversized buffers
+// to the new logical region via wp_viewport. Returns true only when slots were
+// actually reallocated (caller rebinds the FBO); a crop-only update returns false.
+//
+// Without viewporter: falls back to the exact pre-bucketing behavior — capacity ==
+// logical, realloc on any size change, no crop. Returns true if it reallocated,
+// false on a no-op (size unchanged); on failure the window is disabled
+// (wl_initted=false) and it returns false. (BACKEND_RESIZE body.)
+wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
+    if !ww.wl_have_viewport {
+        // No-viewporter fallback: buffer size == logical size; realloc on any change.
+        if ww.wl_slot_width == new_w && ww.wl_slot_height == new_h  return false;
+        return wl_realloc_slots(ww, new_w, new_h);
+    }
+
+    // Bucketed path: grow-only capacity, crop to the logical region.
+    target_w, target_h := wl_target_capacity(new_w, new_h, ww.wl_slot_width, ww.wl_slot_height);
+
+    realloc := false;
+    if target_w > ww.wl_slot_width || target_h > ww.wl_slot_height {
+        if !wl_realloc_slots(ww, target_w, target_h)  return false;
+        realloc = true;
+    }
+
+    wl_update_viewport_crop(ww);  // logical may have changed even with no realloc
+    return realloc;
 }
 
 // ──────────────────────────── Input (keyboard) ────────────────────────────
