@@ -9,9 +9,10 @@ Branch: `pacing-experiments`
 > `docs/plans/2026-05-31-wayland-async-present.md`, Follow-up 4 — vsync-paced FIFO
 > is the faithful Simp contract). What survives from this doc is the **bucketed GPU
 > slot capacity** direction in "Open Questions" below, which is independent of
-> present mode (resize churn happens in FIFO too). That is now the active work and
-> gets its own design/impl doc. The text below is preserved as the dated record of
-> the sleep experiment that motivated it.
+> present mode (resize churn happens in FIFO too). That work is now **DONE** — see
+> `docs/plans/2026-06-03-wayland-bucketed-slots-design.md` and
+> `docs/plans/2026-06-03-wayland-bucketed-slots.md`. The text below is preserved as
+> the dated record of the sleep experiment that motivated it.
 
 ## Context
 

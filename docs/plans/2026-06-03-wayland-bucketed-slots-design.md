@@ -2,7 +2,7 @@
 
 Date: 2026-06-03
 Branch: `pacing-experiments`
-Status: **Design approved.** Implementation plan to follow.
+Status: **Done (2026-06-03).** Implemented and validated. One correction from this design: the `FLIPPED_180 × viewport` crop source rect is `(0, 0, log_w, log_h)`, **not** the tentatively-predicted `(cap_w − logical_w, cap_h − logical_h)` — FLIPPED_180 is a pure vertical flip (X unchanged) and Simp renders into the buffer's origin corner. See `2026-06-03-wayland-bucketed-slots.md` for the implementation status and calibration notes.
 
 ## Motivation
 

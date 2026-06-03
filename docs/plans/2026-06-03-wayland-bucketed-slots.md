@@ -2,6 +2,8 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+**Status: DONE (2026-06-03).** All tasks implemented on `pacing-experiments` and validated. The viewport crop source rect is `(0, 0, log_w, log_h)` — `set_buffer_transform(FLIPPED_180)` is a pure VERTICAL flip (X unchanged) and Simp renders into the buffer's origin corner, so the design's tentative `(cap_w-log_w, cap_h-log_h)` guess was wrong. Two calibration traps to remember: `glClear` ignores `glViewport` and clears the WHOLE capacity buffer (a full-clear "edge-to-edge" check cannot validate the crop offset — use a sub-region pattern like hello_simp's centered quad); and grim-validate with the window fully ON the monitor (an off-screen strip reads black and looks like an under-fill). Validated band-free + correctly placed (incl. crop-only resizes) on `hello_simp`, `getrect_example`, `skeletal_animation`, `invaders`, and `simp_multiple_windows`; resize is noticeably smoother.
+
 **Goal:** Stop reallocating the per-window BO/EGLImage/GL-texture/FBO/depth/wl_buffer slot stack on every compositor resize by decoupling logical window size from a bucketed allocation capacity, cropping the oversized buffer to the logical region with `wp_viewport`.
 
 **Architecture:** Each `Wayland_Window` keeps a logical size (`ww.width/height`, maintained by the pump) and an allocation capacity (`ww.wl_slot_width/height`, repurposed). Capacity = logical rounded up to `BUCKET_STEP` (256), capped at output resolution, grow-only. Reallocate only when logical exceeds capacity; otherwise just re-crop with `wp_viewport`. If `wp_viewporter` is absent, fall back to today's realloc-per-resize (capacity == logical).

@@ -245,11 +245,22 @@ The `simp_example` target stages `OpenSans-BoldItalic.ttf` and
   `JAI_WAYLAND_TRACE_RESIZE` tracing were tried and **removed 2026-06-03** as
   scope-creep beyond Simp's prototype-tier contract. Do not reintroduce them; do
   not restore the old synchronous wait-on-*this*-frame present path either.
-- The active resize-performance direction is bucketed GPU slot capacity: separate
-  logical window size from BO/EGLImage/GL texture/FBO/wl_buffer allocation size,
-  grow slots in buckets, and only recreate when the logical size exceeds capacity.
-  Use `glViewport`/`glScissor` for rendering into the logical region and
-  `wp_viewporter` source/destination state for presentation cropping.
+- Bucketed GPU slot capacity is **DONE** (`docs/plans/2026-06-03-wayland-bucketed-slots.md`):
+  each window's logical size (`ww.width/height`) is decoupled from its slot
+  allocation capacity (`ww.wl_slot_width/height` = logical rounded up to
+  `BUCKET_STEP` 256, capped at output, grow-only). `wl_window_resize_gl`
+  reallocates only when the bucketed target grows past the current capacity;
+  otherwise it just re-crops via `wp_viewport` (`wl_update_viewport_crop`), no
+  realloc. Simp renders the logical sub-rect through its own
+  `glViewport(0,0,logical_w,logical_h)` (no Simp patch). Fallback to exact-size
+  realloc-per-resize when `wp_viewporter` is absent.
+  **Crop source rect is `(0, 0, log_w, log_h)`** — `set_buffer_transform(FLIPPED_180)`
+  is a pure vertical flip (X unchanged) and Simp renders into the buffer's origin
+  corner, so do NOT offset by `cap_w-log_w`. Two calibration traps: `glClear`
+  ignores `glViewport` and clears the WHOLE capacity buffer (so a full-clear
+  "edge-to-edge" check can't validate the crop offset — use a sub-region pattern
+  like hello_simp's centered quad); and grim-validate with the window fully ON the
+  monitor (an off-screen strip reads black and looks like an under-fill).
   `wl_surface.damage_buffer` is not a crop; an oversized attached buffer changes
   the surface size unless viewporter constrains it.
 - Use `wl_pump_timed(0)` (not `wl_pump(false)`) where the loop needs a
