@@ -338,9 +338,13 @@ wl_window_init_viewport :: (ww: *Wayland_Window) {
 }
 
 // Crop the (possibly oversized) buffer down to the logical region and set the
-// surface (logical) size. Source coords are post-transform: under FLIPPED_180 the
-// GL-bottom-left content lands at the opposite corner, so the source origin is
-// (cap - logical). The (src_x, src_y) offset will be confirmed with grim in Task 4.
+// surface (logical) size. Simp renders the logical content into glViewport(0,0,
+// log_w,log_h) — the GL bottom-LEFT of the capacity-sized FBO. wp_viewport.set_source
+// coordinates are in the buffer space AFTER set_buffer_transform(FLIPPED_180), in
+// which that content lands at the TOP-RIGHT: the transform's horizontal-flip
+// component moves it to the right (src_x = cap_w - log_w), while vertically it maps
+// to the top (src_y = 0). Confirmed empirically with grim (Task 4) at non-step,
+// sub-output sizes where cap > logical in both dimensions.
 wl_update_viewport_crop :: (ww: *Wayland_Window) {
     if !ww.wl_have_viewport  return;
 
@@ -350,8 +354,8 @@ wl_update_viewport_crop :: (ww: *Wayland_Window) {
     log_h := ww.height;
     if log_w <= 0 || log_h <= 0 || cap_w <= 0 || cap_h <= 0  return;
 
-    src_x := cap_w - log_w;   // Task 4 confirms/adjusts this offset.
-    src_y := cap_h - log_h;
+    src_x := cap_w - log_w;
+    src_y: s32 = 0;
 
     batch: Wl.MessageBuilder;
     Wl.wp_viewport_set_source(*batch, *ww.wl_viewport,
@@ -1055,6 +1059,9 @@ wl_realloc_slots :: (ww: *Wayland_Window, w: s32, h: s32) -> bool {
 // logical, realloc on any size change, no crop. Returns true if it reallocated,
 // false on a no-op (size unchanged); on failure the window is disabled
 // (wl_initted=false) and it returns false. (BACKEND_RESIZE body.)
+// new_w/new_h are the new LOGICAL size; the pump (ww.width/height) is the source
+// of truth for logical size and is expected to already equal them by the time
+// Simp dispatches this (wl_update_viewport_crop reads logical from ww.width/height).
 wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
     if !ww.wl_have_viewport {
         // No-viewporter fallback: buffer size == logical size; realloc on any change.
