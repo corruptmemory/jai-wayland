@@ -34,6 +34,23 @@
 > the socket. The same follow-up tracks allocated slot size separately from the
 > current requested size and coalesces Wayland resize records to avoid repeated
 > BO reallocations during compositor resize bursts.
+>
+> **Follow-up 4 (2026-06-03): the selectable present modes were REMOVED.** A
+> comparison of how the upstream Jai `Simp`/`Window_Creation` modules pace
+> presentation on Jonathan Blow's primary platforms (Windows `SwapBuffers`, macOS
+> `[NSOpenGLContext flushBuffer]`, Android `eglSwapBuffers`, consoles via the
+> native NVN flip chain) showed Simp makes **no explicit pacing choice on any
+> platform** — it inherits each platform's default *blocking, vsync-locked* swap,
+> and its `swap_buffers(vsync := true)` flag is an unimplemented `@Incomplete`
+> placeholder. So the vsync-paced previous-frame-callback FIFO path **is** the
+> faithful Simp contract, and `mailbox`/`immediate` (plus the `tearing-control-v1`
+> wiring, the active-resize sleep, and the `JAI_WAYLAND_PRESENT_MODE` /
+> `JAI_WAYLAND_TRACE_RESIZE` knobs) were scope-creep past Simp's prototype-tier
+> design goals. They were removed; `wl_present_and_pace` is now just the single
+> FIFO body. A serious low-latency/tearing game loop belongs *below* Simp, on the
+> raw Wayland + DMA-BUF + Vulkan primitives this repo already exposes
+> (`commit-timing` / `presentation-feedback` / `fifo-v1` are generated and
+> available there), not baked into Simp.
 
 ## Motivation
 

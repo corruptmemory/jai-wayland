@@ -25,8 +25,8 @@ stack now runs on Wayland through `modules/Wayland_Support.jai`, with runtime
 selection between Wayland and X11 by value (`Display_Manager` /
 `running_wayland()`), not compile-time Linux branches or the old
 `context.simp_dispatch` plan. Current examples cover SHM windows, GL and Vulkan
-DMA-BUF presentation, runtime-loaded X11/GLX, selectable Simp Wayland present
-modes (`fifo`, `mailbox`, `immediate`), keyboard/pointer/touch-structural input,
+DMA-BUF presentation, runtime-loaded X11/GLX, vsync-paced triple-buffered Simp
+Wayland present, keyboard/pointer/touch-structural input,
 XKB keysyms, text clipboard, drag-and-drop, compositor resize, and
 upstream-unmodified graphical examples.
 
@@ -137,8 +137,8 @@ The `simp_example` target stages `OpenSans-BoldItalic.ttf` and
   connection and routes render, resize, input, data-device, clipboard, and
   drag-and-drop events. It owns `wayland_global_windows`, the shared
   EGL/GBM/GL context used by all Simp Wayland windows, per-window BO slots and
-  dmabuf choices, selectable present-mode state, optional `tearing-control-v1`
-  async hints, triple-buffered `wl_present_and_pace`, the parsed keymap,
+  dmabuf choices, frame-callback pacing state, the vsync-paced triple-buffered
+  `wl_present_and_pace`, the parsed keymap,
   acquired seats/devices, and the stable `Wl_Input_Event` queue consumed by
   `Input`.
 - `modules/Window_Type.jai` vendors the upstream Linux window type as a tagged
@@ -236,20 +236,37 @@ The `simp_example` target stages `OpenSans-BoldItalic.ttf` and
   paths continue to work.
 - Use `JAI_WAYLAND_LOG_KEYS=1` for temporary Wayland keyboard traces. It logs
   raw `wl_keyboard` keys/modifiers and the final `Input` key events.
-- `JAI_WAYLAND_PRESENT_MODE=fifo|mailbox|immediate` selects Simp's Wayland
-  present policy. `fifo` is the default bounded previous-frame-callback throttle.
-  `mailbox` and `immediate` skip the callback wait, commit only when a spare BO
-  slot exists, and drop rendered frames when the queue is full so the app loop is
-  not callback-paced. `immediate` additionally requests `tearing-control-v1`
-  async presentation when advertised; the compositor may ignore that hint.
-- `wl_present_and_pace` is asynchronous and triple-buffered. Do not restore the
-  old synchronous wait-on-this-frame present path. In FIFO mode it throttles on
-  the previous frame callback; in mailbox/immediate mode it uses buffer release
-  as backpressure and keeps one free render slot instead of blocking on callbacks.
-- In mailbox/immediate present modes, use `wl_pump_timed(0)` where the loop needs
-  to drain the compositor connection. `wl_pump(false)` only consumes already
-  buffered messages; without FIFO's blocking frame-callback receive, socket
-  events such as input, pings, and buffer releases can otherwise starve.
+- Simp's Wayland present policy is a single vsync-paced, triple-buffered blocking
+  swap: `wl_present_and_pace` throttles on the *previous* frame's
+  `wl_surface.frame` callback. This is the faithful analogue of the platform-default
+  blocking vsync swap Simp inherits on Windows/macOS/Android (`SwapBuffers` /
+  `flushBuffer` / `eglSwapBuffers`). A selectable `mailbox`/`immediate` present-mode
+  experiment (`JAI_WAYLAND_PRESENT_MODE`) plus an active-resize sleep and
+  `JAI_WAYLAND_TRACE_RESIZE` tracing were tried and **removed 2026-06-03** as
+  scope-creep beyond Simp's prototype-tier contract. Do not reintroduce them; do
+  not restore the old synchronous wait-on-*this*-frame present path either.
+- Bucketed GPU slot capacity is **DONE** (`docs/plans/2026-06-03-wayland-bucketed-slots.md`):
+  each window's logical size (`ww.width/height`) is decoupled from its slot
+  allocation capacity (`ww.wl_slot_width/height` = logical rounded up to
+  `BUCKET_STEP` 256, capped at output, grow-only). `wl_window_resize_gl`
+  reallocates only when the bucketed target grows past the current capacity;
+  otherwise it just re-crops via `wp_viewport` (`wl_update_viewport_crop`), no
+  realloc. Simp renders the logical sub-rect through its own
+  `glViewport(0,0,logical_w,logical_h)` (no Simp patch). Fallback to exact-size
+  realloc-per-resize when `wp_viewporter` is absent.
+  **Crop source rect is `(0, 0, log_w, log_h)`** — `set_buffer_transform(FLIPPED_180)`
+  is a pure vertical flip (X unchanged) and Simp renders into the buffer's origin
+  corner, so do NOT offset by `cap_w-log_w`. Two calibration traps: `glClear`
+  ignores `glViewport` and clears the WHOLE capacity buffer (so a full-clear
+  "edge-to-edge" check can't validate the crop offset — use a sub-region pattern
+  like hello_simp's centered quad); and grim-validate with the window fully ON the
+  monitor (an off-screen strip reads black and looks like an under-fill).
+  `wl_surface.damage_buffer` is not a crop; an oversized attached buffer changes
+  the surface size unless viewporter constrains it.
+- Use `wl_pump_timed(0)` (not `wl_pump(false)`) where the loop needs a
+  non-blocking drain of the compositor connection between presents — e.g. Input's
+  per-frame drain. `wl_pump(false)` only consumes already-buffered messages, so
+  input, pings, and buffer releases sitting on the socket would otherwise starve.
 - Simp's Wayland GL context is process-global, matching Simp's process-global
   shader/VBO/font GL objects and the X11 backend's single GLX context. Do not
   put `Wl_Egl_State` back on `Wayland_Window`; that struct owns per-window
@@ -312,8 +329,6 @@ Use focused tests first:
   `JAI_WAYLAND_CLIPBOARD_FRAMES=N ./build.sh - hello_clipboard`,
   `JAI_WAYLAND_X11_GL_FRAMES=N ./build.sh - hello_x11_gl`,
   `JAI_WAYLAND_VULKAN_FRAMES=N ./build.sh - hello_vulkan_dmabuf`
-  Add `JAI_WAYLAND_PRESENT_MODE=mailbox` or `immediate` to exercise the
-  low-latency Wayland Simp present paths.
 
 For substantial changes, run:
 

@@ -78,6 +78,63 @@ running_wayland :: () -> bool {
 // present; see docs/plans/2026-05-31-wayland-async-present.md.)
 SIMP_WL_SLOT_COUNT :: 3;
 
+// Slot allocation capacity is bucketed: the logical size rounded up to
+// BUCKET_STEP, capped at output resolution, grow-only. This decouples the
+// logical window size (what Simp renders / what the compositor sees via
+// wp_viewport) from the BO/FBO/wl_buffer allocation size, so interactive resize
+// stops reallocating the whole slot stack on every configure.
+// See docs/plans/2026-06-03-wayland-bucketed-slots-design.md.
+BUCKET_STEP :: 256;
+
+wl_round_up_to_step :: (v: s32, step: s32) -> s32 {
+    if v <= 0  return step;
+    return ((v + step - 1) / step) * step;
+}
+
+// Largest output dimensions, discovered once and cached. The capacity cap: a
+// normal window cannot exceed its monitor, so this keeps a maximized window's
+// buffer from rounding past the screen. Falls back to a generous 8K if output
+// discovery yields nothing.
+wl_output_cap_initialized: bool;
+wl_output_cap_w: s32 = 7680;
+wl_output_cap_h: s32 = 4320;
+
+wl_output_cap :: () -> (w: s32, h: s32) {
+    if wl_output_cap_initialized  return wl_output_cap_w, wl_output_cap_h;
+    wl_output_cap_initialized = true;
+
+    // get_screens_info allocates with the default allocator; this is a one-shot
+    // cache read of int dimensions, so run it on temp and let the block free it.
+    screens: [] Wl.Screen_Info;
+    {
+        push_allocator(temp);
+        screens = Wl.get_screens_info();
+    }
+    max_w: s32 = 0;
+    max_h: s32 = 0;
+    for screens {
+        if it.current_mode.width  > max_w  max_w = it.current_mode.width;
+        if it.current_mode.height > max_h  max_h = it.current_mode.height;
+    }
+    if max_w > 0 && max_h > 0 {
+        wl_output_cap_w = max_w;
+        wl_output_cap_h = max_h;
+    }
+    return wl_output_cap_w, wl_output_cap_h;
+}
+
+// Grow-only bucketed capacity for a logical size: round up to BUCKET_STEP, cap at
+// output resolution, never below the current capacity, and never below the
+// logical size itself (logical can exceed the output cap on odd configs).
+wl_target_capacity :: (logical_w: s32, logical_h: s32, cur_cap_w: s32, cur_cap_h: s32) -> (w: s32, h: s32) {
+    cap_w, cap_h := wl_output_cap();
+    want_w := min(wl_round_up_to_step(logical_w, BUCKET_STEP), cap_w);
+    want_h := min(wl_round_up_to_step(logical_h, BUCKET_STEP), cap_h);
+    out_w := max(max(want_w, cur_cap_w), logical_w);
+    out_h := max(max(want_h, cur_cap_h), logical_h);
+    return out_w, out_h;
+}
+
 // One slot holds a GL texture + FBO + EGLImage + (optional) GBM BO + the
 // exported DMA-BUF fd wrapped as a wl_buffer. (hello_gl.jai:31-51 Gl_Slot.)
 Wl_Gl_Slot :: struct {
@@ -121,18 +178,6 @@ Wl_Gl_Backend :: enum {
     MESA_TEXTURE_EXPORT; // EGL_MESA_image_dma_buf_export path
 }
 
-// Presentation policy for Simp's Wayland backend. FIFO is the current
-// conservative frame-callback path and remains the default. MAILBOX and
-// IMMEDIATE skip the frame-callback wait; they keep one free render slot and
-// drop rendered-but-not-yet-committed frames when the compositor is still holding
-// every other slot. IMMEDIATE additionally requests tearing-control-v1 ASYNC
-// when the compositor advertises it.
-Wl_Present_Mode :: enum u8 {
-    FIFO;
-    MAILBOX;
-    IMMEDIATE;
-}
-
 wl_gl_backend_name :: (b: Wl_Gl_Backend) -> string {
     if b == {
         case .GBM_BO;              return "gbm_bo";
@@ -140,44 +185,6 @@ wl_gl_backend_name :: (b: Wl_Gl_Backend) -> string {
         case .AUTO;                return "auto";
     }
     return "unknown";
-}
-
-wl_present_mode_name :: (m: Wl_Present_Mode) -> string {
-    if m == {
-        case .FIFO;      return "fifo";
-        case .MAILBOX;   return "mailbox";
-        case .IMMEDIATE; return "immediate";
-    }
-    return "unknown";
-}
-
-wl_present_mode_initialized: bool;
-wl_default_present_mode: Wl_Present_Mode = .FIFO;
-
-wl_get_default_present_mode :: () -> Wl_Present_Mode {
-    if wl_present_mode_initialized  return wl_default_present_mode;
-
-    wl_present_mode_initialized = true;
-    mode_ptr := getenv("JAI_WAYLAND_PRESENT_MODE");
-    if mode_ptr == null {
-        wl_default_present_mode = .FIFO;
-        return wl_default_present_mode;
-    }
-
-    mode := to_string(mode_ptr);
-    if mode == "fifo" || mode == "FIFO" || mode == "vsync" || mode == "VSYNC" {
-        wl_default_present_mode = .FIFO;
-    } else if mode == "mailbox" || mode == "MAILBOX" {
-        wl_default_present_mode = .MAILBOX;
-    } else if mode == "immediate" || mode == "IMMEDIATE" || mode == "async" || mode == "ASYNC" {
-        wl_default_present_mode = .IMMEDIATE;
-    } else {
-        log("Wayland_Support: unknown JAI_WAYLAND_PRESENT_MODE='%', using fifo", mode, flags=.WARNING);
-        wl_default_present_mode = .FIFO;
-    }
-
-    log("Wayland_Support: present mode %", wl_present_mode_name(wl_default_present_mode));
-    return wl_default_present_mode;
 }
 
 // Which backend AUTO would resolve to given the currently-loaded extensions.
@@ -280,65 +287,80 @@ wl_shared_context :: () -> EGL.EGLContext {
     return wl_shared_egl.ctx;
 }
 
-// ─────────────────────── Present protocol helpers ─────────────────────────
+// ─────────────────────── Viewporter (bucketed crop) ───────────────────────
+// wp_viewporter lets us present only the logical sub-rect of an oversized
+// (bucketed) buffer, so the slot allocation size can exceed the surface size.
+// Bound once; absent on a compositor that does not advertise it (we then fall
+// back to realloc-per-resize). See the design doc.
 
-wl_present_extensions_initialized: bool;
-wl_tearing_manager: Wl.Wp_Tearing_Control_Manager_V1;
-wl_have_tearing_manager: bool;
+wl_viewporter: Wl.Wp_Viewporter;
+wl_have_viewporter: bool;
+wl_viewporter_initialized: bool;
 
-wl_ensure_present_extensions :: () {
-    if wl_present_extensions_initialized  return;
-    wl_present_extensions_initialized = true;
-
-    mode := wl_get_default_present_mode();
-    if mode != .IMMEDIATE  return;
-
-    _, tearing_ok := Wl.get_global("wp_tearing_control_manager_v1");
-    if !tearing_ok {
-        log("Wayland_Support: immediate present requested, but tearing-control-v1 is not advertised; using mailbox semantics", flags=.WARNING);
-        return;
-    }
-
-    wl_tearing_manager = .{ id = Wl.allocate_id() };
-    batch: Wl.MessageBuilder;
-    if !Wl.wl_registry_bind(*batch, Wl.registry(), *wl_tearing_manager) {
-        log("Wayland_Support: failed to bind tearing-control-v1; using mailbox semantics", flags=.WARNING);
-        wl_tearing_manager = .{};
-        return;
-    }
-
-    if !Wl.wayland_send(*batch) {
-        log("Wayland_Support: failed to send tearing-control-v1 bind; using mailbox semantics", flags=.WARNING);
-        wl_tearing_manager = .{};
-        return;
-    }
-
-    wl_have_tearing_manager = true;
-    log("Wayland_Support: tearing-control-v1 available; immediate mode will request async presentation");
+wl_fixed_from_int :: (v: s32) -> Wl.Fixed {
+    return .{ raw = v << 8 };
 }
 
-wl_window_init_presentation :: (ww: *Wayland_Window) {
-    ww.wl_present_mode = wl_get_default_present_mode();
-    wl_ensure_present_extensions();
+wl_ensure_viewporter :: () {
+    if wl_viewporter_initialized  return;
+    wl_viewporter_initialized = true;
 
-    if ww.wl_present_mode != .IMMEDIATE  return;
-    if !wl_have_tearing_manager  return;
+    _, ok := Wl.get_global("wp_viewporter");
+    if !ok  return;
 
-    ww.wl_tearing_control = .{ id = Wl.allocate_id() };
+    wl_viewporter = .{ id = Wl.allocate_id() };
     batch: Wl.MessageBuilder;
-    Wl.wp_tearing_control_manager_v1_get_tearing_control(*batch, *wl_tearing_manager, ww.wl_tearing_control.id, *ww.surface);
-    Wl.wp_tearing_control_v1_set_presentation_hint(
-        *batch,
-        *ww.wl_tearing_control,
-        cast(u32) Wl.Wp_Tearing_Control_V1_Presentation_Hint.ASYNC);
-
-    if Wl.wayland_send(*batch) {
-        ww.wl_have_tearing_control = true;
-        log("Wayland_Support: surface % requested tearing-control async presentation", ww.surface.id);
-    } else {
-        ww.wl_tearing_control = .{};
-        log("Wayland_Support: failed to request tearing-control async presentation for surface %", ww.surface.id, flags=.WARNING);
+    if !Wl.wl_registry_bind(*batch, Wl.registry(), *wl_viewporter) {
+        wl_viewporter = .{};
+        return;
     }
+    if !Wl.wayland_send(*batch) {
+        wl_viewporter = .{};
+        return;
+    }
+    wl_have_viewporter = true;
+    log("Wayland_Support: wp_viewporter available; using bucketed slot capacity");
+}
+
+// Create a wp_viewport for this surface (once). No-op if viewporter is absent.
+// TODO(teardown): the per-window wp_viewport created here should be destroyed in a
+// future per-window teardown pass (like the surface roles, it is process-lifetime-
+// owned today).
+wl_window_init_viewport :: (ww: *Wayland_Window) {
+    wl_ensure_viewporter();
+    if !wl_have_viewporter  return;
+
+    ww.wl_viewport = .{ id = Wl.allocate_id() };
+    batch: Wl.MessageBuilder;
+    Wl.wp_viewporter_get_viewport(*batch, *wl_viewporter, ww.wl_viewport.id, *ww.surface);
+    if Wl.wayland_send(*batch)  ww.wl_have_viewport = true;
+    else                        ww.wl_viewport = .{};
+}
+
+// Crop the (possibly oversized) buffer down to the logical region and set the
+// surface (logical) size. Simp renders the logical content into glViewport(0,0,
+// log_w,log_h) — the GL bottom-LEFT of the capacity-sized FBO — so the logical
+// content occupies the buffer's [0,log_w] x [0,log_h] corner. set_buffer_transform
+// (FLIPPED_180) is a pure VERTICAL flip (X unchanged), so in post-transform surface
+// space the logical content stays at the origin corner: src = (0, 0, log_w, log_h).
+// (The earlier (cap_w-log_w, 0) offset was wrong — it passed a meaningless test
+// because glClear ignores the viewport and fills the WHOLE capacity buffer, so any
+// src_x crop shows solid clear; the off-centre QUAD in hello_simp is the real probe.)
+wl_update_viewport_crop :: (ww: *Wayland_Window) {
+    if !ww.wl_have_viewport  return;
+
+    cap_w := ww.wl_slot_width;
+    cap_h := ww.wl_slot_height;
+    log_w := ww.width;
+    log_h := ww.height;
+    if log_w <= 0 || log_h <= 0 || cap_w <= 0 || cap_h <= 0  return;
+
+    batch: Wl.MessageBuilder;
+    Wl.wp_viewport_set_source(*batch, *ww.wl_viewport,
+        wl_fixed_from_int(0), wl_fixed_from_int(0),
+        wl_fixed_from_int(log_w), wl_fixed_from_int(log_h));
+    Wl.wp_viewport_set_destination(*batch, *ww.wl_viewport, log_w, log_h);
+    Wl.wayland_send(*batch);
 }
 
 // ─────────────────── Format / modifier selection ──────────────────────────
@@ -627,14 +649,6 @@ wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
     return -1;
 }
 
-wl_find_free_slot_except :: (slots: [] Wl_Gl_Slot, except_index: s32) -> int {
-    for slots {
-        if cast(s32) it_index == except_index  continue;
-        if !it.in_flight  return it_index;
-    }
-    return -1;
-}
-
 // ──────────────────────── Window registry ─────────────────────────────────
 
 // The shared per-window record — the Wayland analogue of an entry in X11's
@@ -666,14 +680,9 @@ Wayland_Window :: struct {
     wl_format:      u32;                         // chosen DRM fourcc
     wl_modifier:    u64;                         // chosen DRM modifier
 
-    // Presentation policy. FIFO is frame-callback paced; MAILBOX / IMMEDIATE
-    // present opportunistically and drop rendered frames instead of blocking when
-    // every non-current slot is still compositor-owned. IMMEDIATE also tries to
-    // set tearing-control-v1 ASYNC on this surface.
-    wl_present_mode: Wl_Present_Mode = .FIFO;
-    wl_tearing_control: Wl.Wp_Tearing_Control_V1;
-    wl_have_tearing_control: bool;
-    wl_low_latency_dropped_frames: u64;
+    // wp_viewport crops the bucketed buffer to the logical surface size.
+    wl_viewport:      Wl.Wp_Viewport;
+    wl_have_viewport: bool;
 
     // Frame-callback id recycler. cache_alloc per present, cache_free after
     // wl_pump(true) returns — keeps the client-id stream contiguous.
@@ -735,6 +744,18 @@ register_wayland_window :: (surface_id: u32, xdg_surface_id: u32, toplevel_id: u
     return ww;
 }
 
+wl_note_configure_size :: (ww: *Wayland_Window, width: s32, height: s32) -> bool {
+    if width <= 0 || height <= 0  return false;
+
+    changed := width != ww.width || height != ww.height;
+    if changed {
+        ww.width = width;
+        ww.height = height;
+        ww.size_dirty = true;
+    }
+    return changed;
+}
+
 // Used by Window_Creation while it is synchronously waiting for a newly-created
 // window's first configure. A compositor may reconfigure already-registered
 // windows during that wait (multiple_windows does this when the second window is
@@ -752,11 +773,7 @@ wl_route_registered_window_control_event :: (header: Wl.WaylandMessageHeader, re
         if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
             args: Wl.Xdg_Toplevel_Configure_Args;
             Wl.unmarshal(*args, header.payload, recv);
-            if args.width > 0 && args.height > 0 && (args.width != ww.width || args.height != ww.height) {
-                ww.width      = args.width;
-                ww.height     = args.height;
-                ww.size_dirty = true;
-            }
+            wl_note_configure_size(ww, args.width, args.height);
             return true;
         }
         if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CLOSE {
@@ -769,9 +786,7 @@ wl_route_registered_window_control_event :: (header: Wl.WaylandMessageHeader, re
 }
 
 wl_any_window_needs_app_turn :: () -> bool {
-    for wayland_global_windows {
-        if it.size_dirty || it.wl_close_requested  return true;
-    }
+    for wayland_global_windows  if it.size_dirty || it.wl_close_requested  return true;
     return false;
 }
 
@@ -822,22 +837,15 @@ wl_all_windows_starved :: () -> bool {
     return true;
 }
 
-// Existing Simp call site. Dispatches to the selected Wayland presentation
-// policy while preserving the old public support-layer name.
+// Simp's present entry point. Attach the current slot, request a frame callback,
+// commit, then wait (BOUNDED) for the previous frame's callback — vsync-equivalent
+// pacing that degrades gracefully for occluded windows (see the wait below). This
+// mirrors the blocking, vsync-locked buffer swap Simp inherits from the platform
+// default on Windows/macOS/Android (SwapBuffers / flushBuffer / eglSwapBuffers);
+// it is the only Wayland presentation policy, matching upstream Simp's contract.
+// The caller (Simp's swap) does the glFinish before and the FBO rebind after.
+// Ported from hello_gl.jai's steady-state present + the SWAP_BUFFERS path.
 wl_present_and_pace :: (ww: *Wayland_Window) {
-    if ww.wl_present_mode == .FIFO {
-        wl_present_fifo(ww);
-    } else {
-        wl_present_low_latency(ww);
-    }
-}
-
-// Attach the current slot, request a frame callback, commit, then wait (BOUNDED)
-// for the previous frame's callback — vsync-equivalent pacing that degrades
-// gracefully for occluded windows (see the wait below). The caller (Simp's swap)
-// does the glFinish before and the FBO rebind after. Ported from hello_gl.jai's
-// steady-state present + the SWAP_BUFFERS path.
-wl_present_fifo :: (ww: *Wayland_Window) {
     if ww.wl_current < 0  return;
 
     // VSYNC PACING on the PREVIOUS frame's callback. The old path requested a
@@ -936,55 +944,6 @@ wl_present_fifo :: (ww: *Wayland_Window) {
     if nxt >= 0  ww.wl_current = cast(s32) nxt;
 }
 
-// MAILBOX / IMMEDIATE present. This intentionally does not request or wait on a
-// wl_surface.frame callback. The compositor still owns final presentation, but
-// the app loop is no longer paced by callback delivery: if a spare BO slot is
-// available, commit immediately; if the queue is full, keep the current free slot
-// and drop this rendered frame so the next app frame overwrites it with fresher
-// content. IMMEDIATE differs only by the persistent tearing-control-v1 ASYNC
-// hint installed during window init when the compositor supports it.
-wl_present_low_latency :: (ww: *Wayland_Window) {
-    if ww.wl_current < 0  return;
-
-    if wl_any_window_needs_app_turn() {
-        // Do not submit a stale-size buffer after a configure/close; let the app
-        // process the resize/quit and render the next frame into the correct slot.
-        return;
-    }
-
-    // Drain releases/control before deciding whether the queue has room. In
-    // FIFO mode the frame-callback wait regularly reads the socket; low-latency
-    // modes do not have that blocking receive, so they must actively poll with a
-    // zero timeout. Plain wl_pump(false) only drains already-buffered messages.
-    wl_pump_timed(0);
-
-    // Keep one free non-current slot available after the commit. If none exists,
-    // all other slots are still compositor-owned. Do not commit the current slot:
-    // leaving it free lets the app overwrite it next frame with fresher content,
-    // which is the "latest frame wins" behavior we want from mailbox/immediate.
-    next := wl_find_free_slot_except(ww.wl_slots, ww.wl_current);
-    if next < 0 {
-        ww.wl_low_latency_dropped_frames += 1;
-        return;
-    }
-
-    slot := *ww.wl_slots[ww.wl_current];
-    if slot.in_flight {
-        log("Wayland_Support: current render slot is unexpectedly in flight; dropping frame", flags=.WARNING);
-        ww.wl_current = cast(s32) next;
-        return;
-    }
-
-    batch: Wl.MessageBuilder;
-    Wl.wl_surface_attach(*batch, *ww.surface, *slot.buffer, 0, 0);
-    Wl.wl_surface_damage_buffer(*batch, *ww.surface, 0, 0, slot.width, slot.height);
-    Wl.wl_surface_commit(*batch, *ww.surface);
-    Wl.wayland_send(*batch);
-    slot.in_flight = true;
-
-    ww.wl_current = cast(s32) next;
-}
-
 // ─────────────────── Per-window GL bring-up / ops ─────────────────────────
 // These hold the Wayland GL backend work so the Simp dispatch glue
 // (modules/Simp/backend/wayland_dispatch.jai) stays a thin display_manager
@@ -1019,13 +978,19 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     log("Wayland_Support: using format=0x% modifier=0x%",
         formatInt(format, base=16), formatInt(modifier, base=16));
 
-    wl_window_init_presentation(ww);
+    // Decide the slot allocation capacity. With wp_viewporter we allocate at the
+    // bucketed (grow-only) capacity and present only the logical sub-rect via the
+    // viewport crop; without it we fall back to allocating at the exact logical size.
+    cap_w := ww.width;
+    cap_h := ww.height;
+    wl_window_init_viewport(ww);
+    if ww.wl_have_viewport  cap_w, cap_h = wl_target_capacity(ww.width, ww.height, 0, 0);
 
     backend := wl_choose_gl_backend();
     batch: Wl.MessageBuilder;
     for * slot, i: ww.wl_slots {
         if !wl_slot_init(slot, wl_shared_egl, *ww.wl_dmabuf_info.dmabuf, *batch,
-                         ww.wl_format, ww.wl_modifier, ww.width, ww.height, backend) {
+                         ww.wl_format, ww.wl_modifier, cap_w, cap_h, backend) {
             // An earlier slot's batched create messages are abandoned unsent, yet
             // allocate_id() advanced next_id — a hole in the contiguous client-ID
             // stream. Tolerable only because we leave wl_initted=false, so SWAP /
@@ -1045,19 +1010,18 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     Wl.wayland_send(*batch);
 
     ww.wl_current = 0;
-    ww.wl_slot_width  = ww.width;
-    ww.wl_slot_height = ww.height;
+    ww.wl_slot_width  = cap_w;
+    ww.wl_slot_height = cap_h;
     ww.wl_initted = true;
+    wl_update_viewport_crop(ww);
     return true;
 }
 
-// Retire current slots (compositor may still hold an in-flight buffer → wl_retired,
-// torn down on their wl_buffer.release in the pump) and reallocate at the new size,
-// reusing the negotiated format/modifier. Returns true if it actually reallocated
-// (caller rebinds the FBO); false on a no-op (size unchanged) or on failure (the
-// window is disabled via wl_initted=false). (BACKEND_RESIZE body.)
-wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
-    if ww.wl_slot_width == new_w && ww.wl_slot_height == new_h  return false;
+// Retire current slots (compositor may still hold an in-flight buffer) and
+// reallocate all of them at (w, h), reusing the negotiated format/modifier.
+// Sets wl_current=0 and wl_slot_width/height. Returns true on success; on failure
+// disables the window (wl_initted=false) and returns false.
+wl_realloc_slots :: (ww: *Wayland_Window, w: s32, h: s32) -> bool {
     if !wl_make_current()  return false;
 
     retire_batch: Wl.MessageBuilder;
@@ -1068,17 +1032,52 @@ wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
     alloc_batch: Wl.MessageBuilder;
     for * slot, i: ww.wl_slots {
         if !wl_slot_init(slot, wl_shared_egl, *ww.wl_dmabuf_info.dmabuf, *alloc_batch,
-                         ww.wl_format, ww.wl_modifier, new_w, new_h, backend) {
-            log_error("Wayland_Support: resize slot % realloc failed (%x%) — window disabled", i, new_w, new_h);
+                         ww.wl_format, ww.wl_modifier, w, h, backend) {
+            log_error("Wayland_Support: slot % realloc failed (%x%) — window disabled", i, w, h);
             ww.wl_initted = false;
             return false;
         }
     }
     Wl.wayland_send(*alloc_batch);
     ww.wl_current = 0;
-    ww.wl_slot_width  = new_w;
-    ww.wl_slot_height = new_h;
+    ww.wl_slot_width  = w;
+    ww.wl_slot_height = h;
     return true;
+}
+
+// Resize the window's render slots to the new LOGICAL size (new_w, new_h).
+//
+// With wp_viewporter (ww.wl_have_viewport): slot allocation is bucketed and
+// grow-only — we reallocate only when the bucketed target capacity must grow past
+// the current capacity, and otherwise just re-crop the existing oversized buffers
+// to the new logical region via wp_viewport. Returns true only when slots were
+// actually reallocated (caller rebinds the FBO); a crop-only update returns false.
+//
+// Without viewporter: falls back to the exact pre-bucketing behavior — capacity ==
+// logical, realloc on any size change, no crop. Returns true if it reallocated,
+// false on a no-op (size unchanged); on failure the window is disabled
+// (wl_initted=false) and it returns false. (BACKEND_RESIZE body.)
+// new_w/new_h are the new LOGICAL size; the pump (ww.width/height) is the source
+// of truth for logical size and is expected to already equal them by the time
+// Simp dispatches this (wl_update_viewport_crop reads logical from ww.width/height).
+wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
+    if !ww.wl_have_viewport {
+        // No-viewporter fallback: buffer size == logical size; realloc on any change.
+        if ww.wl_slot_width == new_w && ww.wl_slot_height == new_h  return false;
+        return wl_realloc_slots(ww, new_w, new_h);
+    }
+
+    // Bucketed path: grow-only capacity, crop to the logical region.
+    target_w, target_h := wl_target_capacity(new_w, new_h, ww.wl_slot_width, ww.wl_slot_height);
+
+    realloc := false;
+    if target_w > ww.wl_slot_width || target_h > ww.wl_slot_height {
+        if !wl_realloc_slots(ww, target_w, target_h)  return false;
+        realloc = true;
+    }
+
+    wl_update_viewport_crop(ww);  // logical may have changed even with no realloc
+    return realloc;
 }
 
 // ──────────────────────────── Input (keyboard) ────────────────────────────
@@ -1905,12 +1904,7 @@ wl_pump :: (blocking: bool) {
                     // get_window_resizes() returns (invaders/GetRect re-layout off it).
                     args: Wl.Xdg_Toplevel_Configure_Args;
                     Wl.unmarshal(*args, header.payload, *session.recv);
-                    if args.width > 0 && args.height > 0 && (args.width != ww.width || args.height != ww.height) {
-                        ww.width      = args.width;
-                        ww.height     = args.height;
-                        ww.size_dirty = true;
-                        done = true;
-                    }
+                    if wl_note_configure_size(ww, args.width, args.height)  done = true;
                     routed = true;
                     break;
                 }
