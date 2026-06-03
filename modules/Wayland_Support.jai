@@ -78,6 +78,57 @@ running_wayland :: () -> bool {
 // present; see docs/plans/2026-05-31-wayland-async-present.md.)
 SIMP_WL_SLOT_COUNT :: 3;
 
+// Slot allocation capacity is bucketed: the logical size rounded up to
+// BUCKET_STEP, capped at output resolution, grow-only. This decouples the
+// logical window size (what Simp renders / what the compositor sees via
+// wp_viewport) from the BO/FBO/wl_buffer allocation size, so interactive resize
+// stops reallocating the whole slot stack on every configure.
+// See docs/plans/2026-06-03-wayland-bucketed-slots-design.md.
+BUCKET_STEP :: 256;
+
+wl_round_up_to_step :: (v: s32, step: s32) -> s32 {
+    if v <= 0  return step;
+    return ((v + step - 1) / step) * step;
+}
+
+// Largest output dimensions, discovered once and cached. The capacity cap: a
+// normal window cannot exceed its monitor, so this keeps a maximized window's
+// buffer from rounding past the screen. Falls back to a generous 8K if output
+// discovery yields nothing.
+wl_output_cap_initialized: bool;
+wl_output_cap_w: s32 = 7680;
+wl_output_cap_h: s32 = 4320;
+
+wl_output_cap :: () -> (w: s32, h: s32) {
+    if wl_output_cap_initialized  return wl_output_cap_w, wl_output_cap_h;
+    wl_output_cap_initialized = true;
+
+    screens := Wl.get_screens_info();
+    max_w: s32 = 0;
+    max_h: s32 = 0;
+    for screens {
+        if it.current_mode.width  > max_w  max_w = it.current_mode.width;
+        if it.current_mode.height > max_h  max_h = it.current_mode.height;
+    }
+    if max_w > 0 && max_h > 0 {
+        wl_output_cap_w = max_w;
+        wl_output_cap_h = max_h;
+    }
+    return wl_output_cap_w, wl_output_cap_h;
+}
+
+// Grow-only bucketed capacity for a logical size: round up to BUCKET_STEP, cap at
+// output resolution, never below the current capacity, and never below the
+// logical size itself (logical can exceed the output cap on odd configs).
+wl_target_capacity :: (logical_w: s32, logical_h: s32, cur_cap_w: s32, cur_cap_h: s32) -> (w: s32, h: s32) {
+    cap_w, cap_h := wl_output_cap();
+    want_w := min(wl_round_up_to_step(logical_w, BUCKET_STEP), cap_w);
+    want_h := min(wl_round_up_to_step(logical_h, BUCKET_STEP), cap_h);
+    out_w := max(max(want_w, cur_cap_w), logical_w);
+    out_h := max(max(want_h, cur_cap_h), logical_h);
+    return out_w, out_h;
+}
+
 // One slot holds a GL texture + FBO + EGLImage + (optional) GBM BO + the
 // exported DMA-BUF fd wrapped as a wl_buffer. (hello_gl.jai:31-51 Gl_Slot.)
 Wl_Gl_Slot :: struct {
