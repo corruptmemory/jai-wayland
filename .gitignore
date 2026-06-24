@@ -6,3 +6,9 @@ build_tests/
 .codex/
 *.sublime-project
 *.sublime-workspace
+
+# libwayland-proxy: standalone shim-test binaries + spike build outputs (sources tracked)
+spikes/**/build/
+/tests/shim_marshal_test
+/tests/shim_list_test
+/tests/shim_varargs_test
