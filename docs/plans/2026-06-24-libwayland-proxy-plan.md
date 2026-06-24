@@ -55,19 +55,39 @@ gcc (one C file); grim (visual verify under Hyprland).
   `#c_call` signature is ABI-safe on x86-64 SysV for Wayland's all-integer/pointer args. `create_queue`/
   `set_queue`/`create_wrapper`/`add_listener`, `dispatch_queue[_pending/_timeout]`, `roundtrip_queue`
   implemented; the live-socket parts (blocking read, roundtrip) await a real compositor.
-- **RESUME HERE → Task 6 (real interface tables + facade bring-up):** the big DATA tables for
-  `wl_display`/`wl_registry`/`wl_callback`/`wl_compositor`/`wl_surface`/`wl_shm`/`xdg_*`/
-  `zwp_linux_dmabuf_v1`, `#program_export`'d (port game-bootstrap's `libwayland_emit.jai` or hand-author
-  the slice-1 set) + replace the `tables.jai` stub. Then `facade.jai` (connect + register display id 1)
-  and `examples/hello_shim_registry.jai` — **first live Hyprland interaction**: drive `get_registry` +
-  `roundtrip_queue` through the engine and log every global (proves marshaller+dispatch+tables end-to-end
-  against the real compositor; this is where roundtrip_queue gets exercised). Then Task 7 (Vulkan
-  swapchain harness + grim).
+- **Task 6 — real interface tables + facade + live registry: DONE + proven against live Hyprland.**
+  `tables.jai` carries game-bootstrap's byte-exact `wl_*`/`xdg_*` interface graph (28 interfaces) +
+  the `wl_protocol_tables_init` back-pointer patch + opcodes (lifted verbatim — ABI-identical structs;
+  Jai string literals convert to the `*u8` name/signature fields). `facade.jai` = `shim_connect` /
+  `shim_get_registry` / `shim_roundtrip`. `examples/hello_shim_registry.jai` drives `get_registry` +
+  `wl_display.sync` round-trip entirely through OUR engine and logs every global — output is
+  **byte-identical to the native `hello_globals` path (68 globals)** and `ldd` is libc-only. (commit
+  d62af44.) This exercised `roundtrip_queue`, the live blocking read, demux, and wide-signature dispatch
+  end-to-end. **WSI bind set discovered** (for Task 7): `wl_compositor v6`, `wl_shm v2`, `xdg_wm_base v7`,
+  `wl_seat v9`, `wl_output v4`, `zwp_linux_dmabuf_v1 v5`, `wp_linux_drm_syncobj_manager_v1 v1`, `wl_drm v2`.
+- **Gate 2 precondition — DATA-symbol interposition: PROVEN (`spikes/data-export/`, commit 8263b79).**
+  `#program_export` works on Jai globals (lands in `.dynsym` as `OBJECT/GLOBAL`, bare C name); a fake ICD's
+  `extern` data ref binds to OUR exported table even when it `DT_NEEDED`s a stand-in real-libwayland
+  defining the same symbol (reads our `0xC0FFEE`, not the provider's `0xDEAD`). So **Task-7 mechanism is
+  settled**: `#program_export` each `<iface>_interface`; no C-owned data tables. (`st_size` Jai reports is
+  bogus but irrelevant — name-based resolution, no COPY relocations.)
+- **RESUME HERE → Task 7 (Vulkan swapchain harness — the gate-2 semantic milestone):** the engine + tables
+  + facade are all proven; what remains is wiring. (1) `nm -D --undefined` the real Mesa ICD to get the
+  EXACT undefined `wl_*` symbol set (procs + `_interface` data) — export precisely those (add
+  `#program_export` to the matching `tables.jai` interfaces; the procs are already exported). Note Mesa
+  bundles its own `zwp_linux_dmabuf_v1`, so that may NOT be an undefined import. (2) Build the window via
+  facade calls (bind `wl_compositor`+`xdg_wm_base`, `wl_surface`→`xdg_surface`→`xdg_toplevel`, commit,
+  roundtrip for first `configure`). (3) Vulkan (vendored module): `VkInstance` (+`VK_KHR_surface`,
+  `VK_KHR_wayland_surface`) → `vkCreateWaylandSurfaceKHR(display, surface)` → swapchain → acquire/clear/
+  present N frames. (4) Verify under Hyprland with `grim`; assert no real-libwayland call; `ldd` clean.
+  Wire the varargs `.o` into the build (`Build_Options.additional_linker_arguments`) — this is where the
+  C `wl_marshal_varargs.c` finally links in (the ICD calls the variadic `wl_proxy_marshal_flags`).
 
-Committed through Task 5 (`git log`: a5c0948 spike, e0aebfc docs, b99ef2d Tasks 1-4, 0cbd721 Task 5).
-**Both halves of the engine are done and unit-tested**; what remains is the live integration (real
-tables + compositor bring-up + the Vulkan swapchain milestone). Build standalone shim tests with
-`~/jai/jai/bin/jai-linux tests/shim_<x>_test.jai` (binaries gitignored via `/tests/shim_*test`).
+Committed through Task 6 + the gate-2 data spike (`git log`: …b9b53af Task 5 done, d62af44 Task 6, 8263b79
+data-export spike). **Engine, tables, facade, and BOTH interposition gates are proven**; what remains is
+the Vulkan swapchain wiring (Task 7) and the NVIDIA last-mile (Task 8, laptop). Build standalone shim
+tests with `~/jai/jai/bin/jai-linux tests/shim_<x>_test.jai`; build the live registry smoke with
+`./build.sh - hello_shim_registry` (binaries gitignored via `/tests/shim_*test`).
 
 ---
 
