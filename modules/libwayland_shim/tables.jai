@@ -65,6 +65,7 @@ wl_registry_events: [2] wl_message = .[
     .{ "global", "usu", wl_registry_types.data + 0 },
     .{ "global_remove", "u", wl_registry_types.data + 0 },
 ];
+#program_export   // ICD data import (nm -D --undefined libvulkan_radeon.so)
 wl_registry_interface: wl_interface = .{
     name         = "wl_registry",
     version      = 1,
@@ -81,6 +82,7 @@ wl_callback_types: [1] *wl_interface = .[
 wl_callback_events: [1] wl_message = .[
     .{ "done", "u", wl_callback_types.data + 0 },
 ];
+#program_export   // ICD data import (nm -D --undefined libvulkan_radeon.so)
 wl_callback_interface: wl_interface = .{
     name         = "wl_callback",
     version      = 1,
@@ -123,6 +125,7 @@ wl_shm_pool_requests: [3] wl_message = .[
     .{ "destroy", "", wl_shm_pool_types.data + 0 },
     .{ "resize", "i", wl_shm_pool_types.data + 0 },
 ];
+#program_export   // ICD data import (nm -D --undefined libvulkan_radeon.so)
 wl_shm_pool_interface: wl_interface = .{
     name         = "wl_shm_pool",
     version      = 2,
@@ -146,6 +149,7 @@ wl_shm_requests: [2] wl_message = .[
 wl_shm_events: [1] wl_message = .[
     .{ "format", "u", wl_shm_types.data + 0 },
 ];
+#program_export   // ICD data import (nm -D --undefined libvulkan_radeon.so)
 wl_shm_interface: wl_interface = .{
     name         = "wl_shm",
     version      = 2,
@@ -164,6 +168,7 @@ wl_buffer_requests: [1] wl_message = .[
 wl_buffer_events: [1] wl_message = .[
     .{ "release", "", wl_buffer_types.data + 0 },
 ];
+#program_export   // ICD data import (nm -D --undefined libvulkan_radeon.so)
 wl_buffer_interface: wl_interface = .{
     name         = "wl_buffer",
     version      = 1,
@@ -388,6 +393,7 @@ wl_surface_events: [4] wl_message = .[
     .{ "preferred_buffer_scale", "6i", wl_surface_types.data + 0 },
     .{ "preferred_buffer_transform", "6u", wl_surface_types.data + 0 },
 ];
+#program_export   // ICD data import (nm -D --undefined libvulkan_radeon.so)
 wl_surface_interface: wl_interface = .{
     name         = "wl_surface",
     version      = 6,
@@ -555,6 +561,7 @@ wl_output_events: [6] wl_message = .[
     .{ "name", "4s", wl_output_types.data + 0 },
     .{ "description", "4s", wl_output_types.data + 0 },
 ];
+#program_export   // ICD data import (nm -D --undefined libvulkan_radeon.so)
 wl_output_interface: wl_interface = .{
     name         = "wl_output",
     version      = 4,
@@ -636,6 +643,7 @@ wl_fixes_requests: [2] wl_message = .[
     .{ "destroy", "", wl_fixes_types.data + 0 },
     .{ "destroy_registry", "o", wl_fixes_types.data + 0 },
 ];
+#program_export   // ICD data import (nm -D --undefined libvulkan_radeon.so)
 wl_fixes_interface: wl_interface = .{
     name         = "wl_fixes",
     version      = 1,

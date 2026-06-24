@@ -197,6 +197,42 @@ the `.o`); create `tests/shim_varargs_test.jai`.
 
 **Files:** Create `examples/hello_vkwl_swapchain.jai`; modify `first.jai` (`- hello_vkwl_swapchain`).
 
+**Exact ICD import surface (Mesa radeon, discovered 2026-06-24 via `nm -D --undefined
+/usr/lib/libvulkan_radeon.so`):** 26 symbols total. **8 DATA tables** — `wl_buffer`, `wl_callback`,
+`wl_fixes`, `wl_output`, `wl_registry`, `wl_shm`, `wl_shm_pool`, `wl_surface` `_interface` (NOT
+`wl_compositor`/`xdg_*`/`zwp_linux_dmabuf_v1` — the app creates those, and Mesa bundles its own dmabuf).
+**18 FUNCS** — `wl_proxy_{marshal_flags,add_listener,destroy,wrapper_destroy,get_id,get_version,
+set_queue,create_wrapper}`, `wl_display_{flush,roundtrip_queue,dispatch_queue,dispatch_queue_pending,
+dispatch_queue_timeout,create_queue_with_name}`, `wl_event_queue_destroy`, `wl_list_{init,insert,remove}`.
+**Every one is already implemented** (the 8 tables in `tables.jai`; `wl_proxy_marshal_flags` in the C
+varargs shim; the other 17 in queues/core_trivial/marshal_runtime). It imports the **variadic**
+`wl_proxy_marshal_flags`, not the array form — validating the C bridge. It does NOT import
+`prepare_read`/`read_events` — confirming the single-owner queue model.
+
+- [ ] **FIRST — solve proc-export retention (the one real obstacle found 2026-06-24).** The 8 DATA tables
+  already `#program_export` correctly into `.dynsym` (`OBJECT GLOBAL DEFAULT`, verified on
+  `build/hello_shim_registry`). But **~9 of the 18 `#program_export`'d procs do NOT reach the final
+  `.dynsym`** (`wl_display_roundtrip_queue`, `dispatch_queue{,_pending,_timeout}`,
+  `create_queue_with_name`, `event_queue_destroy`, `wl_proxy_{create_wrapper,wrapper_destroy}`,
+  `wl_proxy_marshal_array_flags`). Since the ICD calls these at RUNTIME (dlopen), they have no link-time
+  caller. Diagnostics gathered: they ARE defined+`GLOBAL T` in the actual link-set `.o` (both the bare
+  export name and Jai's mangled name at the same address), yet absent from the final binary; `-u <sym>`,
+  `--no-gc-sections`, and `--export-dynamic-symbol=wl_*` relinks all FAILED to recover them; the link
+  command carries no explicit `--gc-sections`. The procs that DO export (`get_version`, `get_id`,
+  `list_*`, `proxy_destroy`, `set_queue`, `display_flush`, `add_listener`) are `FUNC GLOBAL DEFAULT` in
+  the `.o`. A keepalive that stores their addresses into a `#program_export`'d global had NO effect (the
+  pinning proc was inlined away — absent from `.o`). **This needs a focused investigation WITH the
+  jai-language skill** — it is a `#program_export` × Jai-DCE × symbol-visibility interaction, not a plain
+  linker-GC issue. Candidate directions: (a) check the bare-alias VISIBILITY in the `.o` with
+  `readelf -s` (hypothesis: internally-referenced exports get hidden/lost while purely-external ones stay
+  `DEFAULT`) and, if so, restructure so each exported `#c_call` entry is a thin wrapper the ICD alone
+  calls (facade/internal code calls private `*_impl` helpers, never the exported symbol — mirrors why the
+  already-working exports are never internally referenced); (b) a non-inlinable keepalive (e.g. an
+  exported proc that RETURNS the address table, so the addresses genuinely escape); (c) ask whether Jai
+  has a per-proc "force-emit/no-DCE" directive. Gate this before any Vulkan work — if the ICD can't
+  resolve these, `vkCreateWaylandSurfaceKHR` crashes on first use.
+- [ ] Wire the C varargs shim into the build: gcc `wl_marshal_varargs.c` → `.o`, append to the harness
+  workspace's `Build_Options.additional_linker_arguments` (this is where `wl_proxy_marshal_flags` enters).
 - [ ] Via facade calls, build the window: bind `wl_compositor`+`xdg_wm_base`, create `wl_surface`→
   `xdg_surface`→`xdg_toplevel`, commit, roundtrip for the first `configure`.
 - [ ] Vulkan (vendored module): `VkInstance` (+`VK_KHR_surface`,`VK_KHR_wayland_surface`) →
