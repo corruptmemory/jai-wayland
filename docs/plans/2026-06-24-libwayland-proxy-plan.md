@@ -209,30 +209,23 @@ varargs shim; the other 17 in queues/core_trivial/marshal_runtime). It imports t
 `wl_proxy_marshal_flags`, not the array form — validating the C bridge. It does NOT import
 `prepare_read`/`read_events` — confirming the single-owner queue model.
 
-- [ ] **FIRST — solve proc-export retention (the one real obstacle found 2026-06-24).** The 8 DATA tables
-  already `#program_export` correctly into `.dynsym` (`OBJECT GLOBAL DEFAULT`, verified on
-  `build/hello_shim_registry`). But **~9 of the 18 `#program_export`'d procs do NOT reach the final
-  `.dynsym`** (`wl_display_roundtrip_queue`, `dispatch_queue{,_pending,_timeout}`,
-  `create_queue_with_name`, `event_queue_destroy`, `wl_proxy_{create_wrapper,wrapper_destroy}`,
-  `wl_proxy_marshal_array_flags`). Since the ICD calls these at RUNTIME (dlopen), they have no link-time
-  caller. Diagnostics gathered: they ARE defined+`GLOBAL T` in the actual link-set `.o` (both the bare
-  export name and Jai's mangled name at the same address), yet absent from the final binary; `-u <sym>`,
-  `--no-gc-sections`, and `--export-dynamic-symbol=wl_*` relinks all FAILED to recover them; the link
-  command carries no explicit `--gc-sections`. The procs that DO export (`get_version`, `get_id`,
-  `list_*`, `proxy_destroy`, `set_queue`, `display_flush`, `add_listener`) are `FUNC GLOBAL DEFAULT` in
-  the `.o`. A keepalive that stores their addresses into a `#program_export`'d global had NO effect (the
-  pinning proc was inlined away — absent from `.o`). **This needs a focused investigation WITH the
-  jai-language skill** — it is a `#program_export` × Jai-DCE × symbol-visibility interaction, not a plain
-  linker-GC issue. Candidate directions: (a) check the bare-alias VISIBILITY in the `.o` with
-  `readelf -s` (hypothesis: internally-referenced exports get hidden/lost while purely-external ones stay
-  `DEFAULT`) and, if so, restructure so each exported `#c_call` entry is a thin wrapper the ICD alone
-  calls (facade/internal code calls private `*_impl` helpers, never the exported symbol — mirrors why the
-  already-working exports are never internally referenced); (b) a non-inlinable keepalive (e.g. an
-  exported proc that RETURNS the address table, so the addresses genuinely escape); (c) ask whether Jai
-  has a per-proc "force-emit/no-DCE" directive. Gate this before any Vulkan work — if the ICD can't
-  resolve these, `vkCreateWaylandSurfaceKHR` crashes on first use.
+- [x] **Export surface — DONE (no obstacle; plain `#program_export` suffices).** Verified on
+  `build/hello_shim_registry`: **25 of the ICD's 26 symbols already export** — all 8 `wl_*_interface`
+  DATA tables (`OBJECT GLOBAL DEFAULT`) and all 17 needed Jai procs (`FUNC GLOBAL DEFAULT`), with NO
+  keepalive, NO special linker args. The 26th, `wl_proxy_marshal_flags`, is the C varargs shim — it
+  enters when its `.o` is linked (next bullet); the compiled `wl_marshal_varargs.o` defines
+  `T wl_proxy_marshal_flags` with an undefined ref to our Jai-exported `wl_proxy_marshal_array_flags`, so
+  linking it yields 26/26.
+  **CORRECTION (2026-06-24):** an earlier note here claimed ~9 procs failed to export. That was a
+  **measurement artifact**, not a real issue — `readelf --dyn-syms` *without* `-W` truncates symbol
+  names to ~25 columns, so an end-anchored `grep` for names ≥26 chars (`wl_display_roundtrip_queue`,
+  `wl_display_create_queue_with_name`, …) silently missed them; the same truncation made the `-u` /
+  `--no-gc-sections` / `--export-dynamic-symbol` relink probes look like failures. **Lesson: always use
+  `readelf -W` (and don't end-anchor on possibly-truncated names) when auditing the export surface.**
+  The keepalive experiment was unnecessary and was reverted.
 - [ ] Wire the C varargs shim into the build: gcc `wl_marshal_varargs.c` → `.o`, append to the harness
-  workspace's `Build_Options.additional_linker_arguments` (this is where `wl_proxy_marshal_flags` enters).
+  workspace's `Build_Options.additional_linker_arguments` (this is where `wl_proxy_marshal_flags` enters —
+  the only remaining symbol, taking coverage to 26/26).
 - [ ] Via facade calls, build the window: bind `wl_compositor`+`xdg_wm_base`, create `wl_surface`→
   `xdg_surface`→`xdg_toplevel`, commit, roundtrip for the first `configure`.
 - [ ] Vulkan (vendored module): `VkInstance` (+`VK_KHR_surface`,`VK_KHR_wayland_surface`) →
