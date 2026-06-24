@@ -52,6 +52,9 @@ build :: () {
           case "hello_globals";
             build_and_run_test("hello_globals", "hello_globals", "examples/hello_globals.jai", "build");
             set_build_options_dc(.{do_output=false});
+          case "hello_shim_registry";
+            build_and_run_test("hello_shim_registry", "hello_shim_registry", "examples/hello_shim_registry.jai", "build");
+            set_build_options_dc(.{do_output=false});
           case "hello_screens";
             build_and_run_test("hello_screens", "hello_screens", "examples/hello_screens.jai", "build");
             set_build_options_dc(.{do_output=false});
@@ -200,7 +203,7 @@ build :: () {
             );
             set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_shim_registry', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
         }
     }
 }
