@@ -49,14 +49,25 @@ gcc (one C file); grim (visual verify under Hyprland).
   (PASS incl. the untyped-new_id `"usun"` bind shape; clean `-Wall -Wextra`).
 - **Task 4 — trivial core + wl_list: DONE + unit-proven.** `core_trivial.jai` +
   `tests/shim_list_test.jai` (PASS).
-- **RESUME HERE → Task 5 (queue engine):** the last big piece — `read_all_available` demux, per-queue
-  routing, `dispatch_queue*`, `roundtrip_queue`, `add_listener` vtable dispatch, `create_queue`/
-  `set_queue`/`create_wrapper`. Then Task 6 (tables + facade bring-up, registry-log discovery) and
-  Task 7 (Vulkan swapchain harness + grim). Build standalone shim tests with
-  `~/jai/jai/bin/jai-linux tests/shim_<x>_test.jai` (binaries gitignored).
+- **Task 5 — event/dispatch engine: DONE + unit-proven (pure-logic half).** `queues.jai` +
+  `tests/shim_dispatch_test.jai` (PASS: demux routing + decode + the **wide-signature invoke** delivering
+  data/proxy/uint/string). Decision banked: the listener-invoke needs **no C** — a fixed 12-`u64`
+  `#c_call` signature is ABI-safe on x86-64 SysV for Wayland's all-integer/pointer args. `create_queue`/
+  `set_queue`/`create_wrapper`/`add_listener`, `dispatch_queue[_pending/_timeout]`, `roundtrip_queue`
+  implemented; the live-socket parts (blocking read, roundtrip) await a real compositor.
+- **RESUME HERE → Task 6 (real interface tables + facade bring-up):** the big DATA tables for
+  `wl_display`/`wl_registry`/`wl_callback`/`wl_compositor`/`wl_surface`/`wl_shm`/`xdg_*`/
+  `zwp_linux_dmabuf_v1`, `#program_export`'d (port game-bootstrap's `libwayland_emit.jai` or hand-author
+  the slice-1 set) + replace the `tables.jai` stub. Then `facade.jai` (connect + register display id 1)
+  and `examples/hello_shim_registry.jai` — **first live Hyprland interaction**: drive `get_registry` +
+  `roundtrip_queue` through the engine and log every global (proves marshaller+dispatch+tables end-to-end
+  against the real compositor; this is where roundtrip_queue gets exercised). Then Task 7 (Vulkan
+  swapchain harness + grim).
 
-Nothing committed (Jim gates commits). Marshalling path + easy core are done and tested; the engine's
-event/dispatch half and the integration milestone remain.
+Committed through Task 5 (`git log`: a5c0948 spike, e0aebfc docs, b99ef2d Tasks 1-4, 0cbd721 Task 5).
+**Both halves of the engine are done and unit-tested**; what remains is the live integration (real
+tables + compositor bring-up + the Vulkan swapchain milestone). Build standalone shim tests with
+`~/jai/jai/bin/jai-linux tests/shim_<x>_test.jai` (binaries gitignored via `/tests/shim_*test`).
 
 ---
 
