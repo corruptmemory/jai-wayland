@@ -71,17 +71,21 @@ gcc (one C file); grim (visual verify under Hyprland).
   defining the same symbol (reads our `0xC0FFEE`, not the provider's `0xDEAD`). So **Task-7 mechanism is
   settled**: `#program_export` each `<iface>_interface`; no C-owned data tables. (`st_size` Jai reports is
   bogus but irrelevant — name-based resolution, no COPY relocations.)
-- **RESUME HERE → Task 7 (Vulkan swapchain harness — the gate-2 semantic milestone):** the engine + tables
-  + facade are all proven; what remains is wiring. (1) `nm -D --undefined` the real Mesa ICD to get the
-  EXACT undefined `wl_*` symbol set (procs + `_interface` data) — export precisely those (add
-  `#program_export` to the matching `tables.jai` interfaces; the procs are already exported). Note Mesa
-  bundles its own `zwp_linux_dmabuf_v1`, so that may NOT be an undefined import. (2) Build the window via
-  facade calls (bind `wl_compositor`+`xdg_wm_base`, `wl_surface`→`xdg_surface`→`xdg_toplevel`, commit,
-  roundtrip for first `configure`). (3) Vulkan (vendored module): `VkInstance` (+`VK_KHR_surface`,
-  `VK_KHR_wayland_surface`) → `vkCreateWaylandSurfaceKHR(display, surface)` → swapchain → acquire/clear/
-  present N frames. (4) Verify under Hyprland with `grim`; assert no real-libwayland call; `ldd` clean.
-  Wire the varargs `.o` into the build (`Build_Options.additional_linker_arguments`) — this is where the
-  C `wl_marshal_varargs.c` finally links in (the ICD calls the variadic `wl_proxy_marshal_flags`).
+- **Task 7 — Vulkan swapchain harness: DONE + proven against live Hyprland (gate-2 SEMANTIC: GREEN).**
+  `examples/hello_vkwl_swapchain.jai` builds an xdg_toplevel through OUR shim, hands the bare
+  `wl_display`+`wl_surface` to `vkCreateWaylandSurfaceKHR`, and the RADV ICD owns a 4-image swapchain it
+  presents through OUR engine (600/120 frames, color-cycled clear, Hyprland tiled+resized the managed
+  window). `first.jai` compiles+links the one C bridge (`wl_marshal_varargs.o`) → **26/26** ICD symbols in
+  `.dynsym`. `ldd` libc+libdl only; `/proc/self/maps` confirms no real libwayland. Facade gained
+  `shim_request`/`shim_pump`. **Banked finding:** global interposition also hijacks co-resident
+  real-libwayland users — the MESA device-select/MangoHud/anti-lag implicit Vulkan layers crash our
+  marshaller; the harness disables them via `setenv` (their JSON `disable_environment` vars) before the
+  loader reads them. **The duck-type thesis is now PROVEN end-to-end on Mesa/AMD.**
+- **RESUME HERE → Task 8 (NVIDIA last-mile — laptop only):** `nm -D --undefined` the NVIDIA Vulkan ICD,
+  diff its `wl_*` import set vs Mesa's 26 (watch for older `wl_proxy_marshal_constructor*` variadics — same
+  C-shim shape), then run `hello_vkwl_swapchain` on NVIDIA and record the result + any symbol/table
+  additions. Driver-agnostic ELF interposition should hold; the open question is the NVIDIA ICD's exact
+  WSI bind/dispatch sequence through our engine.
 
 Committed through Task 6 + the gate-2 data spike (`git log`: …b9b53af Task 5 done, d62af44 Task 6, 8263b79
 data-export spike). **Engine, tables, facade, and BOTH interposition gates are proven**; what remains is
@@ -223,18 +227,42 @@ varargs shim; the other 17 in queues/core_trivial/marshal_runtime). It imports t
   `--no-gc-sections` / `--export-dynamic-symbol` relink probes look like failures. **Lesson: always use
   `readelf -W` (and don't end-anchor on possibly-truncated names) when auditing the export surface.**
   The keepalive experiment was unnecessary and was reverted.
-- [ ] Wire the C varargs shim into the build: gcc `wl_marshal_varargs.c` → `.o`, append to the harness
-  workspace's `Build_Options.additional_linker_arguments` (this is where `wl_proxy_marshal_flags` enters —
-  the only remaining symbol, taking coverage to 26/26).
-- [ ] Via facade calls, build the window: bind `wl_compositor`+`xdg_wm_base`, create `wl_surface`→
-  `xdg_surface`→`xdg_toplevel`, commit, roundtrip for the first `configure`.
-- [ ] Vulkan (vendored module): `VkInstance` (+`VK_KHR_surface`,`VK_KHR_wayland_surface`) →
-  `vkCreateWaylandSurfaceKHR(wl_display_handle(), wl_surface_handle())` → physical device + queue →
-  `VK_KHR_swapchain` → acquire / clear (or triangle) / present a frame; loop N frames
-  (`JAI_WAYLAND_VKWL_FRAMES`).
-- [ ] **Verify:** window appears under Hyprland; `grim` screenshot, Read it. Assert the interposition
-  guard (no real-`libwayland` call). `ldd build/hello_vkwl_swapchain` clean of windowing/GPU libs.
-  **Checkpoint — gate 2 (semantic WSI) result recorded.**
+- [x] **Wire the C varargs shim into the build — DONE.** `first.jai` gained `compile_c_object` (gcc
+  `-c -O2 -fPIC`) and a `link_objects` param on `build_and_run_test` that sets
+  `Build_Options.additional_linker_arguments`. The `hello_vkwl_swapchain` case compiles
+  `wl_marshal_varargs.c` → `build/wl_marshal_varargs.o` and links it. Verified: all **26/26** ICD-imported
+  `wl_*` symbols are now in `.dynsym` (`readelf -W`), including `wl_proxy_marshal_flags` from the `.o`.
+- [x] **Build the window via facade — DONE.** Added `shim_request` (generic marshal primitive over
+  `marshal_impl`, since it is `#scope_module`) and `shim_pump` (flush + non-blocking read + dispatch the
+  DEFAULT queue) to `facade.jai`. The harness binds `wl_compositor`+`xdg_wm_base`, creates
+  `wl_surface`→`xdg_surface`→`xdg_toplevel`, sets title, commits, and pumps to the first `configure`
+  (acked). `xdg_wm_base.ping`→`pong`, `xdg_surface.configure`→`ack`, `xdg_toplevel.configure/close`
+  serviced each frame.
+- [x] **Vulkan swapchain — DONE.** `examples/hello_vkwl_swapchain.jai`: `VkInstance`
+  (+`VK_KHR_surface`,`VK_KHR_wayland_surface`) → `vkCreateWaylandSurfaceKHR(our wl_display, our wl_surface)`
+  → physical device whose graphics queue family passes `vkGetPhysicalDeviceSurfaceSupportKHR` on OUR
+  surface → device (+`VK_KHR_swapchain`) → swapchain (`TRANSFER_DST` usage, FIFO) → per-frame acquire /
+  `vkCmdClearColorImage` (color-cycled) / submit / present; loop N (`JAI_WAYLAND_VKWL_FRAMES`, default
+  240). `VkWaylandSurfaceCreateInfoKHR` + `vkCreateWaylandSurfaceKHR` are declared in the harness (the
+  vendored module was generated without the Wayland platform define).
+- [x] **Verify — DONE (gate 2 SEMANTIC result: GREEN).** Under live Hyprland the RADV ICD created a
+  **4-image B8G8R8A8 swapchain on OUR surface** and **presented 600 / 120 frames** (`grim`'d twice — the
+  window clear color cycled yellow-green→magenta, Hyprland tiled+resized it via a second
+  `xdg_toplevel.configure`, i.e. it managed a real mapped toplevel taking real buffers). The ICD drove
+  `get_registry`/`bind`/`wl_buffer`/`attach`/`commit`/frame-callbacks entirely through OUR engine.
+  Interposition asserted in-process (`/proc/self/maps` has no `libwayland-client`) and
+  `ldd build/hello_vkwl_swapchain` is libc+libdl only — **no windowing/GPU libs**. `./build.sh -
+  hello_vkwl_swapchain` runs the canonical smoke; `compile_only` gates it headlessly.
+- [x] **FINDING (banked) — global interposition hijacks ALL in-process libwayland users.** The MESA
+  **device-select** implicit Vulkan layer (and MangoHud / anti-lag) open their OWN `wl_display_connect()`
+  to pick a GPU; our default-visibility `wl_*` symbols captured THOSE calls too, feeding a real-libwayland
+  proxy (incompatible struct layout) into our marshaller → segfault in `wl_proxy_marshal_flags` during
+  `vkEnumeratePhysicalDevices`. The ICD's own WSI path uses OUR objects and is consistent; only these
+  orthogonal layers conflict. The harness disables them via their JSON `disable_environment` vars
+  (`NODEVICE_SELECT`/`DISABLE_MANGOHUD`/`DISABLE_LAYER_MESA_ANTI_LAG`, set with `setenv` before the loader
+  reads them). **Implication for game-bootstrap:** a production duck-type must guarantee it is the ONLY
+  in-process libwayland consumer, or scope/namespace the interposition (e.g. `dlmopen`, or a private
+  symbol namespace) — a real design constraint, not a smoke-test wart.
 
 ### Task 8: NVIDIA last-mile (laptop — checklist, not desktop-runnable)
 

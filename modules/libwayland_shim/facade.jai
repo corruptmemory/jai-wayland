@@ -56,3 +56,25 @@ shim_get_registry :: (display: *Wl_Display) -> *Wl_Proxy {
 shim_roundtrip :: (display: *Wl_Display) -> s32 {
     return wl_display_roundtrip_queue(display, *display.default_queue);
 }
+
+// Generic request primitive for OUR code (the harness building the xdg window). The
+// runtime marshaller `marshal_impl` is #scope_module, so this is how an example issues
+// a request: walk `proxy.interface_.methods[opcode].signature`, pack `args` onto the
+// wire, allocate+return a new proxy on a `new_id` arg (`new_iface`/`new_version`).
+// `args` may be empty for arg-less requests (e.g. wl_surface.commit). Mirrors what the
+// ICD reaches through the exported variadic wl_proxy_marshal_flags.
+shim_request :: (proxy: *Wl_Proxy, opcode: u32, new_iface: *wl_interface, new_version: u32, args: [] wl_argument) -> *Wl_Proxy {
+    return marshal_impl(proxy, opcode, new_iface, new_version, 0, args.data);
+}
+
+// Flush queued requests, optionally block up to `timeout_ms` for incoming bytes, then
+// dispatch everything pending on the DEFAULT queue. This is the app-side pump: while the
+// Vulkan ICD drives its OWN private queue inside acquire/present, the app's objects
+// (xdg_wm_base.ping, xdg_surface.configure, xdg_toplevel.configure/close) route here and
+// must still be serviced — an unanswered ping eventually has the compositor cull us.
+// timeout_ms: -1 block, 0 non-block, N ms. Returns the number of events dispatched.
+shim_pump :: (display: *Wl_Display, timeout_ms: s32 = 0) -> int {
+    Way.wayland_send(*display.conn, *display.out);
+    if display.default_queue.pending.count == 0  read_socket(display, timeout_ms);
+    return decode_and_dispatch(*display.default_queue);
+}
