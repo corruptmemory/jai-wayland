@@ -266,9 +266,24 @@ varargs shim; the other 17 in queues/core_trivial/marshal_runtime). It imports t
 
 ### Task 8: NVIDIA last-mile (laptop — checklist, not desktop-runnable)
 
-- [ ] On the laptop: `nm -D --undefined` the NVIDIA Vulkan ICD; diff its `wl_*` import set vs Mesa's 26
-  (note any older `wl_proxy_marshal_constructor*` variadics → same C-shim shape).
-- [ ] Run `hello_vkwl_swapchain` on NVIDIA; record result + any symbol/table additions.
+**Context (2026-06-24):** the native GL/Simp path is now VALIDATED on NVIDIA pure-dGPU (`skeletal-animation`
+runs) — it survives because GBM lets you request `DRM_FORMAT_MOD_INVALID` and the driver picks its own
+native modifier, which its own compositor imports. Only the *Vulkan* DMA-BUF export path broke there
+(`VK_EXT_image_drm_format_modifier` has no `INVALID` escape hatch). So the duck-type WSI shim
+(`hello_vkwl_swapchain`) may be **unnecessary** — try the cheaper experiment FIRST:
+
+- [ ] **Run `hello_vulkan_dmabuf_hail_mary` on NVIDIA pure-dGPU FIRST.** It drives the modifier from the
+  *Vulkan driver's own* `VkDrmFormatModifierPropertiesListEXT` enumeration and probes each against the
+  compositor (async `create` + `created`/`failed`), driver-tiled first, `LINEAR` as the safety net — the
+  Vulkan reconstruction of the GL `INVALID` trick. **Validated on AMD/Mesa** (first candidate, the AMD
+  tiled modifier `0x0200…1f04`, goes ACCEPTED and the triangle presents). If a candidate goes ACCEPTED on
+  NVIDIA, **the duck-type is not needed for Vulkan present** — the clean DMA-BUF export path covers NVIDIA
+  too, and `hello_vkwl_swapchain` can stay a quarantined curiosity. Record which (format, modifier) the
+  NVIDIA compositor accepts (likely an NVIDIA block-linear tiled one, or `LINEAR`).
+- [ ] **Only if the Hail Mary finds NOTHING accepted** (every driver modifier, incl. `LINEAR`, rejected by
+  the NVIDIA compositor) does NVIDIA genuinely force WSI. Then: `nm -D --undefined` the NVIDIA Vulkan ICD;
+  diff its `wl_*` import set vs Mesa's 26 (note any older `wl_proxy_marshal_constructor*` variadics → same
+  C-shim shape); run `hello_vkwl_swapchain` on NVIDIA; record result + any symbol/table additions.
 
 ## Self-review notes
 
