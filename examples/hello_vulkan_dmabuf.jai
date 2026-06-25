@@ -2,9 +2,20 @@
 // Copyright (c) 2026 Jim Powers
 
 // hello_vulkan_dmabuf — present a Vulkan-rendered DRM-modifier DMA-BUF in a
-// Wayland window. This deliberately avoids VK_KHR_wayland_surface: that WSI path
-// wants libwayland-client proxy pointers, while jai-wayland owns only the wire
-// protocol objects.
+// Wayland window. Deliberately avoids VK_KHR_wayland_surface: that WSI path wants
+// libwayland-client proxy pointers, while jai-wayland owns only the wire objects.
+//
+// Format/modifier selection is DRIVER-FIRST: we enumerate the Vulkan driver's own
+// supported modifiers (VkDrmFormatModifierPropertiesListEXT) and probe each against
+// the compositor with the async zwp_linux_buffer_params_v1.create + created/failed
+// arbiter — driver-tiled modifiers first, DRM_FORMAT_MOD_LINEAR as the safety net.
+// The first modifier the compositor ACCEPTS wins. This is the Vulkan analogue of the
+// GL/GBM "request DRM_FORMAT_MOD_INVALID, let the driver pick its own native
+// modifier" path, and it is what makes this work on NVIDIA pure-dGPU — where the
+// compositor's advertised dmabuf feedback under-reports the modifiers it will
+// actually import. Falls back to selecting from the compositor's advertised list if
+// the probe finds nothing accepted (never worse than feedback-only selection).
+// Validated on Mesa (AMD/Intel) and NVIDIA pure-dGPU (RTX 3050 Ti).
 
 #import,dir "../modules/wayland";
 Vulkan :: #import,dir "../modules/Vulkan";
@@ -114,16 +125,24 @@ main :: () {
     if !init_vulkan_context(*ctx)  return;
     defer destroy_vulkan_context(*ctx);
 
-    feedback: Dmabuf_Feedback_Info;
-    feedback_ok := false;
-    if dmabuf_info.feedback_supported {
-        feedback, feedback_ok = get_surface_dmabuf_feedback(*dmabuf_info.dmabuf, *surface);
-        if feedback_ok  print("Using dmabuf surface feedback for Vulkan format selection\n");
+    // Driver-first selection: enumerate the Vulkan driver's own modifiers and probe
+    // each against the compositor; only fall back to the compositor-advertised list
+    // if nothing is accepted. See the file header for why (NVIDIA pure-dGPU).
+    config, config_ok := choose_image_config_driver_first(*ctx, *dmabuf_info.dmabuf);
+
+    if !config_ok {
+        print("Driver-enumerated probe found no compositor-accepted modifier; falling back to compositor-advertised selection.\n");
+        feedback: Dmabuf_Feedback_Info;
+        feedback_ok := false;
+        if dmabuf_info.feedback_supported {
+            feedback, feedback_ok = get_surface_dmabuf_feedback(*dmabuf_info.dmabuf, *surface);
+            if feedback_ok  print("Using dmabuf surface feedback for Vulkan format selection\n");
+        }
+        config, config_ok = choose_image_config(ctx.physical, dmabuf_info, feedback, feedback_ok);
     }
 
-    config, config_ok := choose_image_config(ctx.physical, dmabuf_info, feedback, feedback_ok);
     if !config_ok {
-        print("No compositor-compatible Vulkan DMA-BUF image configuration found.\n");
+        print("No compatible Vulkan DMA-BUF image configuration found (driver-enumerated AND compositor-advertised).\n");
         return;
     }
 
@@ -623,6 +642,173 @@ choose_image_config :: (physical: Vulkan.VkPhysicalDevice, info: Dmabuf_Info, fe
     }
 
     return .{}, false;
+}
+
+// ── Driver-first selection: driver-enumerated modifiers, probed against the compositor ──
+
+Format_Candidate :: struct { vk: Vulkan.VkFormat; fourcc: u32; label: string; }
+
+// vk_format ↔ wayland fourcc pairs the renderer can draw. We enumerate the driver's
+// modifiers for each and probe them; order here is just the format-try order.
+CANDIDATE_FORMATS :: Format_Candidate.[
+    .{ .B8G8R8A8_UNORM, DRM_FORMAT_ARGB8888, "B8G8R8A8/AR24" },
+    .{ .B8G8R8A8_UNORM, DRM_FORMAT_XRGB8888, "B8G8R8A8/XR24" },
+    .{ .R8G8B8A8_UNORM, DRM_FORMAT_ABGR8888, "R8G8B8A8/AB24" },
+    .{ .R8G8B8A8_UNORM, DRM_FORMAT_XBGR8888, "R8G8B8A8/XB24" },
+];
+
+// Enumerate the MODIFIERS THE VULKAN DRIVER itself supports for `format` (not the
+// compositor's advertised set) via VkDrmFormatModifierPropertiesListEXT. Fills `out`,
+// returns the count written. This is the crux: trust the producing driver, then let the
+// compositor's created/failed be the only arbiter of what it will actually import.
+enumerate_driver_modifiers :: (physical: Vulkan.VkPhysicalDevice, format: Vulkan.VkFormat, out: [] Vulkan.VkDrmFormatModifierPropertiesEXT) -> int {
+    list: Vulkan.VkDrmFormatModifierPropertiesListEXT;
+    props: Vulkan.VkFormatProperties2;
+    props.pNext = *list;
+    Vulkan.vkGetPhysicalDeviceFormatProperties2(physical, format, *props);
+    if list.drmFormatModifierCount == 0  return 0;
+
+    count := list.drmFormatModifierCount;
+    if count > cast(u32) out.count  count = cast(u32) out.count;
+    list.drmFormatModifierCount        = count;
+    list.pDrmFormatModifierProperties  = out.data;
+    props.pNext = *list;
+    Vulkan.vkGetPhysicalDeviceFormatProperties2(physical, format, *props);
+    return cast(int) count;
+}
+
+modifier_is_renderable_single_plane :: (m: Vulkan.VkDrmFormatModifierPropertiesEXT) -> bool {
+    if m.drmFormatModifierPlaneCount != 1  return false;  // keep the single-fd export path
+    feats := cast(u32) m.drmFormatModifierTilingFeatures;
+    return (feats & cast(u32) Vulkan.VkFormatFeatureFlagBits.COLOR_ATTACHMENT_BIT) != 0;
+}
+
+make_candidate_config :: (pair: Format_Candidate, modifier: u64, usage: Vulkan.VkImageUsageFlags) -> Image_Config {
+    return .{
+        vk_format = pair.vk,
+        wayland_format = pair.fourcc,
+        usage = usage,
+        label = pair.label,
+        drm_format_modifier = modifier,
+        plane_count = 1,
+    };
+}
+
+// Build the ordered candidate list straight from the driver's enumeration: driver-native
+// tiled modifiers first (the fast path), then DRM_FORMAT_MOD_LINEAR as the
+// universal-interchange safety net.
+gather_driver_candidates :: (physical: Vulkan.VkPhysicalDevice) -> [..] Image_Config {
+    usage := Vulkan.VkImageUsageFlagBits.COLOR_ATTACHMENT_BIT
+           | Vulkan.VkImageUsageFlagBits.TRANSFER_SRC_BIT
+           | Vulkan.VkImageUsageFlagBits.TRANSFER_DST_BIT;
+
+    out: [..] Image_Config;
+    buf: [256] Vulkan.VkDrmFormatModifierPropertiesEXT;
+
+    for pair: CANDIDATE_FORMATS {
+        n := enumerate_driver_modifiers(physical, pair.vk, buf);
+
+        for i: 0..n-1 {  // pass 1: tiled (non-LINEAR)
+            m := buf[i];
+            if !modifier_is_renderable_single_plane(m)  continue;
+            if m.drmFormatModifier == DRM_FORMAT_MOD_LINEAR  continue;
+            array_add(*out, make_candidate_config(pair, m.drmFormatModifier, usage));
+        }
+        for i: 0..n-1 {  // pass 2: LINEAR safety net
+            m := buf[i];
+            if m.drmFormatModifier != DRM_FORMAT_MOD_LINEAR  continue;
+            if !modifier_is_renderable_single_plane(m)  continue;
+            array_add(*out, make_candidate_config(pair, DRM_FORMAT_MOD_LINEAR, usage));
+        }
+    }
+    return out;
+}
+
+// Drive selection from the driver, then let the COMPOSITOR be the arbiter: probe each
+// candidate with the async create + created/failed handshake; first ACCEPTED wins.
+choose_image_config_driver_first :: (ctx: *Vulkan_Context, dmabuf: *Zwp_Linux_Dmabuf_V1) -> Image_Config, bool {
+    candidates := gather_driver_candidates(ctx.physical);
+    defer array_free(candidates);
+
+    if candidates.count == 0 {
+        print("Vulkan driver enumerated no renderable single-plane DRM modifiers.\n");
+        return .{}, false;
+    }
+
+    print("Driver enumerated % candidate (format, modifier) pairs; probing against compositor:\n", candidates.count);
+    for * cfg: candidates {
+        if !config_supported_by_vulkan(ctx.physical, cfg)  continue;  // confirms exportable + sets plane_count
+        accepted := probe_config_against_compositor(ctx, dmabuf, cfg.*);
+        print("  % fourcc=0x% modifier=0x% -> %\n",
+            cfg.label,
+            formatInt(cfg.wayland_format, base=16),
+            formatInt(cfg.drm_format_modifier, base=16, minimum_digits=16),
+            ifx accepted then "ACCEPTED" else "rejected");
+        if accepted  return cfg.*, true;
+    }
+    return .{}, false;
+}
+
+// Create a small Vulkan image with `config`'s modifier, export it, hand it to the
+// compositor via the ASYNC zwp_linux_buffer_params_v1.create, and report whether the
+// compositor said `created` (importable) or `failed`. Self-contained: cleans up the
+// probe buffer, the (server-allocated) wl_buffer, and the params object.
+probe_config_against_compositor :: (ctx: *Vulkan_Context, dmabuf: *Zwp_Linux_Dmabuf_V1, config: Image_Config) -> bool {
+    PROBE_SIZE :: 256;
+
+    probe: Vulkan_Buffer;
+    if !create_vulkan_buffer(ctx, config, PROBE_SIZE, PROBE_SIZE, *probe) {
+        destroy_vulkan_buffer_without_wayland(ctx, *probe);
+        return false;
+    }
+    defer destroy_vulkan_buffer_without_wayland(ctx, *probe);
+
+    batch: MessageBuilder;
+    params := Zwp_Linux_Buffer_Params_V1.{ id = allocate_id() };
+    zwp_linux_dmabuf_v1_create_params(*batch, dmabuf, params.id);
+    zwp_linux_buffer_params_v1_add(*batch, *params,
+        fd          = cast(Fd) probe.fd,
+        plane_idx   = 0,
+        offset      = probe.offset,
+        stride      = probe.stride,
+        modifier_hi = cast(u32)(probe.modifier >> 32),
+        modifier_lo = cast(u32)(probe.modifier & 0xFFFFFFFF));
+    zwp_linux_buffer_params_v1_create(*batch, *params, PROBE_SIZE, PROBE_SIZE, config.wayland_format, 0);
+
+    // Sync acts as a backstop so a (mis)behaving compositor that emits neither
+    // created nor failed can't hang the probe.
+    display := Wl_Display.{ id = 1 };
+    sync_id := allocate_id();
+    wl_display_sync(*batch, *display, sync_id);
+    wayland_send(*batch);
+
+    created := false;
+    created_buffer_id: u32 = 0;
+    for session() {
+        if it.object_id == params.id && it.opcode == ZWP_LINUX_BUFFER_PARAMS_V1_CREATED {
+            args: Zwp_Linux_Buffer_Params_V1_Created_Args;
+            unmarshal(*args, it.payload, recv);
+            if args.buffer != null  created_buffer_id = args.buffer.id;
+            created = true;
+            break;
+        } else if it.object_id == params.id && it.opcode == ZWP_LINUX_BUFFER_PARAMS_V1_FAILED {
+            created = false;
+            break;
+        } else if it.object_id == sync_id && it.opcode == WL_CALLBACK_DONE {
+            created = false;  // drained without created/failed → treat as reject
+            break;
+        }
+    }
+
+    cleanup: MessageBuilder;
+    if created && created_buffer_id != 0 {
+        leftover := Wl_Buffer.{ id = created_buffer_id };
+        wl_buffer_destroy(*cleanup, *leftover);
+    }
+    zwp_linux_buffer_params_v1_destroy(*cleanup, *params);
+    wayland_send(*cleanup);
+
+    return created;
 }
 
 config_for_wayland_format :: (format: u32, modifier: u64, usage: Vulkan.VkImageUsageFlags) -> Image_Config, bool {

@@ -52,6 +52,9 @@ build :: () {
           case "hello_globals";
             build_and_run_test("hello_globals", "hello_globals", "examples/hello_globals.jai", "build");
             set_build_options_dc(.{do_output=false});
+          case "hello_shim_registry";
+            build_and_run_test("hello_shim_registry", "hello_shim_registry", "examples/hello_shim_registry.jai", "build");
+            set_build_options_dc(.{do_output=false});
           case "hello_screens";
             build_and_run_test("hello_screens", "hello_screens", "examples/hello_screens.jai", "build");
             set_build_options_dc(.{do_output=false});
@@ -79,6 +82,14 @@ build :: () {
           case "hello_vulkan_dmabuf";
             if !compile_vulkan_example_shaders()  exit(1);
             build_and_run_test("hello_vulkan_dmabuf", "hello_vulkan_dmabuf", "examples/hello_vulkan_dmabuf.jai", "build");
+            set_build_options_dc(.{do_output=false});
+          case "hello_vkwl_swapchain";
+            // THE duck-type milestone: a real Vulkan ICD presents through our
+            // libwayland_shim. Compile the one C varargs bridge and link it so the
+            // ICD's variadic wl_proxy_marshal_flags resolves to our symbol.
+            obj, c_ok := compile_c_object("modules/libwayland_shim/wl_marshal_varargs.c", "wl_marshal_varargs.o");
+            if !c_ok  exit(1);
+            build_and_run_test("hello_vkwl_swapchain", "hello_vkwl_swapchain", "examples/hello_vkwl_swapchain.jai", "build", .[], string.[obj]);
             set_build_options_dc(.{do_output=false});
           case "x11_smoke";
             build_and_run_test("x11_smoke", "x11_smoke", "examples/x11_smoke.jai", "build");
@@ -200,7 +211,7 @@ build :: () {
             );
             set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_shim_registry', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'hello_vkwl_swapchain', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
         }
     }
 }
@@ -221,7 +232,7 @@ build_main :: (options: Build_Options) {
     set_build_options_dc(.{do_output=false});
 }
 
-build_and_run_test :: (workspace_name: string, executable_name: string, test_file: string, build_dir: string, import_path: [] string = .[]) {
+build_and_run_test :: (workspace_name: string, executable_name: string, test_file: string, build_dir: string, import_path: [] string = .[], link_objects: [] string = .[]) {
     w := compiler_create_workspace(workspace_name);
     if !w { print("% workspace creation failed.\n", workspace_name); return; }
 
@@ -235,6 +246,10 @@ build_and_run_test :: (workspace_name: string, executable_name: string, test_fil
     // the import path — same as the upstream-example build. Existing callers
     // pass nothing and keep the compiler's default path.
     if import_path.count  opts.import_path = import_path;
+    // Extra object files to hand the linker — e.g. the libwayland_shim C varargs
+    // bridge (wl_proxy_marshal_flags), the only C the duck-type proxy needs. These
+    // are pre-compiled .o paths; see compile_c_object.
+    if link_objects.count  opts.additional_linker_arguments = link_objects;
     make_directory_if_it_does_not_exist(build_dir);
     set_build_options(opts, w);
 
@@ -357,6 +372,21 @@ build_gen_tests :: (options: Build_Options) {
 build_and_run_generate :: (options: Build_Options) {
     build_and_run_test("generator", "generator", "src/generate_main.jai", "build");
     set_build_options_dc(.{do_output=false});
+}
+
+// Compile a single C source to a .o with gcc. Used for the libwayland_shim variadic
+// bridge (wl_marshal_varargs.c) — the one C file in the duck-type proxy. Returns the
+// .o path (under build/) and success. -fPIC keeps it position-independent so it links
+// into the -export-dynamic executable cleanly.
+compile_c_object :: (source: string, object_name: string) -> string, bool {
+    make_directory_if_it_does_not_exist("build", recursive = true);
+    object := tprint("build/%", object_name);
+    result := run_command("gcc", "-c", "-O2", "-fPIC", source, "-o", object);
+    if result.exit_code != 0 {
+        compiler_report(tprint("C compilation failed: gcc -c % -o %\n", source, object));
+        return "", false;
+    }
+    return object, true;
 }
 
 compile_vulkan_example_shaders :: () -> bool {

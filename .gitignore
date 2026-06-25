@@ -6,3 +6,10 @@ build_tests/
 .codex/
 *.sublime-project
 *.sublime-workspace
+
+# libwayland-proxy: standalone shim-test binaries + spike build outputs (sources tracked)
+spikes/**/build/
+/tests/shim_*test
+# data-export spike: root-level exes built by `jai-linux <file>.jai` (sources tracked)
+/spikes/data-export/data_export
+/spikes/data-export/data_spike
