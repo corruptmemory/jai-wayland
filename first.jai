@@ -83,14 +83,6 @@ build :: () {
             if !compile_vulkan_example_shaders()  exit(1);
             build_and_run_test("hello_vulkan_dmabuf", "hello_vulkan_dmabuf", "examples/hello_vulkan_dmabuf.jai", "build");
             set_build_options_dc(.{do_output=false});
-          case "hello_vulkan_dmabuf_hail_mary";
-            // NVIDIA experiment: drive the DRM modifier from the Vulkan driver's own
-            // enumeration and probe it against the compositor, instead of trusting the
-            // compositor's (NVIDIA-pessimistic) advertised list. Same shaders as the
-            // stock example.
-            if !compile_vulkan_example_shaders()  exit(1);
-            build_and_run_test("hello_vulkan_dmabuf_hail_mary", "hello_vulkan_dmabuf_hail_mary", "examples/hello_vulkan_dmabuf_hail_mary.jai", "build");
-            set_build_options_dc(.{do_output=false});
           case "hello_vkwl_swapchain";
             // THE duck-type milestone: a real Vulkan ICD presents through our
             // libwayland_shim. Compile the one C varargs bridge and link it so the
@@ -219,7 +211,7 @@ build :: () {
             );
             set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_shim_registry', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'hello_vulkan_dmabuf_hail_mary', 'hello_vkwl_swapchain', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_shim_registry', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'hello_vkwl_swapchain', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
         }
     }
 }
