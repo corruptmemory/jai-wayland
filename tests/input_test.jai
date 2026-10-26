@@ -11,6 +11,9 @@ Input   :: #import "Input";
 // Wayland_Support, and a second, directory-imported instance would declare the
 // #add_context wayland_session member twice.
 Wayland :: #import "wayland";
+// By NAME too: the instance Input imports, so its keymap globals are the ones
+// the pump handler writes.
+WS      :: #import "Wayland_Support";
 Socket  :: #import "Socket";
 
 #load "fixtures/xkb_sample_keymap.jai";
@@ -21,6 +24,8 @@ main :: () {
     test_release_preserves_start_bit();
     test_keyboards_info_parses_keymap_on_arrival();
     test_keyboards_info_no_keymap_is_a_warning();
+    test_pump_keymap_change_to_no_keymap_is_a_warning();
+    test_pump_keymap_mmap_failure_is_an_error();
 
     print("\n=== All input tests passed ===\n");
 }
@@ -89,6 +94,66 @@ test_keyboards_info_no_keymap_is_a_warning :: () {
     assert(rec.warnings.count == 1, "no_keymap should log exactly one warning, logged %", rec.warnings.count);
 
     print("  PASS: keyboards_info_no_keymap_is_a_warning\n");
+}
+
+// A mid-session wl_keyboard.keymap reaches Wayland_Support's pump handler, not
+// get_keyboards_info. A switch to no_keymap (format 0, size 0) is the compositor
+// offering raw keycodes only: one warning, no error, logged without
+// JAI_WAYLAND_LOG_KEYS, the old keymap no longer used, the fd closed.
+test_pump_keymap_change_to_no_keymap_is_a_warning :: () {
+    fd := Wayland.memfd_create("input_test_pump".data, 0);
+    assert(fd >= 0, "memfd_create failed, errno=%", errno());
+
+    kev: Wayland.Wl_Keyboard_Event;
+    kev.kind   = .KEYMAP;
+    kev.keymap = .{ format = cast(u32) Wayland.Wl_Keyboard_Keymap_Format.NO_KEYMAP, fd = cast(Wayland.Fd) fd, size = 0 };
+
+    WS.wl_keymap_valid = true;  // a keymap from before the switch
+    rec: Log_Recorder;
+    defer free_log_recorder(*rec);
+    ctx := context;
+    ctx.logger      = record_log;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        WS.wl_handle_keyboard_event(kev);
+    }
+
+    assert(rec.errors.count == 0, "no_keymap logged % error(s), first: %", rec.errors.count,
+           ifx rec.errors.count then rec.errors[0] else "");
+    assert(rec.warnings.count == 1, "no_keymap should log exactly one warning, logged %", rec.warnings.count);
+    assert(!WS.wl_keymap_valid, "the pre-switch keymap is still marked valid after a switch to no_keymap");
+    assert(fcntl(fd, F_GETFD) == -1, "the keymap fd (%) is still open after the pump handled it", fd);
+
+    print("  PASS: pump_keymap_change_to_no_keymap_is_a_warning\n");
+}
+
+// An XKB_V1 keymap whose mmap fails (a pipe cannot be mapped) is an error, logged
+// with errno whether or not key logging is on, and the old keymap stops being used.
+test_pump_keymap_mmap_failure_is_an_error :: () {
+    pipe_fds: [2] s32;
+    rc := pipe(*pipe_fds);
+    assert(rc == 0, "pipe failed, errno=%", errno());
+    defer close(pipe_fds[1]);
+
+    kev: Wayland.Wl_Keyboard_Event;
+    kev.kind   = .KEYMAP;
+    kev.keymap = .{ format = cast(u32) Wayland.Wl_Keyboard_Keymap_Format.XKB_V1, fd = cast(Wayland.Fd) pipe_fds[0], size = 4096 };
+
+    WS.wl_keymap_valid = true;
+    rec: Log_Recorder;
+    defer free_log_recorder(*rec);
+    ctx := context;
+    ctx.logger      = record_log;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        WS.wl_handle_keyboard_event(kev);
+    }
+
+    assert(rec.errors.count == 1, "a failed keymap mmap should log exactly one error, logged %", rec.errors.count);
+    assert(!WS.wl_keymap_valid, "the pre-switch keymap is still marked valid after a failed re-parse");
+    assert(fcntl(pipe_fds[0], F_GETFD) == -1, "the keymap fd (%) is still open after the pump handled it", pipe_fds[0]);
+
+    print("  PASS: pump_keymap_mmap_failure_is_an_error\n");
 }
 
 #scope_file

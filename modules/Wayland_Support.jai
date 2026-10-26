@@ -1466,10 +1466,31 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
             });
         case .KEYMAP;
             // Layout change mid-session: re-parse, then release the fresh fd.
-            keymap, ok := Wl.parse_keymap_fd(kev.keymap.fd, kev.keymap.size);
-            if ok  { wl_keymap = keymap; wl_keymap_valid = true; }
-            if wl_should_log_keys()  log("WL_KEYMAP fd=% size=% ok=%", kev.keymap.fd, kev.keymap.size, ok);
-            close(cast(s32) kev.keymap.fd);
+            // The same split as wayland/input.jai's acquisition path, logged
+            // whatever wl_should_log_keys says: an XKB_V1 keymap whose mmap fails
+            // is an error; no_keymap, an empty keymap or an unknown format is the
+            // compositor offering raw keycodes only, a warning. Either way the old
+            // keymap no longer describes the layout, so it stops being used.
+            fd   := kev.keymap.fd;
+            size := kev.keymap.size;
+            if kev.keymap.format == cast(u32) Wl.Wl_Keyboard_Keymap_Format.XKB_V1 && size > 0 {
+                // parse_keymap_fd mmaps a private copy and does NOT own the fd.
+                // With size > 0 it fails only when the mmap does.
+                keymap, ok := Wl.parse_keymap_fd(fd, size);
+                if ok {
+                    wl_keymap       = keymap;
+                    wl_keymap_valid = true;
+                } else {
+                    wl_keymap_valid = false;
+                    log_error("Wayland keymap re-parse: mmap of the new keymap failed (% bytes, errno=%); keysyms unavailable", size, errno());
+                }
+            } else {
+                wl_keymap_valid = false;
+                log("Wayland keymap changed to no usable keymap (format %, % bytes); keysyms unavailable",
+                    kev.keymap.format, size, flags = .WARNING);
+            }
+            if wl_should_log_keys()  log("WL_KEYMAP fd=% size=% format=% valid=%", fd, size, kev.keymap.format, wl_keymap_valid);
+            if fd >= 0  close(cast(s32) fd);
         case .ENTER;  wl_keyboard_focused = true;   // keyboard focus -> input_application_has_focus
         case .LEAVE;
             wl_keyboard_focused = false;

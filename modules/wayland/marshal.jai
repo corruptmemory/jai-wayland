@@ -100,43 +100,51 @@ emit_variable_path :: (si: *Type_Info_Struct) -> string {
         }
     }
 
-    print_to_builder(*sb, "    assert(_msg_size <= MAX_MESSAGE_SIZE);\n");
-    print_to_builder(*sb, "    _buf: [MAX_MESSAGE_SIZE] u8;\n");
-    print_to_builder(*sb, "    write_u32(_buf.data, object_id);\n");
-    print_to_builder(*sb, "    _offset: u32 = %;\n", HEADER_SIZE);
+    // A request longer than MAX_MESSAGE_SIZE would overrun _buf. It is a real
+    // check, not an assert (a disabled assert would let the write through): it
+    // logs, poisons the batch the way message_queue does, and writes nothing,
+    // no bytes and no fds, so wayland_send refuses the batch.
+    print_to_builder(*sb, "    if _msg_size > MAX_MESSAGE_SIZE {\n");
+    append(*sb, "        log_error(\"Wayland request too large: object % opcode % needs % bytes, more than MAX_MESSAGE_SIZE (%); nothing written, batch marked overflowed\", object_id, opcode, _msg_size, MAX_MESSAGE_SIZE);\n");
+    print_to_builder(*sb, "        batch.overflowed = true;\n");
+    print_to_builder(*sb, "    } else {\n");
+    print_to_builder(*sb, "        _buf: [MAX_MESSAGE_SIZE] u8;\n");
+    print_to_builder(*sb, "        write_u32(_buf.data, object_id);\n");
+    print_to_builder(*sb, "        _offset: u32 = %;\n", HEADER_SIZE);
 
     // Emit writes for each member
     for member: si.members {
         if is_fd_type(member.type) {
-            print_to_builder(*sb, "    message_queue_fd(batch, cast(s32) args.%);\n", member.name);
+            print_to_builder(*sb, "        message_queue_fd(batch, cast(s32) args.%);\n", member.name);
             continue;
         }
         if member.type.type == .STRING {
-            print_to_builder(*sb, "    _offset += write_string(_buf.data + _offset, args.%);\n", member.name);
+            print_to_builder(*sb, "        _offset += write_string(_buf.data + _offset, args.%);\n", member.name);
             continue;
         }
         if member.type.type == .ARRAY {
-            print_to_builder(*sb, "    _offset += write_array(_buf.data + _offset, args.%);\n", member.name);
+            print_to_builder(*sb, "        _offset += write_array(_buf.data + _offset, args.%);\n", member.name);
             continue;
         }
         if is_fixed_type(member.type) {
-            print_to_builder(*sb, "    write_s32(_buf.data + _offset, args.%.raw); _offset += 4;\n", member.name);
+            print_to_builder(*sb, "        write_s32(_buf.data + _offset, args.%.raw); _offset += 4;\n", member.name);
             continue;
         }
         if member.type.type == .POINTER {
-            print_to_builder(*sb, "    write_u32(_buf.data + _offset, args.%.id); _offset += 4;\n", member.name);
+            print_to_builder(*sb, "        write_u32(_buf.data + _offset, args.%.id); _offset += 4;\n", member.name);
             continue;
         }
         if is_signed_int(member.type) {
-            print_to_builder(*sb, "    write_s32(_buf.data + _offset, args.%); _offset += 4;\n", member.name);
+            print_to_builder(*sb, "        write_s32(_buf.data + _offset, args.%); _offset += 4;\n", member.name);
         } else {
-            print_to_builder(*sb, "    write_u32(_buf.data + _offset, args.%); _offset += 4;\n", member.name);
+            print_to_builder(*sb, "        write_u32(_buf.data + _offset, args.%); _offset += 4;\n", member.name);
         }
     }
 
     // Write header last (now we know size)
-    print_to_builder(*sb, "    write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) opcode);\n");
-    print_to_builder(*sb, "    message_queue(batch, _buf.data, _offset);\n");
+    print_to_builder(*sb, "        write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) opcode);\n");
+    print_to_builder(*sb, "        message_queue(batch, _buf.data, _offset);\n");
+    print_to_builder(*sb, "    }\n");
     print_to_builder(*sb, "}\n");
 
     return builder_to_string(*sb);
@@ -244,42 +252,50 @@ emit_constructor_variable_path :: (si: *Type_Info_Struct) -> string {
         }
     }
 
-    print_to_builder(*sb, "    assert(_msg_size <= MAX_MESSAGE_SIZE);\n");
-    print_to_builder(*sb, "    _buf: [MAX_MESSAGE_SIZE] u8;\n");
-    print_to_builder(*sb, "    write_u32(_buf.data, object_id);\n");
-    print_to_builder(*sb, "    write_u32(_buf.data + 8, _new_id);\n");
-    print_to_builder(*sb, "    _offset: u32 = %;\n", HEADER_SIZE + 4);  // start after header + new_id
+    // A request longer than MAX_MESSAGE_SIZE would overrun _buf. It is a real
+    // check, not an assert (a disabled assert would let the write through): it
+    // logs, poisons the batch the way message_queue does, and writes nothing,
+    // no bytes and no fds, so wayland_send refuses the batch.
+    print_to_builder(*sb, "    if _msg_size > MAX_MESSAGE_SIZE {\n");
+    append(*sb, "        log_error(\"Wayland request too large: object % opcode % needs % bytes, more than MAX_MESSAGE_SIZE (%); nothing written, batch marked overflowed\", object_id, opcode, _msg_size, MAX_MESSAGE_SIZE);\n");
+    print_to_builder(*sb, "        batch.overflowed = true;\n");
+    print_to_builder(*sb, "    } else {\n");
+    print_to_builder(*sb, "        _buf: [MAX_MESSAGE_SIZE] u8;\n");
+    print_to_builder(*sb, "        write_u32(_buf.data, object_id);\n");
+    print_to_builder(*sb, "        write_u32(_buf.data + 8, _new_id);\n");
+    print_to_builder(*sb, "        _offset: u32 = %;\n", HEADER_SIZE + 4);  // start after header + new_id
 
     for member: si.members {
         if is_fd_type(member.type) {
-            print_to_builder(*sb, "    message_queue_fd(batch, cast(s32) args.%);\n", member.name);
+            print_to_builder(*sb, "        message_queue_fd(batch, cast(s32) args.%);\n", member.name);
             continue;
         }
         if member.type.type == .STRING {
-            print_to_builder(*sb, "    _offset += write_string(_buf.data + _offset, args.%);\n", member.name);
+            print_to_builder(*sb, "        _offset += write_string(_buf.data + _offset, args.%);\n", member.name);
             continue;
         }
         if member.type.type == .ARRAY {
-            print_to_builder(*sb, "    _offset += write_array(_buf.data + _offset, args.%);\n", member.name);
+            print_to_builder(*sb, "        _offset += write_array(_buf.data + _offset, args.%);\n", member.name);
             continue;
         }
         if is_fixed_type(member.type) {
-            print_to_builder(*sb, "    write_s32(_buf.data + _offset, args.%.raw); _offset += 4;\n", member.name);
+            print_to_builder(*sb, "        write_s32(_buf.data + _offset, args.%.raw); _offset += 4;\n", member.name);
             continue;
         }
         if member.type.type == .POINTER {
-            print_to_builder(*sb, "    write_u32(_buf.data + _offset, args.%.id); _offset += 4;\n", member.name);
+            print_to_builder(*sb, "        write_u32(_buf.data + _offset, args.%.id); _offset += 4;\n", member.name);
             continue;
         }
         if is_signed_int(member.type) {
-            print_to_builder(*sb, "    write_s32(_buf.data + _offset, args.%); _offset += 4;\n", member.name);
+            print_to_builder(*sb, "        write_s32(_buf.data + _offset, args.%); _offset += 4;\n", member.name);
         } else {
-            print_to_builder(*sb, "    write_u32(_buf.data + _offset, args.%); _offset += 4;\n", member.name);
+            print_to_builder(*sb, "        write_u32(_buf.data + _offset, args.%); _offset += 4;\n", member.name);
         }
     }
 
-    print_to_builder(*sb, "    write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) opcode);\n");
-    print_to_builder(*sb, "    message_queue(batch, _buf.data, _offset);\n");
+    print_to_builder(*sb, "        write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) opcode);\n");
+    print_to_builder(*sb, "        message_queue(batch, _buf.data, _offset);\n");
+    print_to_builder(*sb, "    }\n");
     print_to_builder(*sb, "}\n");
 
     return builder_to_string(*sb);

@@ -41,6 +41,10 @@ main :: () {
     test_cache_free_unknown_id_logs_and_continues();
     test_cache_alloc_uninitialised_connection_returns_zero();
     test_wayland_send_short_write_keeps_unsent_tail();
+    test_wayland_receive_peer_close_logs();
+    test_wayland_receive_full_buffer_logs();
+    test_wayland_receive_fd_queue_overflow_is_fatal();
+    test_wayland_send_closed_peer_is_an_error_not_sigpipe();
 
     print("\n=== All wire tests passed ===\n");
 }
@@ -582,6 +586,140 @@ test_wayland_send_short_write_keeps_unsent_tail :: () {
     assert(inbox.in_fds_count == 1, "the fd should arrive exactly once, got %", inbox.in_fds_count);
     POSIX.close(inbox.in_fds[0]);
     print("  PASS: wayland_send_short_write_keeps_unsent_tail\n");
+}
+
+// A peer that closes its end makes recvmsg return 0. Callers read <= 0 as a lost
+// connection; the log_error is what says it was the compositor hanging up.
+test_wayland_receive_peer_close_logs :: () {
+    sv: [2] s32;
+    rc := Socket.socketpair(Socket.AF_LOCAL, .STREAM, cast(Socket.IPPROTO) 0, *sv);
+    assert(rc == 0, "socketpair failed, errno=%", POSIX.errno());
+    defer POSIX.close(sv[0]);
+    POSIX.close(sv[1]);  // the server end goes away
+
+    client := Wayland.Connection.{ socket_fd = sv[0], next_id = 2 };
+    inbox: Wayland.ReceiveBuffer;
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    n: s64;
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        n = Wayland.wayland_receive(*client, *inbox);
+    }
+
+    assert(n <= 0, "wayland_receive from a closed peer should return <= 0, got %", n);
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    print("  PASS: wayland_receive_peer_close_logs\n");
+}
+
+// An unread partial message that fills the whole receive buffer leaves no room to
+// read into. That returns 0 too, so it must be logged as itself, not taken for a
+// peer close, and without a read on the (live, silent) socket, which would block.
+test_wayland_receive_full_buffer_logs :: () {
+    sv: [2] s32;
+    rc := Socket.socketpair(Socket.AF_LOCAL, .STREAM, cast(Socket.IPPROTO) 0, *sv);
+    assert(rc == 0, "socketpair failed, errno=%", POSIX.errno());
+    defer { POSIX.close(sv[0]); POSIX.close(sv[1]); }
+
+    client := Wayland.Connection.{ socket_fd = sv[0], next_id = 2 };
+    inbox: Wayland.ReceiveBuffer;
+    inbox.in_used = cast(u32) inbox.in_buf.count;  // all of it unread, nothing consumed
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    n: s64;
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        n = Wayland.wayland_receive(*client, *inbox);
+    }
+
+    assert(n == 0, "wayland_receive into a full buffer should return 0, got %", n);
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    assert(inbox.in_used == inbox.in_buf.count, "a full buffer keeps its unread bytes, in_used=%", inbox.in_used);
+    print("  PASS: wayland_receive_full_buffer_logs\n");
+}
+
+// More fds than the incoming queue holds: the queue no longer lines up with the
+// messages that reference it, the same break as MSG_CTRUNC, so the receive fails
+// (-1, logged) instead of closing the extra fd and carrying on out of step.
+test_wayland_receive_fd_queue_overflow_is_fatal :: () {
+    sv: [2] s32;
+    rc := Socket.socketpair(Socket.AF_LOCAL, .STREAM, cast(Socket.IPPROTO) 0, *sv);
+    assert(rc == 0, "socketpair failed, errno=%", POSIX.errno());
+    defer { POSIX.close(sv[0]); POSIX.close(sv[1]); }
+
+    pipe_fds: [2] s32;
+    rc = POSIX.pipe(*pipe_fds);
+    assert(rc == 0, "pipe failed, errno=%", POSIX.errno());
+    defer { POSIX.close(pipe_fds[0]); POSIX.close(pipe_fds[1]); }
+
+    server := Wayland.Connection.{ socket_fd = sv[1], next_id = 2 };
+    client := Wayland.Connection.{ socket_fd = sv[0], next_id = 2 };
+
+    // One message carrying two fds, into a receive buffer whose fd queue holds one.
+    batch: Wayland.MessageBuilder;
+    msg: [8] u8;
+    Wayland.pack_header(msg.data, object_id = 1, opcode = 0, size = 8);
+    Wayland.message_queue(*batch, msg.data, 8);
+    Wayland.message_queue_fd(*batch, pipe_fds[0]);
+    Wayland.message_queue_fd(*batch, pipe_fds[1]);
+    assert(Wayland.wayland_send(*server, *batch), "setup: send of a two-fd message failed");
+
+    inbox: Wayland.ReceiveBuffer(MFDS = 1);
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    n: s64;
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        n = Wayland.wayland_receive(*client, *inbox);
+    }
+
+    assert(n == -1, "an fd-queue overflow should fail the receive with -1, got %", n);
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    assert(inbox.in_fds_count == 1, "the fd that fit stays queued, in_fds_count=%", inbox.in_fds_count);
+    POSIX.close(inbox.in_fds[0]);
+    print("  PASS: wayland_receive_fd_queue_overflow_is_fatal\n");
+}
+
+// A send to a peer that has closed must come back as an EPIPE error the existing
+// failure path logs. Without MSG_NOSIGNAL the kernel raises SIGPIPE instead, whose
+// default action kills the process before the assert below can run.
+test_wayland_send_closed_peer_is_an_error_not_sigpipe :: () {
+    sv: [2] s32;
+    rc := Socket.socketpair(Socket.AF_LOCAL, .STREAM, cast(Socket.IPPROTO) 0, *sv);
+    assert(rc == 0, "socketpair failed, errno=%", POSIX.errno());
+    defer POSIX.close(sv[0]);
+    POSIX.close(sv[1]);  // the receiving end goes away
+
+    sender := Wayland.Connection.{ socket_fd = sv[0], next_id = 2 };
+
+    batch: Wayland.MessageBuilder;
+    msg: [12] u8;
+    Wayland.pack_header(msg.data, object_id = 1, opcode = 0, size = 12);
+    Wayland.write_u32(msg.data + 8, 0xDEADBEEF);
+    Wayland.message_queue(*batch, msg.data, 12);
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    ok: bool;
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        ok = Wayland.wayland_send(*sender, *batch);
+    }
+
+    assert(!ok, "wayland_send to a closed peer should return false");
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    print("  PASS: wayland_send_closed_peer_is_an_error_not_sigpipe\n");
 }
 
 #scope_file

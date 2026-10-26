@@ -45,6 +45,11 @@ Test_Constructor_With_Args :: struct {
     y: s32;
 }
 
+// Constructor with a string (the constructor's variable-size path)
+Test_Constructor_String :: struct {
+    name: string;
+}
+
 main :: () {
     print("=== Marshal Macro Tests ===\n\n");
     test_marshal_fixed_args();
@@ -56,6 +61,7 @@ main :: () {
     test_marshal_string_empty();
     test_marshal_constructor_empty();
     test_marshal_constructor_with_args();
+    test_marshal_oversized_request_poisons_batch();
     print("\n=== All marshal tests passed ===\n");
 }
 
@@ -193,4 +199,57 @@ test_marshal_constructor_with_args :: () {
     assert(Wayland.read_s32(batch.out_buf.data + 12) == 10);  // x
     assert(Wayland.read_s32(batch.out_buf.data + 16) == 20);  // y
     print("  PASS: marshal_constructor_with_args\n");
+}
+
+// A request longer than MAX_MESSAGE_SIZE must not reach the stack buffer the
+// generated code writes into (a disabled assert would let it overrun). Both
+// variable-size paths, plain and constructor, log it, poison the batch, and
+// write nothing: no bytes and no fd.
+test_marshal_oversized_request_poisons_batch :: () {
+    big := NewArray(Wayland.MAX_MESSAGE_SIZE + 1, u8,, temp);
+    memset(big.data, #char "x", big.count);
+    long_string := string.{ count = big.count, data = big.data };
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+
+    batch: Wayland.MessageBuilder;
+    args := Test_Fd_Args.{ mime_type = long_string, fd = 5 };
+    push_context ctx {
+        Wayland.marshal(*batch, object_id = 3, opcode = 1, *args);
+    }
+    assert(batch.overflowed, "an oversized request should poison the batch");
+    assert(batch.out_used == 0 && batch.out_fds_count == 0, "an oversized request should write nothing: % bytes, % fds", batch.out_used, batch.out_fds_count);
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+
+    ctor_batch: Wayland.MessageBuilder;
+    ctor_args := Test_Constructor_String.{ name = long_string };
+    push_context ctx {
+        Wayland.marshal_constructor(*ctor_batch, object_id = 3, opcode = 2, new_id = 9, *ctor_args);
+    }
+    assert(ctor_batch.overflowed, "an oversized constructor request should poison the batch");
+    assert(ctor_batch.out_used == 0, "an oversized constructor request should write nothing: % bytes", ctor_batch.out_used);
+    assert(rec.errors.count == 2, "expected one more logged error, got % in all", rec.errors.count);
+
+    print("  PASS: marshal_oversized_request_poisons_batch\n");
+}
+
+#scope_file
+
+// Collects every .ERROR message logged while it is the context logger.
+Error_Recorder :: struct { errors: [..] string; }
+
+record_errors :: (message: string, data: *void, info: Log_Info) {
+    if info.common_flags & .ERROR {
+        rec := cast(*Error_Recorder) data;
+        array_add(*rec.errors, copy_string(message));
+    }
+}
+
+free_errors :: (rec: *Error_Recorder) {
+    for rec.errors  free(it);
+    array_free(rec.errors);
 }

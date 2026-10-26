@@ -225,6 +225,8 @@ receive_pop_fd :: (buf: *ReceiveBuffer) -> s32 {
 // the stream instead of repeating part of it.
 // An overflowed batch is refused: it is logged, nothing is sent, the batch is
 // left as it is, and the result is false.
+// MSG_NOSIGNAL: a peer that has closed is an EPIPE failure the path above logs,
+// not a SIGPIPE whose default action kills the process.
 wayland_send :: (conn: *Connection, batch: *MessageBuilder) -> bool {
     if batch.overflowed {
         log_error("Wayland batch overflowed while queueing (% bytes, % fds held); refusing to send an incomplete request stream", batch.out_used, batch.out_fds_count);
@@ -251,7 +253,7 @@ wayland_send :: (conn: *Connection, batch: *MessageBuilder) -> bool {
             memcpy(CMSG_DATA(cmsg), cast(*u8) batch.out_fds.data, fd_data_size);
         }
 
-        bytes_sent := sendmsg(conn.socket_fd, *msg, cast(MSG) 0);
+        bytes_sent := sendmsg(conn.socket_fd, *msg, MSG.NOSIGNAL);
         if bytes_sent <= 0 {
             err := errno();
             if bytes_sent < 0 && err == EINTR  continue;  // interrupted before any byte moved: retry
@@ -275,8 +277,15 @@ wayland_send :: (conn: *Connection, batch: *MessageBuilder) -> bool {
 }
 
 // Read incoming data into a ReceiveBuffer via the connection socket.
-// Returns number of bytes read, or -1 on error. Truncated control data
-// (MSG_CTRUNC) counts as an error: it is logged and the result is -1.
+// Returns the number of bytes read, or <= 0 when the connection is lost, and
+// every <= 0 result is logged with its cause (callers treat <= 0 as a lost
+// connection, but are not the only signal):
+//   0  the peer closed the socket, or the buffer is full of one unread partial
+//      message (a message larger than the buffer), which nothing can complete;
+//  -1  recvmsg failed (errno logged; EINTR is retried, not reported), the
+//      control data was truncated (MSG_CTRUNC), or more fds arrived than the
+//      incoming fd queue holds. In the last two the fd queue no longer lines up
+//      with the messages that reference it, so the connection is unusable.
 wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
     // Compact the incoming message buffer: move unread data to front.
     available := buf.in_used - buf.in_read;
@@ -300,17 +309,37 @@ wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
     buf.in_fds_count = fds_available;
     buf.in_fds_read = 0;
 
+    // A buffer still full after compaction holds one unread partial message that
+    // fills all of it. There is no room to read the rest, and a zero-length
+    // recvmsg on a live, quiet socket would block rather than return.
+    if buf.in_used >= buf.in_buf.count {
+        log_error("Wayland receive buffer is full: % unread bytes and no complete message (an incoming message larger than the buffer?); the connection cannot make progress", buf.in_used);
+        return 0;
+    }
+
     // Set up iovec for remaining buffer space.
     iov := iovec.{ iov_base = buf.in_buf.data + buf.in_used, iov_len = cast(u64)(buf.in_buf.count - buf.in_used) };
     msg := msghdr.{ msg_iov = *iov, msg_iovlen = 1 };
 
     // Set up ancillary data buffer for receiving fds.
     cmsg_buf: [CMSG_BUF_SIZE] u8;
-    msg.msg_control = cmsg_buf.data;
-    msg.msg_controllen = cast(u64) cmsg_buf.count;
 
-    bytes_read := recvmsg(conn.socket_fd, *msg, cast(MSG) 0);
-    if bytes_read <= 0  return bytes_read;
+    bytes_read: s64;
+    while true {
+        msg.msg_control = cmsg_buf.data;
+        msg.msg_controllen = cast(u64) cmsg_buf.count;
+        msg.msg_flags = 0;
+        bytes_read = recvmsg(conn.socket_fd, *msg, cast(MSG) 0);
+        if bytes_read >= 0  break;
+        err := errno();
+        if err == EINTR  continue;  // interrupted before any byte arrived: retry
+        log_error("Wayland recvmsg failed (errno %); the connection is lost", err);
+        return -1;
+    }
+    if bytes_read == 0 {
+        log_error("Wayland compositor closed the connection (recvmsg returned 0)");
+        return 0;
+    }
 
     // MSG_CTRUNC: the control data did not fit, so the kernel discarded fds the
     // compositor sent. The fd queue no longer lines up with the messages that
@@ -321,6 +350,11 @@ wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
 
     buf.in_used += cast(u32) bytes_read;
 
+    // More fds than the incoming queue holds breaks the FIFO the same way: the
+    // fds that do not fit (and every later one in this read) are closed, and the
+    // result is -1.
+    fd_overflow := false;
+
     // Walk the cmsg chain extracting file descriptors.
     cmsg := CMSG_FIRSTHDR(*msg);
     while cmsg != null {
@@ -330,14 +364,14 @@ wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
             num_fds := payload_size / cast(u64) size_of(s32);
             for i: 0..cast(s64)(num_fds - 1) {
                 fd := (cast(*s32)(fd_data + i * size_of(s32))).*;
-                if truncated {
+                if truncated || fd_overflow {
                     close(fd);
                 } else if buf.in_fds_count < buf.in_fds.count {
                     buf.in_fds[buf.in_fds_count] = fd;
                     buf.in_fds_count += 1;
                 } else {
                     // Nothing can ever pop this fd, so close it rather than leak it.
-                    log_error("Wayland incoming fd queue overflow: % fds already queued; closing received fd %", buf.in_fds_count, fd);
+                    fd_overflow = true;
                     close(fd);
                 }
             }
@@ -347,6 +381,10 @@ wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
 
     if truncated {
         log_error("Wayland recvmsg truncated the control data (MSG_CTRUNC): the kernel discarded received fds, so the connection is unusable");
+        return -1;
+    }
+    if fd_overflow {
+        log_error("Wayland incoming fd queue overflow: more fds arrived than its % slots hold; the extra fds were closed and the fd queue no longer lines up with its messages, so the connection is unusable", buf.in_fds.count);
         return -1;
     }
     return bytes_read;
