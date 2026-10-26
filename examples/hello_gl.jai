@@ -83,9 +83,9 @@ main :: () {
     pointers  := get_pointers_info(seats);
     keymap: Keymap;
     if keyboards.count > 0 {
-        ok: bool;
-        keymap, ok = parse_keymap_fd(keyboards[0].keymap_fd, keyboards[0].keymap_size);
-        if !ok  print("Warning: failed to parse keymap — r/g/b/q keys inactive\n");
+        // get_keyboards_info parsed the keymap as it arrived.
+        keymap = keyboards[0].keymap;
+        if !keyboards[0].keymap_valid  print("Warning: failed to parse keymap — r/g/b/q keys inactive\n");
     }
     print("Input: % seat(s), % keyboard(s), % pointer(s)\n",
         seats.count, keyboards.count, pointers.count);
@@ -108,6 +108,7 @@ main :: () {
     xdg_wm_base_get_xdg_surface(*batch, wm_base(), xdg_surface.id, *surface);
     xdg_surface_get_toplevel(*batch, *xdg_surface, toplevel.id);
     xdg_toplevel_set_title(*batch, *toplevel, "hello_gl");
+    xdg_toplevel_set_app_id(*batch, *toplevel, "hello_gl");
     wl_surface_commit(*batch, *surface);
     wayland_send(*batch);
 
@@ -466,6 +467,9 @@ choose_dmabuf_format :: (gbm: Gbm_Device, info: Dmabuf_Info, surface: *Wl_Surfac
     return 0, 0, false;
 }
 
+// First entry in tranche order that GBM can allocate as a single-plane BO.
+// supports_bo_format_modifier rejects multi-plane modifiers (radeonsi lists its
+// 2-3 plane DCC ones first), which init_slot_bo would refuse.
 pick_format_from_feedback_for_gbm :: (gbm: Gbm_Device, feedback: Dmabuf_Feedback_Info, preferred_fourcc: u32, flags: u32) -> format: u32, modifier: u64, found: bool {
     if !feedback.complete  return 0, 0, false;
 

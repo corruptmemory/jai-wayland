@@ -15,6 +15,14 @@
 OUTPUT_DIR :: "modules/wayland";
 INPUT_DIR  :: "vendor/wayland-protocols";
 
+// A failure the generator cannot continue past: it goes to the context logger
+// (errors are never `print`ed) and the tool exits 1, the CLI failure convention.
+// Basic's `assert` cannot serve: it is compiled out of a release build.
+fatal_error :: (message: string, args: .. Any, loc := #caller_location) {
+    log_error(message, ..args, loc = loc);
+    exit(1);
+}
+
 // Sort priority: core=0, stable=1, staging=2, unstable=3, other=4.
 // Lower priority number wins when interface names collide.
 protocol_priority :: (path: string) -> int {
@@ -43,8 +51,7 @@ main :: () {
     });
 
     if xml_files.count == 0 {
-        print("ERROR: No .xml files found in %/\n", INPUT_DIR);
-        return;
+        fatal_error("No .xml files found in %/", INPUT_DIR);
     }
 
     print("Found % protocol XML files.\n", xml_files.count);
@@ -54,7 +61,7 @@ main :: () {
     for path: xml_files {
         contents, ok := read_entire_file(path);
         if !ok {
-            print("ERROR: Could not read '%'\n", path);
+            log_error("Could not read '%'; skipping it.", path);
             continue;
         }
         proto := parse_protocol(contents);
@@ -118,7 +125,7 @@ main :: () {
         print_to_builder(*sb, "%", types_content);
         ok := write_entire_file(types_path, *sb);
         if ok  print("Wrote %\n", types_path);
-        else   print("ERROR: Failed to write %\n", types_path);
+        else   fatal_error("Failed to write %", types_path);
     }
 
     // 7. For each protocol, create subdirectory, write interface files and loader
@@ -142,7 +149,7 @@ main :: () {
             sb: String_Builder;
             print_to_builder(*sb, "%", iface_content);
             ok := write_entire_file(iface_path, *sb);
-            if !ok  print("ERROR: Failed to write %\n", iface_path);
+            if !ok  fatal_error("Failed to write %", iface_path);
             total_interfaces += 1;
         }
 
@@ -154,7 +161,7 @@ main :: () {
         print_to_builder(*sb, "%", loader_content);
         ok := write_entire_file(loader_path, *sb);
         if ok  print("Wrote %/%.jai (% interfaces)\n", proto_dir, proto.name, proto.interfaces.count);
-        else   print("ERROR: Failed to write %\n", loader_path);
+        else   fatal_error("Failed to write %", loader_path);
     }
 
     // 8. Write module.jai
@@ -165,7 +172,7 @@ main :: () {
         print_to_builder(*sb, "%", module_content);
         ok := write_entire_file(module_path, *sb);
         if ok  print("Wrote %\n", module_path);
-        else   print("ERROR: Failed to write %\n", module_path);
+        else   fatal_error("Failed to write %", module_path);
     }
 
     // 9. Write type_registry.jai
@@ -176,7 +183,7 @@ main :: () {
         print_to_builder(*sb, "%", registry_content);
         ok := write_entire_file(registry_path, *sb);
         if ok  print("Wrote %\n", registry_path);
-        else   print("ERROR: Failed to write %\n", registry_path);
+        else   fatal_error("Failed to write %", registry_path);
     }
 
     // 10. Summary

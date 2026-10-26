@@ -261,6 +261,7 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
             exit(1);  // Basic.exit
         }
     }
+    WS.wl_install_foreign_router();
 
     // Surface / xdg role creation. allocate_id() is called immediately before
     // the request that creates each object so IDs go out contiguously and in
@@ -277,6 +278,11 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
     Wl.xdg_surface_get_toplevel(*batch, *xdg_surface, toplevel.id);
 
     if window_name  Wl.xdg_toplevel_set_title(*batch, *toplevel, window_name);
+    // app_id is Wayland's WM_CLASS: compositors group surfaces and key window
+    // rules on it (Hyprland matches `class` against it). Use the window name, or
+    // the X11 arm's "jai-application" fallback (unset, GNOME shows "Unknown").
+    app_id := ifx window_name then window_name else "jai-application";
+    Wl.xdg_toplevel_set_app_id(*batch, *toplevel, app_id);
     Wl.wl_surface_commit(*batch, *surface);
     Wl.wayland_send(*batch);
 
@@ -302,8 +308,10 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
             configure_serial = Wl.read_u32(it.payload);
             got_configure = true;
             break;
-        } else {
-            WS.wl_route_registered_window_control_event(it, recv);
+        } else if !WS.wl_route_registered_window_control_event(it, recv) {
+            // Not a window control event: a frame callback, buffer release or
+            // input for an already-live window goes to the shared router.
+            Wl.route_foreign(*it);
         }
     }
 

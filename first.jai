@@ -43,6 +43,27 @@ build :: () {
           case "xkb_test";
             build_and_run_test("xkb_tests", "xkb_tests", "tests/xkb_test.jai", "build_tests");
             set_build_options_dc(.{do_output=false});
+          case "dmabuf_test";
+            build_and_run_test("dmabuf_tests", "dmabuf_tests", "tests/dmabuf_test.jai", "build_tests");
+            set_build_options_dc(.{do_output=false});
+          case "registry_test";
+            build_and_run_test("registry_tests", "registry_tests", "tests/registry_test.jai", "build_tests");
+            set_build_options_dc(.{do_output=false});
+          case "pacing_test";
+            // Imports Wayland_Support by file; its name-based wayland / EGL / gbm /
+            // GL / gpu imports need the modules/-first path, as hello_simp's do.
+            build_and_run_test("pacing_tests", "pacing_tests", "tests/pacing_test.jai", "build_tests", upstream_import_path());
+            set_build_options_dc(.{do_output=false});
+          case "gl_picker_test";
+            // Imports Wayland_Support by file, as pacing_test does. Needs a DRM
+            // render node (no compositor) and says SKIP without one.
+            build_and_run_test("gl_picker_tests", "gl_picker_tests", "tests/gl_picker_test.jai", "build_tests", upstream_import_path());
+            set_build_options_dc(.{do_output=false});
+          case "input_test";
+            // Imports Input by name; its Wayland_Support / Window_Type / X11
+            // imports need the modules/-first path, as pacing_test's do.
+            build_and_run_test("input_tests", "input_tests", "tests/input_test.jai", "build_tests", upstream_import_path());
+            set_build_options_dc(.{do_output=false});
           case "marshal_test";
             build_and_run_test("marshal_tests", "marshal_tests", "tests/marshal_test.jai", "build_tests");
             set_build_options_dc(.{do_output=false});
@@ -211,7 +232,7 @@ build :: () {
             );
             set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_shim_registry', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'hello_vkwl_swapchain', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'dmabuf_test', 'registry_test', 'pacing_test', 'gl_picker_test', 'input_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_shim_registry', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'hello_vkwl_swapchain', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
         }
     }
 }

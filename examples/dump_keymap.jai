@@ -17,14 +17,16 @@ main :: () {
         return;
     }
 
-    kb := keyboards[0];
-    print("Keymap: fd=%, size=% bytes\n\n", kb.keymap_fd, kb.keymap_size);
+    // get_keyboards_info parsed the keymap as it arrived and closed its fd.
+    kb := *keyboards[0];
+    if kb.have_repeat_info  print("Repeat: rate=% keys/sec, delay=% ms\n\n", kb.repeat_rate, kb.repeat_delay);
+    else                    print("Repeat: no repeat_info received\n\n");
 
-    keymap, ok := Wayland.parse_keymap_fd(kb.keymap_fd, kb.keymap_size);
-    if !ok {
+    if !kb.keymap_valid {
         print("Failed to parse keymap\n");
         return;
     }
+    keymap := *kb.keymap;
 
     // Print mappings for common keys to verify parsing
     Test_Key :: struct { evdev: u32; label: string; }

@@ -10,6 +10,13 @@
 
 DRM_FORMAT_MOD_INVALID : u64 : 0x00ffffffffffffff;
 
+// True when GBM can allocate `format` with `modifier` as a SINGLE-plane BO. The
+// present path exports one fd per buffer (one plane in the dmabuf params), and the
+// slot code refuses a BO with more than one plane, so a multi-plane modifier
+// (radeonsi's DCC ones carry 2 or 3 planes, and it lists them first) is
+// unsupported here, the same rule hello_vulkan_dmabuf applies to Vulkan's
+// drmFormatModifierPlaneCount. DRM_FORMAT_MOD_INVALID passes: the driver picks
+// the modifier, and the slot code checks the plane count of the BO it returns.
 supports_bo_format_modifier :: (gbm: Gbm_Device, format: u32, modifier: u64, flags: u32) -> bool {
     if !ensure_gbm_bo_runtime()  return false;
 
@@ -20,7 +27,7 @@ supports_bo_format_modifier :: (gbm: Gbm_Device, format: u32, modifier: u64, fla
     if modifier == DRM_FORMAT_MOD_INVALID  return true;
 
     if gbm_device_get_format_modifier_plane_count != null {
-        return gbm_device_get_format_modifier_plane_count(gbm, format, modifier) > 0;
+        return gbm_device_get_format_modifier_plane_count(gbm, format, modifier) == 1;
     }
 
     return true;

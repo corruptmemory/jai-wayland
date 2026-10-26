@@ -96,6 +96,7 @@ main :: () {
     xdg_wm_base_get_xdg_surface(*batch, wm_base(), xdg_surface.id, *surface);
     xdg_surface_get_toplevel(*batch, *xdg_surface, toplevel.id);
     xdg_toplevel_set_title(*batch, *toplevel, "hello_vulkan_dmabuf");
+    xdg_toplevel_set_app_id(*batch, *toplevel, "hello_vulkan_dmabuf");
     wl_surface_commit(*batch, *surface);
     wayland_send(*batch);
 

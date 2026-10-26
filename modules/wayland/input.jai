@@ -11,11 +11,19 @@ Seat_Info :: struct {
     capabilities: u32;  // Wl_Seat_Capability flags
 }
 
+// No keymap fd/size here: get_keyboards_info parses the keymap as the KEYMAP
+// event arrives and closes the fd. A stored fd is racy; by the time a caller
+// mmaps it the number can belong to an unrelated file.
 Keyboard_Info :: struct {
     seat_index: int;
     keyboard: Wl_Keyboard;
-    keymap_fd: Fd;
-    keymap_size: u32;
+    keymap: Keymap;
+    keymap_valid: bool;
+    // The initial wl_keyboard.repeat_info (v4+), sent in the same burst right
+    // after the keymap. have_repeat_info is false when it never came.
+    repeat_rate: s32;   // keys/sec; 0 means repeat is disabled
+    repeat_delay: s32;  // ms before repeat starts
+    have_repeat_info: bool;
 }
 
 Pointer_Info :: struct {
@@ -26,21 +34,21 @@ Pointer_Info :: struct {
 // Discover all seats from the compositor. Binds each wl_seat global,
 // performs a sync roundtrip, collects capabilities and name.
 get_seats_info :: () -> [] Seat_Info {
-    seat_count: int;
-    for globals() {
-        if it.interface_name == "wl_seat"  seat_count += 1;
-    }
-    if seat_count == 0  return .[];
-
+    // Bind each wl_seat global by its own Global_Info; the type-only bind
+    // overloads would bind the first wl_seat every time. IDs must be allocated
+    // in wire order: each one right before its bind.
     seats: [..] Seat_Info;
 
     display := Wl_Display.{ id = 1 };
     batch: MessageBuilder;
-    for 1..seat_count {
+    for gi: globals() {
+        if gi.interface_name != "wl_seat"  continue;
         seat := array_add(*seats);
         seat.seat = Wl_Seat.{ id = allocate_id() };
-        wl_registry_bind(*batch, registry(), *seat.seat);
+        wl_registry_bind(*batch, registry(), gi, seat.seat.id, type_info(Wl_Seat));
     }
+    if seats.count == 0  return .[];
+
     sync_id := allocate_id();
     wl_display_sync(*batch, *display, sync_id);
     wayland_send(*batch);
@@ -48,8 +56,10 @@ get_seats_info :: () -> [] Seat_Info {
     for session() {
         if it.object_id == sync_id  break;
 
+        matched := false;
         for *seat, si: seats {
             if it.object_id == seat.seat.id {
+                matched = true;
                 event: Wl_Seat_Event;
                 unmarshal_event(*event, it.opcode, it.payload, recv);
                 if event.kind == {
@@ -61,13 +71,17 @@ get_seats_info :: () -> [] Seat_Info {
                 break;
             }
         }
+        if !matched  route_foreign(*it);
     }
 
     return seats;
 }
 
-// Acquire keyboards from seats that have the KEYBOARD capability.
-// Binds wl_keyboard for each, receives keymap events.
+// Acquire keyboards from seats that have the KEYBOARD capability. Binds a
+// wl_keyboard for each and collects its initial burst: the keymap, parsed while
+// its fd is live (the fd is closed here on every path), and the repeat_info.
+// A no_keymap or empty keymap is a WARNING (the protocol allows it); an XKB
+// keymap that cannot be mmapped is a log_error.
 get_keyboards_info :: (seats: [] Seat_Info) -> [] Keyboard_Info {
     // Count seats with keyboard capability
     kb_count: int;
@@ -95,17 +109,41 @@ get_keyboards_info :: (seats: [] Seat_Info) -> [] Keyboard_Info {
     for session() {
         if it.object_id == sync_id  break;
 
+        matched := false;
         for *kb: keyboards {
             if it.object_id == kb.keyboard.id {
+                matched = true;
                 event: Wl_Keyboard_Event;
                 unmarshal_event(*event, it.opcode, it.payload, recv);
-                if event.kind == .KEYMAP {
-                    kb.keymap_fd = event.keymap.fd;
-                    kb.keymap_size = event.keymap.size;
+                if event.kind == {
+                  case .KEYMAP;
+                    fd   := event.keymap.fd;
+                    size := event.keymap.size;
+                    if event.keymap.format == cast(u32) Wl_Keyboard_Keymap_Format.XKB_V1 && size > 0 {
+                        // parse_keymap_fd mmaps a private copy and does NOT own the fd.
+                        // With size > 0 it fails only when the mmap does.
+                        kb.keymap, kb.keymap_valid = parse_keymap_fd(fd, size);
+                        if !kb.keymap_valid {
+                            log_error("Wayland keymap mmap failed for wl_keyboard % (% bytes, errno=%); keysyms unavailable",
+                                      kb.keyboard.id, size, errno());
+                        }
+                    } else {
+                        // no_keymap (or an empty keymap) is legitimate: the compositor
+                        // offers raw keycodes only. Degraded, not a failure.
+                        kb.keymap_valid = false;
+                        log("Wayland wl_keyboard % has no usable keymap (format %, % bytes); keysyms unavailable",
+                            kb.keyboard.id, event.keymap.format, size, flags = .WARNING);
+                    }
+                    if fd >= 0  close(cast(s32) fd);
+                  case .REPEAT_INFO;
+                    kb.repeat_rate      = event.repeat_info.rate;
+                    kb.repeat_delay     = event.repeat_info.delay;
+                    kb.have_repeat_info = true;
                 }
                 break;
             }
         }
+        if !matched  route_foreign(*it);
     }
 
     return keyboards;
@@ -138,6 +176,7 @@ get_pointers_info :: (seats: [] Seat_Info) -> [] Pointer_Info {
     // Pointer has no initial burst like keymap — just drain the sync
     for session() {
         if it.object_id == sync_id  break;
+        route_foreign(*it);
     }
 
     return pointers;
@@ -146,7 +185,7 @@ get_pointers_info :: (seats: [] Seat_Info) -> [] Pointer_Info {
 // Match a message to a keyboard and unmarshal. Returns the event and true
 // if the message belongs to one of the keyboards, false otherwise.
 get_keyboard_event :: (header: WaylandMessageHeader, keyboards: [] Keyboard_Info, recv: *ReceiveBuffer) -> Wl_Keyboard_Event, bool {
-    for keyboards {
+    for * keyboards {  // by pointer: each record carries a ~15 KB Keymap
         if header.object_id == it.keyboard.id {
             event: Wl_Keyboard_Event;
             unmarshal_event(*event, header.opcode, header.payload, recv);
@@ -199,7 +238,10 @@ get_touch_info :: (seats: [] Seat_Info) -> [] Touch_Info {
     wayland_send(*batch);
 
     // Touch has no initial burst — just drain the sync.
-    for session()  if it.object_id == sync_id  break;
+    for session() {
+        if it.object_id == sync_id  break;
+        route_foreign(*it);
+    }
 
     return touches;
 }
@@ -254,9 +296,12 @@ get_data_devices_info :: (seats: [] Seat_Info) -> [] Data_Device_Info, Wl_Data_D
     wayland_send(*batch);
 
     // Drain the sync. The compositor may introduce a data_offer for the current
-    // clipboard selection in this same burst; we let it fall through (we don't
-    // support paste yet) and only wait for the sync to know acquisition is done.
-    for session()  if it.object_id == sync_id  break;
+    // clipboard selection in this same burst; it goes to route_foreign with
+    // everything else, and we only wait for the sync to know acquisition is done.
+    for session() {
+        if it.object_id == sync_id  break;
+        route_foreign(*it);
+    }
 
     return devices, mgr;
 }

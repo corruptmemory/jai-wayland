@@ -49,9 +49,9 @@ main :: () {
     pointers := get_pointers_info(seats);
     keymap: Keymap;
     if keyboards.count > 0 {
-        keymap_ok: bool;
-        keymap, keymap_ok = parse_keymap_fd(keyboards[0].keymap_fd, keyboards[0].keymap_size);
-        if !keymap_ok  print("Warning: could not parse keymap\n");
+        // get_keyboards_info parsed the keymap as it arrived.
+        keymap = keyboards[0].keymap;
+        if !keyboards[0].keymap_valid  print("Warning: could not parse keymap\n");
     }
     print("Input: % seat(s), % keyboard(s), % pointer(s)\n", seats.count, keyboards.count, pointers.count);
     if keyboards.count > 0  print("  Keys: r/g/b = color, q = quit\n");
@@ -84,6 +84,7 @@ main :: () {
     xdg_wm_base_get_xdg_surface(*batch, wm_base(), xdg_surface.id, *surface);
     xdg_surface_get_toplevel(*batch, *xdg_surface, toplevel.id);
     xdg_toplevel_set_title(*batch, *toplevel, "hello");
+    xdg_toplevel_set_app_id(*batch, *toplevel, "hello");
     wl_surface_commit(*batch, *surface);
     wayland_send(*batch);
 
