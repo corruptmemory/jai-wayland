@@ -33,24 +33,22 @@ Screen_Info :: struct {
 // and returns an array of Screen_Info.
 // Uses the context session (must be initialized).
 get_screens_info :: () -> [] Screen_Info {
-    // Count wl_output globals
-    output_count: int;
-    for globals() {
-        if it.interface_name == "wl_output"  output_count += 1;
-    }
-    if output_count == 0  return .[];
-
-    // Bind each output, then sync (IDs must be allocated in wire order)
+    // Bind each wl_output global (one per monitor) by its own Global_Info, then
+    // sync. The type-only bind overloads would bind the first wl_output every
+    // time. IDs must be allocated in wire order: each one right before its bind.
     outputs: [..] Wl_Output;
     outputs.allocator = temp;
 
     display := Wl_Display.{ id = 1 };
     batch: MessageBuilder;
-    for 1..output_count {
+    for gi: globals() {
+        if gi.interface_name != "wl_output"  continue;
         output := array_add(*outputs);
         output.id = allocate_id();
-        wl_registry_bind(*batch, registry(), output);
+        wl_registry_bind(*batch, registry(), gi, output.id, type_info(Wl_Output));
     }
+    if outputs.count == 0  return .[];
+
     sync_id := allocate_id();
     wl_display_sync(*batch, *display, sync_id);
     wayland_send(*batch);

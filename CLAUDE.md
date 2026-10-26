@@ -23,6 +23,7 @@ Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire
 ./build.sh - wire_test  # Build and run 22 wire protocol tests
 ./build.sh - xkb_test   # Build and run XKB keymap parser tests
 ./build.sh - dmabuf_test  # Build and run 2 dmabuf tests (DRM modifier assembly, feedback format-table parse)
+./build.sh - registry_test  # Build and run 2 registry tests (bind by Global_Info: each global's own name, min-version negotiation)
 ./build.sh - marshal_test  # Build and run 9 marshal macro tests
 ./build.sh - unmarshal_test  # Build and run 12 unmarshal macro tests
 ./build.sh - compile_test  # Build and run 11 compilation smoke tests (imports generated module)
@@ -125,7 +126,7 @@ The point: the vendored Simp/Input/Window_Creation run unchanged-in-shape on Way
 
 **Client API** (`modules/wayland/registry.jai`, `session.jai`, `shm.jai`, `dmabuf.jai`):
 - `session.jai` — `WaylandSession` struct (Connection, ReceiveBuffer, globals, bound objects). Lives in `#add_context wayland_session: *WaylandSession;`. `init_wayland_session()` connects, discovers globals, binds compositor/wm_base. `for_expansion` on `*WaylandSession` iterates incoming messages, handles ping/pong and `wl_display.error` transparently (uses `defer` for message consume so `continue` is safe in loop bodies), yields `WaylandMessageHeader`, exposes `recv: *ReceiveBuffer` via backtick binding (for `unmarshal` Fd support). Context-based convenience overloads: `allocate_id()`, `wayland_send(*batch, drain=)`, `session()`, `connection()`, `registry()`, `compositor()`, `wm_base()`, `globals()`.
-- `registry.jai` — `discover_globals(conn)` performs get_registry + sync roundtrip using MessageBuilder/ReceiveBuffer, returns `[] Global_Info` + registry ID. Context-based overload stores into session. `find_global(globals, name)` / `find_global(name)` lookups. `init_display(conn)` creates wl_display proxy (always ID 1).
+- `registry.jai` — `discover_globals(conn)` performs get_registry + sync roundtrip using MessageBuilder/ReceiveBuffer, returns `[] Global_Info` + registry ID. Context-based overload stores into session. `get_global(globals, name)` / `get_global(name)` lookups return the FIRST global with that interface name. `wl_registry_bind` has four overloads: three take the type (proxy pointer, `$T`, or `*Type_Info`) and bind the first matching global via `get_global`, which suits singletons (`wl_compositor`, `xdg_wm_base`); the fourth, `wl_registry_bind(batch, registry, gi: Global_Info, id, ti)`, binds the specific global the caller passes and is the one place the bind wire bytes are written (the others call it). Same-interface globals — one `wl_output` per monitor, one `wl_seat` per seat — must bind by `Global_Info`, each with its own compositor-assigned name; `get_screens_info` and `get_seats_info` loop over `globals()` and do so (before, every proxy bound the first global, so two monitors reported monitor 1 twice). `init_display(conn)` creates wl_display proxy (always ID 1).
 - `shm.jai` — `memfd_create(name, flags)` thin wrapper over Linux syscall for anonymous shared memory.
 - `output.jai` — `Mode_Info`, `Screen_Info` structs, `get_screens_info()` discovers all compositor outputs via wl_output bind + sync roundtrip + `unmarshal_event`. Returns `[] Screen_Info` with name, modes, current_mode, scale_factor, geometry.
 - `input.jai` — Seat-based input discovery. `Seat_Info` (seat, name, capabilities), `Keyboard_Info` (seat_index, keyboard, keymap_fd, keymap_size), `Pointer_Info` (seat_index, pointer). `get_seats_info()` enumerates seats and their capabilities. `get_keyboards_info(seats)` / `get_pointers_info(seats)` acquire wl_keyboard / wl_pointer for seats advertising the respective capability; keyboards receive the keymap event during acquisition. `get_keyboard_event(header, keyboards, recv)` / `get_pointer_event(header, pointers, recv)` match an incoming message against the known input objects and unmarshal the appropriate event tagged union — for clean event loops that route messages by object ID.
@@ -158,7 +159,8 @@ The point: the vendored Simp/Input/Window_Creation run unchanged-in-shape on Way
 - `tests/unmarshal_test.jai`: 12 tests (round-trip fixed/string/array/Fixed/fd/empty, *void, *Interface temp alloc, tagged union dispatch with real Wl_Output_Event)
 - `tests/compile_test.jai`: 11 tests (imports generated module, verifies types/Fd/arg structs/version defaults compile)
 - `tests/dmabuf_test.jai`: 2 tests (`make_drm_modifier` keeps the high word; a memfd-backed feedback format table parses to the full 64-bit modifier)
-- **Total: 116 tests across 8 test suites**
+- `tests/registry_test.jai`: 2 tests (two `wl_output` globals bound by `Global_Info` write their own names 10 and 11 with new ids 3 and 4; the bound version is min(advertised, the descriptor's))
+- **Total: 118 tests across 9 test suites**
 
 ## Jai Toolchain
 

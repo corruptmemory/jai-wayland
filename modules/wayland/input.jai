@@ -26,21 +26,21 @@ Pointer_Info :: struct {
 // Discover all seats from the compositor. Binds each wl_seat global,
 // performs a sync roundtrip, collects capabilities and name.
 get_seats_info :: () -> [] Seat_Info {
-    seat_count: int;
-    for globals() {
-        if it.interface_name == "wl_seat"  seat_count += 1;
-    }
-    if seat_count == 0  return .[];
-
+    // Bind each wl_seat global by its own Global_Info; the type-only bind
+    // overloads would bind the first wl_seat every time. IDs must be allocated
+    // in wire order: each one right before its bind.
     seats: [..] Seat_Info;
 
     display := Wl_Display.{ id = 1 };
     batch: MessageBuilder;
-    for 1..seat_count {
+    for gi: globals() {
+        if gi.interface_name != "wl_seat"  continue;
         seat := array_add(*seats);
         seat.seat = Wl_Seat.{ id = allocate_id() };
-        wl_registry_bind(*batch, registry(), *seat.seat);
+        wl_registry_bind(*batch, registry(), gi, seat.seat.id, type_info(Wl_Seat));
     }
+    if seats.count == 0  return .[];
+
     sync_id := allocate_id();
     wl_display_sync(*batch, *display, sync_id);
     wayland_send(*batch);

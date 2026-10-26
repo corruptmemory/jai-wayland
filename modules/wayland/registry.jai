@@ -136,7 +136,11 @@ wl_registry_bind :: (batch: *MessageBuilder, self: *Wl_Registry, id: u32, $T: Ty
     return wl_registry_bind(batch, self, id, type_info(T));
 }
 
-// Overload 3: fully dynamic — id + *Type_Info
+// Overload 3: fully dynamic — id + *Type_Info.
+// Binds the FIRST global advertising the type's interface (get_global), which is
+// right for singletons (wl_compositor, xdg_wm_base, ...). For an interface the
+// compositor can advertise several times (wl_output, wl_seat), loop over the
+// globals and use overload 4.
 wl_registry_bind :: (batch: *MessageBuilder, self: *Wl_Registry, id: u32, ti: *Type_Info) -> bool {
     md, found := find_type_metadata(ti);
     if !found return false;
@@ -144,22 +148,30 @@ wl_registry_bind :: (batch: *MessageBuilder, self: *Wl_Registry, id: u32, ti: *T
     gi, gfound := get_global(md.interface_name);
     if !gfound return false;
 
+    return wl_registry_bind(batch, self, gi, id, ti);
+}
+
+// Overload 4: bind the specific global the caller names by its Global_Info.
+// Several globals can share an interface name (one wl_output per monitor, one
+// wl_seat per seat), each with its own compositor-assigned gi.name; binding each
+// of them needs the Global_Info, since get_global() only finds the first.
+// The one place the wl_registry.bind wire bytes are written. Pure wire: reads
+// no context session.
+// Wire: header, gi.name u32, interface string, min(gi.version, supported) u32, id u32.
+wl_registry_bind :: (batch: *MessageBuilder, self: *Wl_Registry, gi: Global_Info, id: u32, ti: *Type_Info) -> bool {
+    md, found := find_type_metadata(ti);
+    if !found return false;
+
     version: u32 = ifx gi.version < md.version then gi.version else md.version;
 
-    _msg_size: u32 = HEADER_SIZE;
-    _msg_size += 4;  // gi.name
-    _msg_size += 4 + align4(cast(u32)(md.interface_name.count + 1));  // interface_name string
-    _msg_size += 4;  // version
-    _msg_size += 4;  // id
-    _buf: [MAX_MESSAGE_SIZE] u8;
-    write_u32(_buf.data, self.id);
-    _offset: u32 = HEADER_SIZE;
-    write_u32(_buf.data + _offset, gi.name); _offset += 4;
-    _offset += write_string(_buf.data + _offset, md.interface_name);
-    write_u32(_buf.data + _offset, version); _offset += 4;
-    write_u32(_buf.data + _offset, id); _offset += 4;
-    write_u32(_buf.data + 4, cast(u32)(cast(u32) _offset << 16) | cast(u32) WL_REGISTRY_BIND);
-    message_queue(batch, _buf.data, _offset);
+    buf: [MAX_MESSAGE_SIZE] u8;
+    offset: u32 = HEADER_SIZE;
+    write_u32(buf.data + offset, gi.name); offset += 4;
+    offset += write_string(buf.data + offset, md.interface_name);
+    write_u32(buf.data + offset, version); offset += 4;
+    write_u32(buf.data + offset, id); offset += 4;
+    pack_header(buf.data, self.id, WL_REGISTRY_BIND, offset);
+    message_queue(batch, buf.data, offset);
     return true;
 }
 
