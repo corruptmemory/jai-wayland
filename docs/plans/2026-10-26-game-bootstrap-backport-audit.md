@@ -302,3 +302,47 @@ own the sink" end state this repo has been aiming at.
   "Regenerate with …" header comment; zero substantive drift. `xml.jai`,
   `protocol.jai`, `connection.jai`, `marshal.jai`, `unmarshal.jai`, `xkb.jai` are
   byte-identical.
+
+## Status (2026-10-26)
+
+| Item | Disposition                | Note                                                                                                                                |
+|------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| 1    | landed in 5e79328          | The DRM modifier keeps its high word when decoded. The NVIDIA re-test is still owed (the CLAUDE.md caveat records it).              |
+| 2    | landed in 69fb7fa          | Every `wl_output` / `wl_seat` global is bound by its compositor name, not the first interface match.                                |
+| 3    | landed in e162d07, e54cbe9 | An app-turn exit is not starvation; a late callback heals it; the orphan take keeps order so the cap evicts the oldest.             |
+| 4    | landed in ce5ce3f, e9a926a | One router; foreign messages are routed during roundtrip drains instead of dropped.                                                 |
+| 5    | landed in f1499da          | `app_id` is set on toplevels.                                                                                                       |
+| 6    | landed in f1499da, fc7190e | The keymap is parsed on arrival (plus the initial `repeat_info`); `NO_KEYMAP` is a warning, not an error.                           |
+| 7    | landed in f1499da          | A release preserves `START`, so a press and release inside one frame still reads as pressed.                                        |
+| 8    | landed in 82ea4ae, 46891e3 | Connection-layer checks; short sends complete or fail loudly; truncated control data is fatal.                                      |
+| 9    | landed across the above    | New suites `dmabuf_test` (3), `registry_test` (2), `pacing_test` (2), `input_test` (3); `wire_test` 22 to 29. 131 tests, 11 suites. |
+| 10   | deferred to V2             | Per-window output tracking belongs with the V2 registry design.                                                                     |
+| 11   | deferred to V2             | Compositor `main_device` to render-node choice belongs with the V2 GPU selector.                                                    |
+| 12   | deferred to V2             | Pointer capture needs the V2 input sink.                                                                                            |
+| 13   | deferred to V2             | libxkbcommon via dlopen is a V2 addition.                                                                                           |
+| 14   | deferred to V2             | The SRGB `VkFormat` choice in `hello_vulkan_dmabuf` is not touched.                                                                 |
+| 15   | deferred to V2             | The X11-arm resize flash is not touched.                                                                                            |
+
+## V2 invariants
+
+Each line names the failure it prevents.
+
+1. One drain, nothing dropped: every roundtrip goes through the one router with a stop predicate, and a drain body either handles a message or routes it. Prevents foreign messages (and their fds) vanishing during a roundtrip.
+2. The router can pop fds for events on objects it no longer tracks (needs a per-object interface registry plus a generated per-opcode fd-count table). This is the one gap V1 still has: a message no record owns is dropped with its fds unpopped (for example a FORMAT_TABLE for a just-destroyed feedback object), which leaks the fds.
+3. An app-turn exit from a vsync wait is not starvation. Prevents a window being flagged starved, and skipped, only because the app yielded.
+4. A late `done` for any callback id we allocated heals starvation and recycles the id, with oldest-first eviction at the cap. Prevents a starved window staying starved forever and ids leaking.
+5. A release preserves START, so a press and release inside one frame still reads as pressed this frame. Prevents dropped taps.
+6. Globals bind by compositor name, never by first interface match. Prevents every `wl_output` / `wl_seat` aliasing the first one.
+7. A poisoned batch is never sent; a short send completes or fails loudly without resetting; truncated control data is a dead connection. Prevents a half-written or fd-less message corrupting the stream.
+8. A drain handles every event of its own object, not only the one it waits for (the lost `repeat_info` and the initial selection offer were both this). Prevents silently lost initial state.
+9. Library code returns errors rather than dying: `sendmsg` with `MSG_NOSIGNAL`, so a closed peer is an error, not SIGPIPE.
+
+## Deferred (noted during the backport)
+
+- `session.jai`'s `wayland_send(batch, drain=true)` overload ignores the receive result and discards what it reads, fds included (only `hello_window` uses it).
+- The pump's mid-session keymap re-parse logs a failure only when key logging is on; `wl_keyboards[0].keymap` goes stale after a mid-session KEYMAP (only `wl_keymap` is updated).
+- `get_screens_info` never releases its `wl_output` proxies, so their later events reach the router and are dropped (no fds); `wl_output_cap` caches its first answer for the process life, so a larger hot-plugged monitor never raises the cap.
+- The current-selection `data_offer` that arrives during `get_data_devices_info` is dropped (the "we don't support paste yet" comment there is stale).
+- `wl_registry_bind` overload 4 has no interface-name mismatch guard; `wl_route_registered_window_control_event` duplicates the router's configure/close branches.
+- The router's orphan-callback branch and the `MSG_CTRUNC` path have no headless test (a 29-fd `sendmsg` over a socketpair would pin the latter).
+- `wayland_receive` reports `EINTR` and a full `in_buf` as a lost connection without logging; `sendmsg` lacks `MSG_NOSIGNAL`; the libwayland_shim's long-lived batch stays poisoned after one overflow.
