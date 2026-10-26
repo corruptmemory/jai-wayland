@@ -40,6 +40,15 @@ Dmabuf_Info :: struct {
 DRM_FORMAT_MOD_LINEAR  : u64 : 0;
 DRM_FORMAT_MOD_INVALID : u64 : 0x00ffffffffffffff;
 
+// Assemble a 64-bit DRM modifier from the two u32 halves the protocol sends.
+// Precedence trap: in Jai `cast` binds looser than `<<`, so the unparenthesized
+// `cast(u64) hi << 32` shifts the u32 by 32 FIRST (yielding 0) and drops the
+// high word -- NVIDIA's 0x0300000000e08014 came back as 0x0000000000e08014.
+// Keep the parens around each cast.
+make_drm_modifier :: inline (hi: u32, lo: u32) -> u64 {
+    return ((cast(u64) hi) << 32) | cast(u64) lo;
+}
+
 // Discover zwp_linux_dmabuf_v1 and enumerate its advertised (format, modifier)
 // pairs. Returns (info, true) if the compositor supports the protocol; (zero, false)
 // if the global isn't advertised. Uses the context session (must be initialized).
@@ -75,8 +84,7 @@ get_dmabuf_info :: () -> Dmabuf_Info, bool {
                 // per wl wire byte ordering.
                 fm := array_add(*info.supported);
                 fm.format = event.modifier.format;
-                fm.modifier = (cast(u64) event.modifier.modifier_hi << 32)
-                            | (cast(u64) event.modifier.modifier_lo);
+                fm.modifier = make_drm_modifier(event.modifier.modifier_hi, event.modifier.modifier_lo);
               case .FORMAT;
                 // Legacy v1 signal — format only, modifier implicit.
                 // Record as INVALID so pick_format() can distinguish it
@@ -202,7 +210,7 @@ append_feedback_format_table :: (out: *[..] Format_Modifier, fd: Fd, size: u32) 
         modifier_hi := read_u32(entry + 12);
         array_add(out, .{
             format = format,
-            modifier = (cast(u64) modifier_hi << 32) | cast(u64) modifier_lo,
+            modifier = make_drm_modifier(modifier_hi, modifier_lo),
         });
     }
 }
