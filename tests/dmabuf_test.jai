@@ -62,19 +62,30 @@ test_format_table_parse_keeps_high_word :: () {
 // feedback's DONE, and wl_callback.done on the sync object 51. So in_fds = [A, B].
 // The mock handler pops one fd, as the keyboard handler would pop the keymap fd.
 // With routing, FORMAT_TABLE pops B; without it, FORMAT_TABLE pops A and reads
-// 0xDEADBEEF as the format.
+// 0xDEADBEEF as the format. The mock also checks that it sees the message before
+// the drain consumes it: still the unread head of the receive buffer, with its
+// payload (FOREIGN_PAYLOAD) readable.
+
+FOREIGN_PAYLOAD : u32 : 0xF00DCAFE;
 
 foreign_mock_pops:           int;
 foreign_mock_last_object_id: u32;
 
 foreign_mock_handler :: (header: *Wayland.WaylandMessageHeader) {
-    fd := Wayland.receive_pop_fd(*context.wayland_session.recv);
+    recv := *context.wayland_session.recv;
+    head := recv.in_buf.data + recv.in_read;
+    assert(header.payload == head + Wayland.HEADER_SIZE,
+           "the foreign handler ran after the drain consumed its message");
+    value := Wayland.read_u32(header.payload);
+    assert(value == FOREIGN_PAYLOAD, "foreign payload = 0x%", formatInt(value, base = 16));
+
+    fd := Wayland.receive_pop_fd(recv);
     if fd >= 0  close(fd);
     foreign_mock_pops += 1;
     foreign_mock_last_object_id = header.object_id;
 }
 
-Foreign_Args       :: struct { fd: Wayland.Fd; }
+Foreign_Args       :: struct { fd: Wayland.Fd; value: u32; }
 Format_Table_Args  :: struct { fd: Wayland.Fd; size: u32; }
 Feedback_Done_Args :: struct {}
 Sync_Done_Args     :: struct { callback_data: u32; }
@@ -113,7 +124,7 @@ test_feedback_collector_routes_foreign_fd_message :: () {
     // marshal queues Fd fields into out_fds in call order, so out_fds = [A, B].
     server := Wayland.Connection.{ socket_fd = sv[0], next_id = 2 };
     batch: Wayland.MessageBuilder;
-    foreign := Foreign_Args.{ fd = cast(Wayland.Fd) fd_a };
+    foreign := Foreign_Args.{ fd = cast(Wayland.Fd) fd_a, value = FOREIGN_PAYLOAD };
     Wayland.marshal(*batch, FOREIGN_ID, 0, *foreign);
     format_table := Format_Table_Args.{ fd = cast(Wayland.Fd) fd_b, size = 16 };
     Wayland.marshal(*batch, FEEDBACK_ID, Wayland.ZWP_LINUX_DMABUF_FEEDBACK_V1_FORMAT_TABLE, *format_table);

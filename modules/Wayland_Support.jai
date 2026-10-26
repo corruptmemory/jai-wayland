@@ -103,19 +103,26 @@ wl_output_cap :: () -> (w: s32, h: s32) {
     if wl_output_cap_initialized  return wl_output_cap_w, wl_output_cap_h;
     wl_output_cap_initialized = true;
 
-    // get_screens_info allocates with the default allocator; this is a one-shot
-    // cache read of int dimensions, so run it on temp and let the block free it.
-    screens: [] Wl.Screen_Info;
-    {
-        push_allocator(temp);
-        screens = Wl.get_screens_info();
-    }
+    // get_screens_info allocates with the context allocator, and its drain hands
+    // other messages to wl_route_message, whose handlers allocate long-lived state
+    // (provisional_input_events, wl_dnd_offers). So push no temp allocator around
+    // it: call it on the caller's allocator and free the result once the
+    // dimensions are read.
+    screens := Wl.get_screens_info();
     max_w: s32 = 0;
     max_h: s32 = 0;
     for screens {
         if it.current_mode.width  > max_w  max_w = it.current_mode.width;
         if it.current_mode.height > max_h  max_h = it.current_mode.height;
     }
+    for screens {
+        free(it.name);
+        free(it.description);
+        free(it.make);
+        free(it.model);
+        array_free(it.modes);
+    }
+    array_free(screens);
     if max_w > 0 && max_h > 0 {
         wl_output_cap_w = max_w;
         wl_output_cap_h = max_h;
@@ -1252,10 +1259,10 @@ wl_last_input_serial:         u32;     // most recent key/button serial — set_
 // means no events to buffer (no leak, no gate needed).
 provisional_input_events: [..] Wl_Input_Event;
 
-// Bind the seats' keyboards and parse the keymap. MUST be called before the
-// render loop's first pump: get_seats_info / get_keyboards_info do their own sync
-// roundtrips (via for_expansion), which would otherwise consume in-flight render
-// events. Idempotent.
+// Bind the seats' keyboards and parse the keymap. get_seats_info /
+// get_keyboards_info / ... do their own sync roundtrips (via for_expansion);
+// render events that arrive meanwhile go to wl_route_message through the
+// foreign router installed below, so they are not lost. Idempotent.
 wl_acquire_input :: () {
     if wl_input_acquired  return;
     wl_input_acquired = true;
@@ -1888,8 +1895,11 @@ wl_pump :: (blocking: bool) {
 // message that arrives while a drain waits for its own sync is handled exactly as
 // the pump would handle it.
 //
-// It reads header.payload and POPS any fds the message carries, keeping the
-// in_fds FIFO in step with the byte stream. It NEVER consumes message bytes (the
+// It reads header.payload and POPS the fds of every message it routes, keeping
+// the in_fds FIFO in step. A message no record owns is dropped WITHOUT popping,
+// so an fd-bearing event for an object nothing tracks any more (a feedback
+// object destroyed right after its drain) still strands its fd; fixing that
+// needs a per-object interface registry. It NEVER consumes message bytes (the
 // caller's defer does) and NEVER starts a roundtrip or reads the socket: no
 // `for session()` helper, no wayland_receive, no wl_pump, here or in any handler
 // it calls, because it runs from inside those drains.
@@ -1976,7 +1986,7 @@ wl_route_message :: (header: *Wl.WaylandMessageHeader) -> routed: bool, done: bo
     // acquired wl_keyboards) decode into stable Wl_Input_Events appended
     // to provisional_input_events, which consumers drain each frame.
     // Anything still unrouted is dropped (the caller consumes its bytes
-    // regardless).
+    // regardless, and any fds it carries are not popped).
     if !routed && wl_keyboards.count > 0 {
         kev, is_kb := Wl.get_keyboard_event(header.*, wl_keyboards, *session.recv);
         if is_kb {
@@ -2035,8 +2045,9 @@ wl_route_foreign :: (header: *Wl.WaylandMessageHeader) {
 // Point the session's foreign_handler at wl_route_foreign, so every roundtrip
 // drain (get_seats_info, get_dmabuf_info, a window's configure wait, ...) passes
 // messages it does not own to the single router instead of dropping them.
-// Idempotent. Called at the top of create_window_wayland, wl_acquire_input and
-// wl_window_init_gl: the entry points that run drains while windows may be live.
+// Idempotent. Called in create_window_wayland (right after session init) and at
+// the top of wl_acquire_input and wl_window_init_gl: the entry points that run
+// drains while windows may be live.
 wl_install_foreign_router :: () {
     sess := context.wayland_session;
     if !sess {
