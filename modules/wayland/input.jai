@@ -11,11 +11,19 @@ Seat_Info :: struct {
     capabilities: u32;  // Wl_Seat_Capability flags
 }
 
+// No keymap fd/size here: get_keyboards_info parses the keymap as the KEYMAP
+// event arrives and closes the fd. A stored fd is racy; by the time a caller
+// mmaps it the number can belong to an unrelated file.
 Keyboard_Info :: struct {
     seat_index: int;
     keyboard: Wl_Keyboard;
-    keymap_fd: Fd;
-    keymap_size: u32;
+    keymap: Keymap;
+    keymap_valid: bool;
+    // The initial wl_keyboard.repeat_info (v4+), sent in the same burst right
+    // after the keymap. have_repeat_info is false when it never came.
+    repeat_rate: s32;   // keys/sec; 0 means repeat is disabled
+    repeat_delay: s32;  // ms before repeat starts
+    have_repeat_info: bool;
 }
 
 Pointer_Info :: struct {
@@ -69,8 +77,9 @@ get_seats_info :: () -> [] Seat_Info {
     return seats;
 }
 
-// Acquire keyboards from seats that have the KEYBOARD capability.
-// Binds wl_keyboard for each, receives keymap events.
+// Acquire keyboards from seats that have the KEYBOARD capability. Binds a
+// wl_keyboard for each and collects its initial burst: the keymap, parsed while
+// its fd is live (the fd is closed here on every path), and the repeat_info.
 get_keyboards_info :: (seats: [] Seat_Info) -> [] Keyboard_Info {
     // Count seats with keyboard capability
     kb_count: int;
@@ -104,9 +113,20 @@ get_keyboards_info :: (seats: [] Seat_Info) -> [] Keyboard_Info {
                 matched = true;
                 event: Wl_Keyboard_Event;
                 unmarshal_event(*event, it.opcode, it.payload, recv);
-                if event.kind == .KEYMAP {
-                    kb.keymap_fd = event.keymap.fd;
-                    kb.keymap_size = event.keymap.size;
+                if event.kind == {
+                  case .KEYMAP;
+                    // parse_keymap_fd mmaps a private copy and does NOT own the fd.
+                    fd := event.keymap.fd;
+                    kb.keymap, kb.keymap_valid = parse_keymap_fd(fd, event.keymap.size);
+                    if fd >= 0  close(cast(s32) fd);
+                    if !kb.keymap_valid {
+                        log_error("Wayland keymap parse failed for wl_keyboard % (format %, % bytes); keysyms unavailable",
+                                  kb.keyboard.id, event.keymap.format, event.keymap.size);
+                    }
+                  case .REPEAT_INFO;
+                    kb.repeat_rate      = event.repeat_info.rate;
+                    kb.repeat_delay     = event.repeat_info.delay;
+                    kb.have_repeat_info = true;
                 }
                 break;
             }

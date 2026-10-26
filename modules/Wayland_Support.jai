@@ -1249,6 +1249,13 @@ wl_repeat_key:        Wl_Key_Event;
 wl_repeat_press_time: float64;
 wl_repeat_count:      int;
 
+// The one place wl_keyboard.repeat_info lands, whether it arrived in the
+// acquisition burst (wl_acquire_input) or mid-session (the pump).
+wl_set_repeat_info :: (rate: s32, delay: s32) {
+    wl_repeat_rate  = rate;   // keys/sec (0 disables repeat)
+    wl_repeat_delay = delay;  // ms before repeat starts
+}
+
 wl_pointers:         [] Wl.Pointer_Info;  // acquired pointers; the pump matches object ids against these
 wl_touches:          [] Wl.Touch_Info;    // acquired touch devices (machine-dependent; usually none on desktop)
 wl_mouse_x:          float;               // current surface-local pointer position (for get_mouse_pointer_position)
@@ -1330,11 +1337,13 @@ wl_acquire_input :: () {
     wl_pointers  = Wl.get_pointers_info(seats);
     wl_touches   = Wl.get_touch_info(seats);
     if wl_keyboards.count > 0 {
-        kb := wl_keyboards[0];
-        keymap, ok := Wl.parse_keymap_fd(kb.keymap_fd, kb.keymap_size);
-        if ok  { wl_keymap = keymap; wl_keymap_valid = true; }
-        else     log("Wayland_Support: keymap parse failed; keysyms unavailable", flags=.WARNING);
-        close(cast(s32) kb.keymap_fd);  // parse_keymap_fd mmaps a private copy; it does NOT own the fd
+        // get_keyboards_info parsed the keymap as it arrived (and closed its fd;
+        // a failed parse is logged there). The repeat_info came in the same
+        // burst; it lands where the pump puts a mid-session one.
+        kb := *wl_keyboards[0];
+        wl_keymap       = kb.keymap;
+        wl_keymap_valid = kb.keymap_valid;
+        if kb.have_repeat_info  wl_set_repeat_info(kb.repeat_rate, kb.repeat_delay);
     }
 
     // Acquire the data device unconditionally (cheap) so it's ready before any
@@ -1463,8 +1472,7 @@ wl_handle_keyboard_event :: (kev: Wl.Wl_Keyboard_Event) {
             wl_keyboard_focused = false;
             wl_repeat_key_valid = false;            // stop repeating a held key when focus leaves
         case .REPEAT_INFO;
-            wl_repeat_rate  = kev.repeat_info.rate;   // keys/sec (0 disables repeat)
-            wl_repeat_delay = kev.repeat_info.delay;  // ms before repeat starts
+            wl_set_repeat_info(kev.repeat_info.rate, kev.repeat_info.delay);
         case;
             // (no other wl_keyboard events)
     }

@@ -2,6 +2,9 @@
 // Modified: Window_Type assignment sites updated for tagged-union
 //           Window_Type (X11.Window u64 -> .{ wtype = .X11, x11 = hwnd }).
 //           See docs/plans/2026-05-26-context-dispatch-stage1-design.md.
+// Modified: KeyRelease and ButtonRelease keep the START bit through
+//           button_state_after_release (wayland.jai), so a sub-frame tap still
+//           reads as pressed this frame. Deliberate deviation from upstream.
 
 #import "X11";
 #import "String";  // @Cleanup: Remove this dependency on String?
@@ -622,7 +625,7 @@ update_x11_window_events :: () {
             event.shift_pressed = cast(bool) shift;
             event.key_code = get_key_code(keysym);
             
-            input_button_states[event.key_code] = .END;
+            input_button_states[event.key_code] = button_state_after_release(input_button_states[event.key_code]);  // jai-wayland: keeps START (was = .END)
 
             array_add(*events_this_frame, event);
         case ButtonPress;
@@ -674,7 +677,7 @@ update_x11_window_events :: () {
                 event.key_code = MOUSE_BUTTON_RIGHT;
             }
 
-            input_button_states[event.key_code] = .END;
+            input_button_states[event.key_code] = button_state_after_release(input_button_states[event.key_code]);  // jai-wayland: keeps START (was = .END)
 
             array_add(*events_this_frame, event);
         case SelectionRequest;

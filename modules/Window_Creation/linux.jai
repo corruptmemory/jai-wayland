@@ -278,6 +278,9 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
     Wl.xdg_surface_get_toplevel(*batch, *xdg_surface, toplevel.id);
 
     if window_name  Wl.xdg_toplevel_set_title(*batch, *toplevel, window_name);
+    // app_id is Wayland's WM_CLASS: compositors group surfaces and key window
+    // rules on it (Hyprland matches `class` against it). Use the window name.
+    if window_name  Wl.xdg_toplevel_set_app_id(*batch, *toplevel, window_name);
     Wl.wl_surface_commit(*batch, *surface);
     Wl.wayland_send(*batch);
 

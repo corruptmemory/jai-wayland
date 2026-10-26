@@ -20,6 +20,18 @@ wl_mod_ctrl:  bool;
 wl_mod_alt:   bool;
 wl_mod_meta:  bool;
 
+// The key state a release leaves behind. A release PRESERVES the START bit, so
+// a press and release inside one frame (a sub-frame tap: QMK one-shot layers,
+// `wtype -k`, ~1 ms apart against a ~13 ms frame) reads as .START | .END,
+// "pressed and released this frame": edge readers (& .START) see the tap, held
+// readers (& .DOWN) see not-held, and the per-frame update clears both. The
+// distribution replaces the state with .END, which eats the edge before any
+// reader runs. Deliberate deviation, applied to keys and mouse buttons on both
+// Linux arms (here and x11.jai). From game-bootstrap 1168777.
+button_state_after_release :: (current: Key_Current_State) -> Key_Current_State {
+    return .END | (current & .START);
+}
+
 wl_input_initialized := false;
 wl_quit_emitted      := false;  // emit the .QUIT event for a compositor close only once
 
@@ -128,7 +140,7 @@ update_wayland_window_events :: () {
                     bev.cmd_meta_pressed = wl_mod_meta;
                     array_add(*events_this_frame, bev);
                     if ev.pointer_button.pressed  input_button_states[kc] = .START | .DOWN;
-                    else                          input_button_states[kc] = .END;
+                    else                          input_button_states[kc] = button_state_after_release(input_button_states[kc]);
                 }
 
             case .POINTER_AXIS;
@@ -249,7 +261,7 @@ wl_emit_key :: (kev: WS.Wl_Key_Event, is_repeat: bool) {
 
     array_add(*events_this_frame, event);
     if kev.pressed  input_button_states[event.key_code] = .START | .DOWN;
-    else            input_button_states[event.key_code] = .END;
+    else            input_button_states[event.key_code] = button_state_after_release(input_button_states[event.key_code]);
 
     if utf32 != 0 {
         tev: Event;
