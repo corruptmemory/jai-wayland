@@ -408,6 +408,9 @@ wl_choose_dmabuf_format :: (gbm: Gbm.Gbm_Device, info: Wl.Dmabuf_Info, surface: 
     return 0, 0, false;
 }
 
+// First entry in tranche order that GBM can allocate as a single-plane BO.
+// supports_bo_format_modifier rejects multi-plane modifiers (radeonsi lists its
+// 2-3 plane DCC ones first), which wl_slot_init_bo would refuse with no fallback.
 wl_pick_format_from_feedback_for_gbm :: (gbm: Gbm.Gbm_Device, feedback: Wl.Dmabuf_Feedback_Info, preferred_fourcc: u32, flags: u32) -> format: u32, modifier: u64, found: bool {
     if !feedback.complete  return 0, 0, false;
 
