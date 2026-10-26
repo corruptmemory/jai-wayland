@@ -344,8 +344,8 @@ process exited 0.
 Not exercised: clipboard paste (the clipboard was empty, so the save-and-restore check
 was skipped) and the NVIDIA laptop. Example-level nits the run turned up, none of them
 regressions: `hello_window` and `hello_gl` parse the keymap once and ignore a mid-session
-`keymap` event (so `wtype`'s virtual keyboard cannot quit them; `Wayland_Support` handles
-it); the shared `build/data` symlink is re-pointed by each build, so `invaders`,
+`keymap` event (so `wtype`'s virtual keyboard, which installs its own keymap, cannot quit
+them, while `ydotool` through uinput does; `Wayland_Support` handles the swap); the shared `build/data` symlink is re-pointed by each build, so `invaders`,
 `skeletal_animation` and the GetRect examples only run straight from `build/` when they
 were built last (`./build.sh - <target>` is unaffected); `hello_dmabuf` prints eight
 entries per tranche, all `AB4H`, so the ABGR8888 entries the GL path uses are never shown;
