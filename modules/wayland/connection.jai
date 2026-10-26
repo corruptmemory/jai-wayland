@@ -26,6 +26,9 @@ MessageBuilder :: struct ($MMS: u32 = MAX_MESSAGE_SIZE * 2, $MFDS: u32 = MAX_FDS
     out_used: u32;
     out_fds: [MFDS] s32;
     out_fds_count: u32;
+    // Set when a message_queue or message_queue_fd did not fit. The batch then
+    // holds an incomplete request stream, so wayland_send refuses to send it.
+    overflowed: bool;
 }
 
 // Incoming message receive buffer.
@@ -107,17 +110,21 @@ cache_alloc :: (cache: *Id_Cache, conn: *Connection) -> u32 {
     return id;
 }
 
-// Mark a destroyed ID reusable. The ID must belong to this cache and be live.
+// Mark a destroyed ID reusable. The ID must belong to this cache and be live;
+// a double free or an unknown id is logged and changes nothing.
 cache_free :: (cache: *Id_Cache, id: u32) {
     for * entry: cache.entries {
         if entry.id == id {
-            assert(entry.live, "Wayland ID cache double-free: id=%", id);
+            if !entry.live {
+                log_error("Wayland ID cache double free: id=%", id);
+                return;
+            }
             entry.live = false;
             return;
         }
     }
 
-    assert(false, "Wayland ID cache free of unknown id=%", id);
+    log_error("Wayland ID cache free of unknown id=%", id);
 }
 
 // Close the Wayland connection.
@@ -129,9 +136,19 @@ wayland_disconnect :: (conn: *Connection) {
 }
 
 // Allocate the next client-side object ID.
+// Returns 0 after a log_error when the allocator is uninitialised or the client
+// id space is exhausted. 0 is never a valid client id, so a request that uses it
+// fails loudly at the compositor rather than aliasing wl_display (id 1) or a
+// server-allocated id.
 allocate_id :: (conn: *Connection) -> u32 {
-    assert(conn.next_id > 1, "Wayland client object ID allocator was not initialized past wl_display id=1");
-    assert(conn.next_id < WAYLAND_SERVER_ID_START, "Wayland client object ID space exhausted");
+    if conn.next_id <= 1 {
+        log_error("Wayland client object ID allocator was not initialized past wl_display id=1 (next_id=%)", conn.next_id);
+        return 0;
+    }
+    if conn.next_id >= WAYLAND_SERVER_ID_START {
+        log_error("Wayland client object ID space exhausted (next_id=%)", conn.next_id);
+        return 0;
+    }
 
     id := conn.next_id;
     conn.next_id += 1;
@@ -141,15 +158,27 @@ allocate_id :: (conn: *Connection) -> u32 {
 // --- New API: MessageBuilder helpers ---
 
 // Queue message bytes into a MessageBuilder.
+// A message that does not fit is logged and not written, and the batch is marked
+// overflowed so wayland_send refuses it.
 message_queue :: (batch: *MessageBuilder, data: *u8, size: u32) {
-    assert(batch.out_used + size <= batch.out_buf.count, "outgoing buffer overflow");
+    if cast(s64) batch.out_used + cast(s64) size > batch.out_buf.count {
+        log_error("Wayland outgoing batch overflow: % bytes do not fit (% of % used); batch marked overflowed", size, batch.out_used, batch.out_buf.count);
+        batch.overflowed = true;
+        return;
+    }
     memcpy(batch.out_buf.data + batch.out_used, data, size);
     batch.out_used += size;
 }
 
 // Queue a file descriptor for SCM_RIGHTS transmission.
+// An fd that does not fit is logged and not queued, and the batch is marked
+// overflowed so wayland_send refuses it. The caller still owns the fd.
 message_queue_fd :: (batch: *MessageBuilder, fd: s32) {
-    assert(batch.out_fds_count < batch.out_fds.count, "fd queue overflow");
+    if batch.out_fds_count >= batch.out_fds.count {
+        log_error("Wayland outgoing fd queue overflow: fd % does not fit (% of % queued); batch marked overflowed", fd, batch.out_fds_count, batch.out_fds.count);
+        batch.overflowed = true;
+        return;
+    }
     batch.out_fds[batch.out_fds_count] = fd;
     batch.out_fds_count += 1;
 }
@@ -173,8 +202,12 @@ receive_consume_message :: (buf: *ReceiveBuffer, size: u32) {
 }
 
 // Pop the next incoming file descriptor from the queue.
+// Returns -1 after a log_error when the queue is empty.
 receive_pop_fd :: (buf: *ReceiveBuffer) -> s32 {
-    assert(buf.in_fds_read < buf.in_fds_count, "no incoming fds");
+    if buf.in_fds_read >= buf.in_fds_count {
+        log_error("Wayland incoming fd queue is empty: a message expected an fd that was not received");
+        return -1;
+    }
     fd := buf.in_fds[buf.in_fds_read];
     buf.in_fds_read += 1;
     return fd;
@@ -183,8 +216,13 @@ receive_pop_fd :: (buf: *ReceiveBuffer) -> s32 {
 // --- New API: Send/Receive ---
 
 // Send queued messages from a MessageBuilder via the connection socket.
-// Resets the batch on success.
+// Resets the batch on success. An overflowed batch is refused: it is logged,
+// nothing is sent, the batch is left as it is, and the result is false.
 wayland_send :: (conn: *Connection, batch: *MessageBuilder) -> bool {
+    if batch.overflowed {
+        log_error("Wayland batch overflowed while queueing (% bytes, % fds held); refusing to send an incomplete request stream", batch.out_used, batch.out_fds_count);
+        return false;
+    }
     if batch.out_used == 0  return true;
 
     iov := iovec.{ iov_base = batch.out_buf.data, iov_len = cast(u64) batch.out_used };
@@ -259,9 +297,14 @@ wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
             payload_size := cmsg.cmsg_len - cast(u64) size_of(cmsghdr);
             num_fds := payload_size / cast(u64) size_of(s32);
             for i: 0..cast(s64)(num_fds - 1) {
+                fd := (cast(*s32)(fd_data + i * size_of(s32))).*;
                 if buf.in_fds_count < buf.in_fds.count {
-                    buf.in_fds[buf.in_fds_count] = (cast(*s32)(fd_data + i * size_of(s32))).*;
+                    buf.in_fds[buf.in_fds_count] = fd;
                     buf.in_fds_count += 1;
+                } else {
+                    // Nothing can ever pop this fd, so close it rather than leak it.
+                    log_error("Wayland incoming fd queue overflow: % fds already queued; closing received fd %", buf.in_fds_count, fd);
+                    close(fd);
                 }
             }
         }

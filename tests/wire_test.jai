@@ -3,6 +3,8 @@
 
 #import "Basic";
 Wayland :: #import,dir "../modules/wayland";
+Socket  :: #import "Socket";
+POSIX   :: #import "POSIX";
 
 main :: () {
     print("=== Wire Protocol Tests ===\n\n");
@@ -31,6 +33,12 @@ main :: () {
     test_message_queue_multiple();
     test_receive_peek_consume();
     test_receive_pop_fd();
+
+    test_message_queue_overflow_poisons_batch();
+    test_message_queue_fd_overflow_poisons_batch();
+    test_wayland_send_refuses_overflowed_batch();
+    test_receive_pop_fd_empty_logs_and_returns_minus_one();
+    test_cache_free_unknown_id_logs_and_continues();
 
     print("\n=== All wire tests passed ===\n");
 }
@@ -351,4 +359,137 @@ test_write_array_padding :: () {
     // Next byte should be untouched (still 0xFF)
     assert(buf[8] == 0xFF, "write_array should not write past data when aligned");
     print("  PASS: write_array_padding\n");
+}
+
+// --- No silent failures in the connection layer ---
+// Each test runs the call under an error-recording logger, so the log_error is an
+// assertable side channel. The tests count errors rather than match message text.
+
+test_message_queue_overflow_poisons_batch :: () {
+    batch: Wayland.MessageBuilder;
+    src := NewArray(batch.out_buf.count + 1, u8,, temp);
+    memset(src.data, 0xAB, src.count);
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        Wayland.message_queue(*batch, src.data, cast(u32) src.count);
+    }
+
+    assert(batch.overflowed, "a message larger than the batch should poison it");
+    assert(batch.out_used == 0, "an overflowing message_queue should write nothing, out_used=%", batch.out_used);
+    assert(batch.out_buf[0] == 0, "an overflowing message_queue should not touch out_buf");
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    print("  PASS: message_queue_overflow_poisons_batch\n");
+}
+
+test_message_queue_fd_overflow_poisons_batch :: () {
+    batch: Wayland.MessageBuilder;
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        for i: 0..batch.out_fds.count  Wayland.message_queue_fd(*batch, cast(s32)(100 + i));
+    }
+
+    assert(batch.overflowed, "one fd more than the queue holds should poison the batch");
+    assert(batch.out_fds_count == batch.out_fds.count, "the fds that fit stay queued, got %", batch.out_fds_count);
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    print("  PASS: message_queue_fd_overflow_poisons_batch\n");
+}
+
+test_wayland_send_refuses_overflowed_batch :: () {
+    sv: [2] s32;
+    rc := Socket.socketpair(Socket.AF_LOCAL, .STREAM, cast(Socket.IPPROTO) 0, *sv);
+    assert(rc == 0, "socketpair failed, errno=%", POSIX.errno());
+    defer { POSIX.close(sv[0]); POSIX.close(sv[1]); }
+
+    sender := Wayland.Connection.{ socket_fd = sv[0], next_id = 2 };
+
+    batch: Wayland.MessageBuilder;
+    msg: [12] u8;
+    Wayland.pack_header(msg.data, object_id = 1, opcode = 0, size = 12);
+    Wayland.write_u32(msg.data + 8, 0xDEADBEEF);
+    Wayland.message_queue(*batch, msg.data, 12);
+    assert(batch.out_used == 12 && !batch.overflowed, "setup: one 12-byte message queued");
+    batch.overflowed = true;
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    ok: bool;
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        ok = Wayland.wayland_send(*sender, *batch);
+    }
+
+    assert(!ok, "wayland_send should refuse an overflowed batch");
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    assert(batch.out_used == 12 && batch.overflowed, "a refused batch is left as it was");
+
+    peek: [16] u8;
+    n := Socket.recv(sv[1], peek.data, peek.count, .DONTWAIT);
+    err := POSIX.errno();
+    assert(n == -1 && err == POSIX.EAGAIN, "the peer should have received nothing: recv=% errno=%", n, err);
+    print("  PASS: wayland_send_refuses_overflowed_batch\n");
+}
+
+test_receive_pop_fd_empty_logs_and_returns_minus_one :: () {
+    buf: Wayland.ReceiveBuffer;
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    fd: s32;
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        fd = Wayland.receive_pop_fd(*buf);
+    }
+
+    assert(fd == -1, "popping an empty fd FIFO should return -1, got %", fd);
+    assert(buf.in_fds_read == 0, "popping an empty fd FIFO should not advance the cursor");
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    print("  PASS: receive_pop_fd_empty_logs_and_returns_minus_one\n");
+}
+
+test_cache_free_unknown_id_logs_and_continues :: () {
+    cache: Wayland.Id_Cache;
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        Wayland.cache_free(*cache, 42);
+    }
+
+    assert(cache.entries.count == 0, "freeing an unknown id should leave the cache empty");
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    print("  PASS: cache_free_unknown_id_logs_and_continues\n");
+}
+
+#scope_file
+
+// Collects every .ERROR message logged while it is the context logger.
+Error_Recorder :: struct { errors: [..] string; }
+
+record_errors :: (message: string, data: *void, info: Log_Info) {
+    if info.common_flags & .ERROR {
+        rec := cast(*Error_Recorder) data;
+        array_add(*rec.errors, copy_string(message));
+    }
+}
+
+free_errors :: (rec: *Error_Recorder) {
+    for rec.errors  free(it);
+    array_free(rec.errors);
 }

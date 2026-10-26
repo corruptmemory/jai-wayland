@@ -20,7 +20,7 @@ Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire
 ./build.sh              # Build main → build/main
 ./build.sh - test       # Build and run 22 XML/protocol tests
 ./build.sh - gen_test   # Build and run 35 generator tests
-./build.sh - wire_test  # Build and run 22 wire protocol tests
+./build.sh - wire_test  # Build and run 27 wire protocol tests
 ./build.sh - xkb_test   # Build and run XKB keymap parser tests
 ./build.sh - dmabuf_test  # Build and run 2 dmabuf tests (DRM modifier assembly, feedback format-table parse)
 ./build.sh - registry_test  # Build and run 2 registry tests (bind by Global_Info: each global's own name, min-version negotiation)
@@ -154,13 +154,13 @@ The point: the vendored Simp/Input/Window_Creation run unchanged-in-shape on Way
 **Tests:**
 - `tests/xml_test.jai`: 22 tests (pull parser, entities, protocol parsing)
 - `tests/generator_test.jai`: 35 tests (naming, enums, events, requests, assembly, end-to-end)
-- `tests/wire_test.jai`: 22 tests (primitive writers/readers, header pack/unpack, string/array read/write, MessageBuilder queueing, ReceiveBuffer peek/consume/pop_fd)
+- `tests/wire_test.jai`: 27 tests (primitive writers/readers, header pack/unpack, string/array read/write, MessageBuilder queueing, ReceiveBuffer peek/consume/pop_fd, and the connection layer's logged refusals under an error-recording logger: batch and fd-queue overflow, `wayland_send` of an overflowed batch over a socketpair, empty fd FIFO, `cache_free` of an unknown id)
 - `tests/marshal_test.jai`: 9 tests (fixed args, fd, string, array, Fixed, empty, constructors — all target MessageBuilder)
 - `tests/unmarshal_test.jai`: 12 tests (round-trip fixed/string/array/Fixed/fd/empty, *void, *Interface temp alloc, tagged union dispatch with real Wl_Output_Event)
 - `tests/compile_test.jai`: 11 tests (imports generated module, verifies types/Fd/arg structs/version defaults compile)
 - `tests/dmabuf_test.jai`: 2 tests (`make_drm_modifier` keeps the high word; a memfd-backed feedback format table parses to the full 64-bit modifier)
 - `tests/registry_test.jai`: 2 tests (two `wl_output` globals bound by `Global_Info` write their own names 10 and 11 with new ids 3 and 4; the bound version is min(advertised, the descriptor's))
-- **Total: 118 tests across 9 test suites**
+- **Total: 123 tests across 9 test suites**
 
 ## Jai Toolchain
 
@@ -185,6 +185,7 @@ Jai compiler expected at `~/jai/jai/`. Standard library at `~/jai/jai/modules/`.
 - **`VK_KHR_wayland_surface` is unusable here.** That extension expects real libwayland-client `wl_display*` and `wl_surface*` proxy pointers, not bare wire-protocol object IDs. The project therefore never uses Vulkan WSI; Vulkan presentation goes through DMA-BUF export wrapped as a `wl_buffer`. This is a permanent design constraint, not a TODO.
 - **`Id_Cache` for short-lived object IDs.** Replaces the earlier `Reuse_Block` design. First allocation is always sequential (preserves contiguous-ID invariant); subsequent allocations reuse a cached ID only after `cache_free` marks the prior object dead following its destructor event. Used for frame callback IDs in `hello_gl`/`hello_vulkan_dmabuf`.
 - **Modules log, they don't print.** Code inside `modules/` uses Jai's standard `log` facility (`log("...")`, `log_error("...")`) rather than raw `print`. Examples still use `print` for direct user-facing output. Don't reintroduce `print` calls inside module files.
+- A `MessageBuilder` that overflows is poisoned (`overflowed`), logged, and refused by `wayland_send`; `receive_pop_fd` returns -1 on an empty fd FIFO. Nothing in the connection layer fails silently.
 
 ## Wire Protocol Design
 
