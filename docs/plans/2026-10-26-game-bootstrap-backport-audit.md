@@ -307,7 +307,7 @@ own the sink" end state this repo has been aiming at.
 
 | Item | Disposition                         | Note                                                                                                                                                                                                                                                                                                                                                                 |
 |------|-------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1    | landed in 5e79328                   | The DRM modifier keeps its high word when decoded. The NVIDIA re-test is still owed (the CLAUDE.md caveat records it). The corrected parse let the feedback picker reach radeonsi's multi-plane DCC modifiers, so 896b1c0 (fix wave) makes the GL pickers require a single-plane modifier, and `hello_simp` on the AMD box is a required live check too.             |
+| 1    | landed in 5e79328                   | The DRM modifier keeps its high word when decoded. The corrected parse let the feedback picker reach radeonsi's multi-plane DCC modifiers, so 896b1c0 (fix wave) makes the GL pickers require a single-plane modifier. Live on AMD (below): `hello_simp` picks `0x0200000028a01f04`. The NVIDIA re-test is still owed (the CLAUDE.md caveat records it).             |
 | 2    | landed in 69fb7fa                   | Every `wl_output` / `wl_seat` global is bound by its compositor name, not the first interface match.                                                                                                                                                                                                                                                                 |
 | 3    | landed in e162d07, e54cbe9          | An app-turn exit is not starvation; a late callback heals it; the orphan take keeps order so the cap evicts the oldest.                                                                                                                                                                                                                                              |
 | 4    | landed in ce5ce3f, e9a926a          | One router; foreign messages are routed during roundtrip drains instead of dropped.                                                                                                                                                                                                                                                                                  |
@@ -322,6 +322,45 @@ own the sink" end state this repo has been aiming at.
 | 13   | deferred to V2                      | libxkbcommon via dlopen is a V2 addition.                                                                                                                                                                                                                                                                                                                            |
 | 14   | deferred to V2                      | The SRGB `VkFormat` choice in `hello_vulkan_dmabuf` is not touched.                                                                                                                                                                                                                                                                                                  |
 | 15   | deferred to V2                      | The X11-arm resize flash is not touched.                                                                                                                                                                                                                                                                                                                             |
+
+## Live checks (2026-10-26, Hyprland 0.56.2, AMD RX 7900 GRE, two monitors)
+
+Run the same day as the merge, from the `build/` binaries of master 319e803. Nothing in
+the library failed; every window was closed through `xdg_toplevel.close` and every
+process exited 0.
+
+| Check                                               | Item | Result  | Evidence                                                                                                                                                                                                                                                                                                                             |
+|-----------------------------------------------------|------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `hello_simp` modifier pick                          | 1    | pass    | `using format=0x34324241 modifier=0x200000028a01f04` (AMD tiled, single-plane); three `Initialized BO-backed slot` lines with it; 400 frames clean; the quad renders centred, no band. The same modifier is the one Vulkan's probe gets accepted                                                                                     |
+| `hello_dmabuf` feedback decode                      | 1    | pass    | Default and per-surface tranches list `0x0200000028a6bf04`, `0x0200000028a01f04`, … with the high word intact (387 table entries, 335 in the tranche)                                                                                                                                                                                |
+| `hello_dmabuf` global list                          | 1    | finding | 0 pairs. The compositor advertises v5 and v4+ sends no `format`/`modifier` events, so the global-list fallback is empty on every current compositor; see the NVIDIA note below                                                                                                                                                       |
+| `hello_screens` on two monitors                     | 2    | pass    | DP-2 2560x1440 at 0,240 and HDMI-A-1 1920x1200 at 2560,0, distinct (before: monitor 1 twice)                                                                                                                                                                                                                                         |
+| `simp_multiple_windows` resize A while B is visible | 3    | pass    | Three resizes through the compositor; both windows keep animating (500 ms capture pairs differ) and fill edge to edge. Closing A quits the whole app: upstream `multiple_windows.jai` quits on any `.QUIT`, as on X11                                                                                                                |
+| `app_id` on every toplevel                          | 5    | pass    | 15 windows, `class` equals the window name on each (`hello_simp`, `Invaders`, `Skeletal Animation`, `A Window` ×6, …). The `jai-application` fallback went unexercised: no example passes an empty name                                                                                                                              |
+| autorepeat at the compositor's rate                 | 6    | pass    | With the compositor set to 50/s after 300 ms, holding `a` for 1.5 s in `hello_clipboard` produced 60 `repeat=true` events (the old built-in 25/600 would give about 22); settings restored                                                                                                                                           |
+| sub-frame tap                                       | 7    | partial | `wtype -k q` quits `hello_simp` through the event path. The START-bit property has no polling example to observe live; `input_test` covers it                                                                                                                                                                                        |
+| sweep                                               | 4, 8 | pass    | `hello_window`, `hello_gl`, `hello_vulkan_dmabuf` (triangle, `0x0200000028a01f04` accepted first), `invaders`, `skeletal_animation`, both GetRect showcases, `treemap`, `codex_view`, `simp_example`, `simp_render_to_texture`, `hello_globals`, `dump_keymap`: all render or print correctly, exit 0, and no module logged an error |
+
+Not exercised: clipboard paste (the clipboard was empty, so the save-and-restore check
+was skipped) and the NVIDIA laptop. Example-level nits the run turned up, none of them
+regressions: `hello_window` and `hello_gl` parse the keymap once and ignore a mid-session
+`keymap` event (so `wtype`'s virtual keyboard cannot quit them; `Wayland_Support` handles
+it); the shared `build/data` symlink is re-pointed by each build, so `invaders`,
+`skeletal_animation` and the GetRect examples only run straight from `build/` when they
+were built last (`./build.sh - <target>` is unaffected); `hello_dmabuf` prints eight
+entries per tranche, all `AB4H`, so the ABGR8888 entries the GL path uses are never shown;
+`simp_example` logs `Wanted MSAA: 8` / `Chosen MSAA: 0` on this backend, which is the
+single-sample BO-backed FBO by design and a V2 item if MSAA matters.
+
+**Still owed: the NVIDIA laptop.** Capture `hello_globals`'s `zwp_linux_dmabuf_v1` version
+and the `Using dmabuf …` line `hello_simp` logs. If the compositor advertises v4 or later,
+the global list is empty by protocol, so the June finding "the global-format-list
+fallback carries NVIDIA" can only have held on a compositor advertising v3 or lower, or
+the tranches worked all along once parsed correctly. Either the corrected tranches now
+carry NVIDIA, or the GL path stops at `no GBM-usable ABGR/XBGR 8888 dmabuf format
+advertised` and needs a last-resort `ABGR8888` + `DRM_FORMAT_MOD_INVALID` attempt that
+requires no advertisement. V2 should drop the global-list fallback in favour of that
+last resort, since it is dead code on v4+.
 
 ## V2 invariants
 
