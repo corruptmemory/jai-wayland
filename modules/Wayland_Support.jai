@@ -691,8 +691,10 @@ Wayland_Window :: struct {
     wl_viewport:      Wl.Wp_Viewport;
     wl_have_viewport: bool;
 
-    // Frame-callback id recycler. cache_alloc per present, cache_free after
-    // wl_pump(true) returns — keeps the client-id stream contiguous.
+    // Frame-callback id recycler. cache_alloc per present; cache_free once that
+    // id's wl_callback.done has arrived (wl_present_and_pace for the callback it
+    // paced on, wl_route_message for an orphaned one) — keeps the client-id
+    // stream contiguous.
     wl_frame_cache: Wl.Id_Cache;
 
     // Slots from a prior resize whose buffers the compositor still holds; their
@@ -717,9 +719,20 @@ Wayland_Window :: struct {
     // in a Hyprland group, minimized, or on another workspace), so it sends no
     // wl_surface.frame callbacks. While starved, wl_present_and_pace does not
     // block on this window's callback, so a VISIBLE sibling keeps full vsync
-    // pacing. Cleared by the pump the instant a callback returns (the surface is
-    // being presented again). See wl_present_and_pace.
+    // pacing. Only a genuine timeout sets it: a configure/close interrupting the
+    // wait is an app turn, not occlusion. Cleared by the router when ANY frame
+    // callback this window allocated fires — the one being paced on, or a late
+    // one from wl_orphaned_frame_callbacks — since either proves the surface is
+    // being presented again. See wl_present_and_pace.
     wl_pacing_starved: bool;
+
+    // Frame-callback ids a pacing wait gave up on (timeout, or an app-turn bail)
+    // whose wl_callback.done may STILL arrive. When one does, the router clears
+    // wl_pacing_starved and recycles the id. Matching only the CURRENT pending id
+    // latched starvation forever: a starved window polls with timeout 0, so each
+    // frame abandoned its id before its done arrived and no done ever matched.
+    // Bounded by WL_ORPHANED_CALLBACK_CAP; see wl_orphan_frame_callback.
+    wl_orphaned_frame_callbacks: [..] u32;
 }
 
 // THE shared global window registry — one instance across Simp/Input/GetRect
@@ -844,6 +857,34 @@ wl_all_windows_starved :: () -> bool {
     return true;
 }
 
+// Most frame-callback ids one window keeps waiting for a late done. Reached only
+// by a window presenting unthrottled while starved (an occluded window beside a
+// visible sibling abandons one id per frame).
+WL_ORPHANED_CALLBACK_CAP :: 256;
+
+// Record a frame-callback id the pacing wait gave up on. At the cap, drop the
+// OLDEST without recycling it: the id may still be live server-side, so it can
+// never be reused, and its done, if it ever comes, goes unmatched. That is the
+// same id leak every abandonment had before the orphan list existed.
+wl_orphan_frame_callback :: (ww: *Wayland_Window, id: u32) {
+    if ww.wl_orphaned_frame_callbacks.count >= WL_ORPHANED_CALLBACK_CAP {
+        array_ordered_remove_by_index(*ww.wl_orphaned_frame_callbacks, 0);
+    }
+    array_add(*ww.wl_orphaned_frame_callbacks, id);
+}
+
+// True, and the id is forgotten, when id is one of this window's orphaned frame
+// callbacks. Each orphan is taken at most once.
+wl_take_orphaned_frame_callback :: (ww: *Wayland_Window, id: u32) -> bool {
+    for ww.wl_orphaned_frame_callbacks {
+        if it == id {
+            array_unordered_remove_by_index(*ww.wl_orphaned_frame_callbacks, it_index);
+            return true;
+        }
+    }
+    return false;
+}
+
 // Simp's present entry point. Attach the current slot, request a frame callback,
 // commit, then wait (BOUNDED) for the previous frame's callback — vsync-equivalent
 // pacing that degrades gracefully for occluded windows (see the wait below). This
@@ -880,17 +921,20 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
         // vsync). A starved window then skips the wait (timeout 0) so a VISIBLE
         // sibling keeps full vsync smoothness — UNLESS every window is starved
         // (the whole app is occluded), where we keep the full timeout so the loop
-        // idles rather than busy-spinning the GPU on invisible frames. The pump
-        // clears wl_pacing_starved the instant a callback returns, so normal
-        // pacing resumes as soon as the window is presented again.
+        // idles rather than busy-spinning the GPU on invisible frames. Every id
+        // the wait gives up on is orphaned, and a late done for ANY of them clears
+        // wl_pacing_starved in the router, so normal pacing resumes as soon as
+        // the window is presented again — even though, while starved, each frame
+        // abandons its own id before that id's done can arrive.
         timeout_ms: s32 = PRESENT_PACE_TIMEOUT_MS;
         if ww.wl_pacing_starved && !wl_all_windows_starved()  timeout_ms = 0;
         deadline := seconds_since_init() + (cast(float64) timeout_ms) / 1000.0;
 
+        app_turn := false;
         while !ww.wl_frame_done {
             sess := context.wayland_session;
             if !sess || sess.connection_lost  break;
-            if wl_any_window_needs_app_turn()  break;
+            if wl_any_window_needs_app_turn() { app_turn = true; break; }
 
             remaining := cast(s32)((deadline - seconds_since_init()) * 1000.0);
             if remaining < 0  remaining = 0;
@@ -902,10 +946,20 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
         if ww.wl_frame_done {
             Wl.cache_free(*ww.wl_frame_cache, pending_frame_callback);
             ww.wl_pacing_starved = false;
+        } else if app_turn {
+            // A configure/close (for this window or any other) interrupted the
+            // wait. That is an APP TURN, not evidence of occlusion, so starvation
+            // is left as it was: flagging it here is what left a window
+            // unthrottled after a resize while a sibling stayed visible. The
+            // callback may still fire; orphan the id so its arrival is recognised
+            // and the id recycled.
+            wl_orphan_frame_callback(ww, pending_frame_callback);
         } else {
-            // No callback within the budget → the surface isn't being presented.
-            // Leave the id unrecycled (it may still be live server-side, like the
-            // app-turn yield) and mark starved so subsequent frames don't block.
+            // Genuine timeout (or a lost connection) → the surface isn't being
+            // presented (occluded). Orphan the id (it may still be live server-side; its done, if it
+            // ever comes, is the recovery signal) and mark starved so subsequent
+            // frames don't block.
+            wl_orphan_frame_callback(ww, pending_frame_callback);
             ww.wl_pacing_starved = true;
         }
         ww.wl_pending_frame_callback = 0;
@@ -915,8 +969,9 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
     if wl_any_window_needs_app_turn() {
         // A configure/close arrived while pacing the previous frame. Return to
         // the app without committing another stale-size buffer; Input will emit
-        // resize/quit on the next frame. If the old callback later arrives, its
-        // id is intentionally not recycled because it may still be live server-side.
+        // resize/quit on the next frame. Nothing is abandoned here: the pacing
+        // block above already orphaned any unfired callback (the router recycles
+        // it on its late done) and zeroed wl_pending_frame_callback.
         ww.wl_pending_frame_callback = 0;
         ww.wl_frame_done = false;
         return;
@@ -1827,8 +1882,8 @@ wl_write_all :: (fd: s32, s: string) {
 //
 // WIRE GOTCHA: WL_CALLBACK_DONE and WL_BUFFER_RELEASE are BOTH opcode 0 —
 // different interfaces, same opcode byte. wl_route_message disambiguates by
-// object_id, matching the dynamic frame-callback id first, then xdg roles, then
-// buffers.
+// object_id, matching the dynamic frame-callback ids first (the pending one, then
+// the window's orphans), then xdg roles, then buffers.
 //
 // The persistent session.recv (session.jai) is what makes this correct across
 // calls: a wl_buffer.release coalesced into the same socket read as the frame
@@ -1926,6 +1981,19 @@ wl_route_message :: (header: *Wl.WaylandMessageHeader) -> routed: bool, done: bo
             ww.wl_frame_done = true;
             ww.wl_pacing_starved = false;
             done = true;
+            routed = true;
+            break;
+        } else if header.opcode == Wl.WL_CALLBACK_DONE && wl_take_orphaned_frame_callback(ww, header.object_id) {
+            // A frame callback this window's pacing wait gave up on fired late.
+            // (object, opcode) match: the take succeeds only for ids this window
+            // allocated as frame callbacks and orphaned, and an orphan is never
+            // recycled before its done, so no buffer or role object shares the
+            // id. The compositor IS presenting this surface: clear starvation (the
+            // recovery the current-id match above cannot reach while every frame
+            // abandons its id) and recycle the id. Not the frame being paced on,
+            // so neither wl_frame_done nor `done`.
+            Wl.cache_free(*ww.wl_frame_cache, header.object_id);
+            ww.wl_pacing_starved = false;
             routed = true;
             break;
         }
