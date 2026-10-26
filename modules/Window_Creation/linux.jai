@@ -261,6 +261,7 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
             exit(1);  // Basic.exit
         }
     }
+    WS.wl_install_foreign_router();
 
     // Surface / xdg role creation. allocate_id() is called immediately before
     // the request that creates each object so IDs go out contiguously and in
@@ -302,8 +303,10 @@ create_window_wayland :: (width: int, height: int, window_name: string) -> Windo
             configure_serial = Wl.read_u32(it.payload);
             got_configure = true;
             break;
-        } else {
-            WS.wl_route_registered_window_control_event(it, recv);
+        } else if !WS.wl_route_registered_window_control_event(it, recv) {
+            // Not a window control event: a frame callback, buffer release or
+            // input for an already-live window goes to the shared router.
+            Wl.route_foreign(*it);
         }
     }
 

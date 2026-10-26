@@ -93,6 +93,8 @@ get_dmabuf_info :: () -> Dmabuf_Info, bool {
                 fm.format = event.format.format;
                 fm.modifier = DRM_FORMAT_MOD_INVALID;
             }
+        } else {
+            route_foreign(*it);
         }
     }
 
@@ -182,6 +184,10 @@ collect_dmabuf_feedback :: (feedback: Zwp_Linux_Dmabuf_Feedback_V1, sync_id: u32
               case .DONE;
                 info.complete = true;
             }
+        } else {
+            // Not ours: an interleaved wl_keyboard.keymap would otherwise leave
+            // its fd ahead of FORMAT_TABLE's in the fd FIFO.
+            route_foreign(*it);
         }
     }
 

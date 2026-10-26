@@ -955,6 +955,7 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
 // Bring up EGL-on-GBM, negotiate a dmabuf format, allocate the double-buffered
 // slots at the window's current size. Leaves wl_initted=true on success.
 wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
+    wl_install_foreign_router();
     if !wl_ensure_shared_egl() {
         log_error("Wayland_Support: EGL/GBM init failed");
         return false;
@@ -1258,6 +1259,7 @@ provisional_input_events: [..] Wl_Input_Event;
 wl_acquire_input :: () {
     if wl_input_acquired  return;
     wl_input_acquired = true;
+    wl_install_foreign_router();
 
     seats := Wl.get_seats_info();
     wl_keyboards = Wl.get_keyboards_info(seats);
@@ -1802,10 +1804,10 @@ wl_write_all :: (fd: s32, s: string) {
 
 // wl_pump is THE single drain of the persistent session buffer, serving BOTH
 // rendering (Simp) and input (Input) because the one compositor connection
-// multiplexes everything. It routes each message to its owning record in
-// wayland_global_windows: frame callback / xdg_*.configure / xdg_toplevel.close
-// / wl_buffer.release. Input events (everything it does not recognize) are
-// dropped FOR NOW — the Input slice deposits them into a shared queue here.
+// multiplexes everything. It answers ping and wl_display.error itself and hands
+// every other message to wl_route_message, the single router it shares with the
+// roundtrip drains (frame callback / xdg_*.configure / xdg_toplevel.close /
+// wl_buffer.release / keyboard / pointer / touch / data device / clipboard).
 //
 // blocking=true  — block (reading the socket as needed) until a window's pending
 //                  frame callback fires. Vsync-equivalent pacing (swap_buffers).
@@ -1817,8 +1819,9 @@ wl_write_all :: (fd: s32, s: string) {
 // duplication is accepted for this first draft.
 //
 // WIRE GOTCHA: WL_CALLBACK_DONE and WL_BUFFER_RELEASE are BOTH opcode 0 —
-// different interfaces, same opcode byte. We disambiguate by object_id, matching
-// the dynamic frame-callback id first, then xdg roles, then buffers.
+// different interfaces, same opcode byte. wl_route_message disambiguates by
+// object_id, matching the dynamic frame-callback id first, then xdg roles, then
+// buffers.
 //
 // The persistent session.recv (session.jai) is what makes this correct across
 // calls: a wl_buffer.release coalesced into the same socket read as the frame
@@ -1869,128 +1872,176 @@ wl_pump :: (blocking: bool) {
             Wl.xdg_wm_base_pong(*ping_batch, *session.wm_base, serial);
             Wl.wayland_send(*session.conn, *ping_batch);
         } else {
-            // Route to the owning window record. The opcode-0 collision zone
-            // (callback.done / xdg_surface.configure / buffer.release) is
-            // disambiguated by object_id, so these object-id-qualified branches
-            // MUST precede the opcode-only buffer-release scan below.
-            routed := false;
-            for * ww: wayland_global_windows {
-                if ww.wl_pending_frame_callback != 0 && header.object_id == ww.wl_pending_frame_callback && header.opcode == Wl.WL_CALLBACK_DONE {
-                    // The frame we're pacing on fired. Flag it (wl_present_and_pace's
-                    // vsync throttle loops on wl_frame_done) and stop the blocking
-                    // wait. SWAP owns the id recycle (cache_free). A callback means
-                    // the compositor is presenting this surface again, so clear the
-                    // starvation flag (it may have been read during a sibling's wait).
-                    ww.wl_frame_done = true;
-                    ww.wl_pacing_starved = false;
-                    done = true;
-                    routed = true;
-                    break;
-                }
-                if header.object_id == ww.xdg_surface.id && header.opcode == Wl.XDG_SURFACE_CONFIGURE {
-                    // Ack the serial — the protocol REQUIRES every configure be acked.
-                    serial := Wl.read_u32(header.payload);
-                    ack_batch: Wl.MessageBuilder;
-                    Wl.xdg_surface_ack_configure(*ack_batch, *ww.xdg_surface, serial);
-                    Wl.wayland_send(*ack_batch);
-                    routed = true;
-                    break;
-                }
-                if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
-                    // Carries the suggested size (0x0 means "you decide"). Update
-                    // the registry (the size source of truth) and flag size_dirty so
-                    // consumers re-sync: Simp's next update_window -> BACKEND_RESIZE
-                    // reallocs the slots, and Input emits a Window_Resize_Record that
-                    // get_window_resizes() returns (invaders/GetRect re-layout off it).
-                    args: Wl.Xdg_Toplevel_Configure_Args;
-                    Wl.unmarshal(*args, header.payload, *session.recv);
-                    if wl_note_configure_size(ww, args.width, args.height)  done = true;
-                    routed = true;
-                    break;
-                }
-                if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CLOSE {
-                    ww.wl_close_requested = true;
-                    done = true;
-                    routed = true;
-                    break;
-                }
-            }
-
-            // Opcode-0 catch: a slot/retired buffer's only event is release.
-            if !routed && header.opcode == Wl.WL_BUFFER_RELEASE {
-                for * ww: wayland_global_windows {
-                    for * ww.wl_slots {
-                        if it.buffer.id == header.object_id {
-                            it.in_flight = false;
-                            // Let wl_present_and_pace's throttle (a blocking wl_pump)
-                            // stop as soon as an active slot frees. (Async present
-                            // dropped the frame callback that used to set `done`.)
-                            done = true;
-                            routed = true;
-                            break;
-                        }
-                    }
-                    if routed  break;
-                    release_batch: Wl.MessageBuilder;
-                    if wl_release_retired_slot(*release_batch, *ww.wl_retired, header.object_id, wl_shared_egl) {
-                        Wl.wayland_send(*release_batch);
-                        routed = true;
-                        break;
-                    }
-                }
-            }
-
-            // Still unrouted → try input. Keyboard messages (matched against the
-            // acquired wl_keyboards) decode into stable Wl_Input_Events appended
-            // to provisional_input_events, which consumers drain each frame.
-            // Pointer/touch are later slices; anything still unrouted is dropped
-            // (the defer above consumes it regardless).
-            if !routed && wl_keyboards.count > 0 {
-                kev, is_kb := Wl.get_keyboard_event(header, wl_keyboards, *session.recv);
-                if is_kb {
-                    wl_handle_keyboard_event(kev);
-                    routed = true;
-                }
-            }
-            if !routed && wl_pointers.count > 0 {
-                pev, is_ptr := Wl.get_pointer_event(header, wl_pointers, *session.recv);
-                if is_ptr {
-                    wl_handle_pointer_event(pev);
-                    routed = true;
-                }
-            }
-            if !routed && wl_touches.count > 0 {
-                tev, is_touch := Wl.get_touch_event(header, wl_touches, *session.recv);
-                if is_touch {
-                    wl_handle_touch_event(tev);
-                    routed = true;
-                }
-            }
-
-            // Drag-and-drop: wl_data_device events (drag-session lifecycle +
-            // selection) match a device id; wl_data_offer events (mime
-            // advertisement, opcode 0 — same byte as buffer.release, but on the
-            // disjoint server-allocated offer-id range) match a tracked offer.
-            if !routed && wl_data_devices.count > 0 {
-                dd_ev, is_dd := Wl.get_data_device_event(header, wl_data_devices, *session.recv);
-                if is_dd {
-                    wl_handle_data_device_event(dd_ev);
-                    routed = true;
-                }
-            }
-            if !routed && wl_dnd_is_tracked_offer(header.object_id) {
-                off_ev := Wl.get_data_offer_event(header, *session.recv);
-                wl_handle_data_offer_event(off_ev, header.object_id);
-                routed = true;
-            }
-            // Our own clipboard source: serve wl_data_source.send / .cancelled.
-            if !routed && wl_clipboard_source != 0 && header.object_id == wl_clipboard_source {
-                src_ev := Wl.get_data_source_event(header, *session.recv);
-                wl_handle_data_source_event(src_ev);
-                routed = true;
-            }
+            _, done = wl_route_message(*header);
         }
 
         if blocking && done  break;
     }
+}
+
+// Route ONE message to the record that owns it: window frame callback /
+// xdg_surface.configure / xdg_toplevel.configure / close, slot or retired
+// wl_buffer.release, keyboard, pointer, touch, data device, tracked data offer,
+// our clipboard source. THE single router: wl_pump calls it for every message it
+// does not handle itself (ping, wl_display.error), and every roundtrip drain
+// reaches it through the session's foreign_handler (wl_route_foreign), so a
+// message that arrives while a drain waits for its own sync is handled exactly as
+// the pump would handle it.
+//
+// It reads header.payload and POPS any fds the message carries, keeping the
+// in_fds FIFO in step with the byte stream. It NEVER consumes message bytes (the
+// caller's defer does) and NEVER starts a roundtrip or reads the socket: no
+// `for session()` helper, no wayland_receive, no wl_pump, here or in any handler
+// it calls, because it runs from inside those drains.
+//
+// Returns whether a handler took the message, and whether the message should stop
+// a BLOCKING pump wait (frame callback fired, slot buffer freed, size changed,
+// close requested).
+wl_route_message :: (header: *Wl.WaylandMessageHeader) -> routed: bool, done: bool {
+    session := context.wayland_session;
+    done := false;
+
+    // Route to the owning window record. The opcode-0 collision zone
+    // (callback.done / xdg_surface.configure / buffer.release) is
+    // disambiguated by object_id, so these object-id-qualified branches
+    // MUST precede the opcode-only buffer-release scan below.
+    routed := false;
+    for * ww: wayland_global_windows {
+        if ww.wl_pending_frame_callback != 0 && header.object_id == ww.wl_pending_frame_callback && header.opcode == Wl.WL_CALLBACK_DONE {
+            // The frame we're pacing on fired. Flag it (wl_present_and_pace's
+            // vsync throttle loops on wl_frame_done) and stop the blocking
+            // wait. SWAP owns the id recycle (cache_free). A callback means
+            // the compositor is presenting this surface again, so clear the
+            // starvation flag (it may have been read during a sibling's wait).
+            ww.wl_frame_done = true;
+            ww.wl_pacing_starved = false;
+            done = true;
+            routed = true;
+            break;
+        }
+        if header.object_id == ww.xdg_surface.id && header.opcode == Wl.XDG_SURFACE_CONFIGURE {
+            // Ack the serial — the protocol REQUIRES every configure be acked.
+            serial := Wl.read_u32(header.payload);
+            ack_batch: Wl.MessageBuilder;
+            Wl.xdg_surface_ack_configure(*ack_batch, *ww.xdg_surface, serial);
+            Wl.wayland_send(*ack_batch);
+            routed = true;
+            break;
+        }
+        if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CONFIGURE {
+            // Carries the suggested size (0x0 means "you decide"). Update
+            // the registry (the size source of truth) and flag size_dirty so
+            // consumers re-sync: Simp's next update_window -> BACKEND_RESIZE
+            // reallocs the slots, and Input emits a Window_Resize_Record that
+            // get_window_resizes() returns (invaders/GetRect re-layout off it).
+            args: Wl.Xdg_Toplevel_Configure_Args;
+            Wl.unmarshal(*args, header.payload, *session.recv);
+            if wl_note_configure_size(ww, args.width, args.height)  done = true;
+            routed = true;
+            break;
+        }
+        if header.object_id == ww.toplevel.id && header.opcode == Wl.XDG_TOPLEVEL_CLOSE {
+            ww.wl_close_requested = true;
+            done = true;
+            routed = true;
+            break;
+        }
+    }
+
+    // Opcode-0 catch: a slot/retired buffer's only event is release.
+    if !routed && header.opcode == Wl.WL_BUFFER_RELEASE {
+        for * ww: wayland_global_windows {
+            for * ww.wl_slots {
+                if it.buffer.id == header.object_id {
+                    it.in_flight = false;
+                    // Let wl_present_and_pace's throttle (a blocking wl_pump)
+                    // stop as soon as an active slot frees. (Async present
+                    // dropped the frame callback that used to set `done`.)
+                    done = true;
+                    routed = true;
+                    break;
+                }
+            }
+            if routed  break;
+            release_batch: Wl.MessageBuilder;
+            if wl_release_retired_slot(*release_batch, *ww.wl_retired, header.object_id, wl_shared_egl) {
+                Wl.wayland_send(*release_batch);
+                routed = true;
+                break;
+            }
+        }
+    }
+
+    // Still unrouted → try input. Keyboard messages (matched against the
+    // acquired wl_keyboards) decode into stable Wl_Input_Events appended
+    // to provisional_input_events, which consumers drain each frame.
+    // Anything still unrouted is dropped (the caller consumes its bytes
+    // regardless).
+    if !routed && wl_keyboards.count > 0 {
+        kev, is_kb := Wl.get_keyboard_event(header.*, wl_keyboards, *session.recv);
+        if is_kb {
+            wl_handle_keyboard_event(kev);
+            routed = true;
+        }
+    }
+    if !routed && wl_pointers.count > 0 {
+        pev, is_ptr := Wl.get_pointer_event(header.*, wl_pointers, *session.recv);
+        if is_ptr {
+            wl_handle_pointer_event(pev);
+            routed = true;
+        }
+    }
+    if !routed && wl_touches.count > 0 {
+        tev, is_touch := Wl.get_touch_event(header.*, wl_touches, *session.recv);
+        if is_touch {
+            wl_handle_touch_event(tev);
+            routed = true;
+        }
+    }
+
+    // Drag-and-drop: wl_data_device events (drag-session lifecycle +
+    // selection) match a device id; wl_data_offer events (mime
+    // advertisement, opcode 0 — same byte as buffer.release, but on the
+    // disjoint server-allocated offer-id range) match a tracked offer.
+    if !routed && wl_data_devices.count > 0 {
+        dd_ev, is_dd := Wl.get_data_device_event(header.*, wl_data_devices, *session.recv);
+        if is_dd {
+            wl_handle_data_device_event(dd_ev);
+            routed = true;
+        }
+    }
+    if !routed && wl_dnd_is_tracked_offer(header.object_id) {
+        off_ev := Wl.get_data_offer_event(header.*, *session.recv);
+        wl_handle_data_offer_event(off_ev, header.object_id);
+        routed = true;
+    }
+    // Our own clipboard source: serve wl_data_source.send / .cancelled.
+    if !routed && wl_clipboard_source != 0 && header.object_id == wl_clipboard_source {
+        src_ev := Wl.get_data_source_event(header.*, *session.recv);
+        wl_handle_data_source_event(src_ev);
+        routed = true;
+    }
+
+    return routed, done;
+}
+
+// The session's foreign_handler (see wl_install_foreign_router). A roundtrip drain
+// hands every message it does not own to wl_route_message; routed/done mean
+// nothing to a drain, which stops on its own sync.
+wl_route_foreign :: (header: *Wl.WaylandMessageHeader) {
+    wl_route_message(header);
+}
+
+// Point the session's foreign_handler at wl_route_foreign, so every roundtrip
+// drain (get_seats_info, get_dmabuf_info, a window's configure wait, ...) passes
+// messages it does not own to the single router instead of dropping them.
+// Idempotent. Called at the top of create_window_wayland, wl_acquire_input and
+// wl_window_init_gl: the entry points that run drains while windows may be live.
+wl_install_foreign_router :: () {
+    sess := context.wayland_session;
+    if !sess {
+        log_error("Wayland_Support: no Wayland session to install the foreign-message router on");
+        return;
+    }
+    sess.foreign_handler = wl_route_foreign;
 }

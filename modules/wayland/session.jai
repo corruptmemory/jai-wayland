@@ -20,6 +20,9 @@ WaylandSession :: struct {
     // compositor sends wl_display.error. The drain exits; consumers can check
     // this after their loop to detect disconnection.
     connection_lost: bool;
+    // Where a roundtrip drain sends a message that is neither its sync nor one of
+    // its own objects (see route_foreign). Null in a bare session.
+    foreign_handler: Foreign_Message_Handler;
 }
 
 #add_context wayland_session: *WaylandSession;
@@ -29,6 +32,24 @@ WaylandMessageHeader :: struct {
     opcode: u16;
     msg_size: u32;
     payload: *u8;
+}
+
+// A roundtrip drain (a `for session()` loop that waits for its own sync) sees
+// every message the compositor sends meanwhile, not only the ones it asked for.
+// The handler receives each message the drain does not own. It runs BEFORE the
+// loop's deferred byte-consume, so it can read header.payload and must pop any
+// fds the message carries; incoming fds ride a separate FIFO (recv.in_fds) that
+// only unmarshal pops, so a skipped fd-bearing message would leave its fd at the
+// head and the next fd-bearing event would pop the wrong one. A handler never
+// consumes bytes and never starts a roundtrip of its own.
+Foreign_Message_Handler :: #type (header: *WaylandMessageHeader);
+
+// The fall-through for a drain body: hand a message that is neither the drain's
+// sync nor one of its own objects to the session's foreign_handler. Without a
+// handler (a bare session whose owner runs its own loops) the message is skipped.
+route_foreign :: (header: *WaylandMessageHeader) {
+    handler := context.wayland_session.foreign_handler;
+    if handler  handler(header);
 }
 
 for_expansion :: (session: *WaylandSession, body: Code, flags: For_Flags) #expand {

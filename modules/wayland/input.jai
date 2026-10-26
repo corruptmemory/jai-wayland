@@ -48,8 +48,10 @@ get_seats_info :: () -> [] Seat_Info {
     for session() {
         if it.object_id == sync_id  break;
 
+        matched := false;
         for *seat, si: seats {
             if it.object_id == seat.seat.id {
+                matched = true;
                 event: Wl_Seat_Event;
                 unmarshal_event(*event, it.opcode, it.payload, recv);
                 if event.kind == {
@@ -61,6 +63,7 @@ get_seats_info :: () -> [] Seat_Info {
                 break;
             }
         }
+        if !matched  route_foreign(*it);
     }
 
     return seats;
@@ -95,8 +98,10 @@ get_keyboards_info :: (seats: [] Seat_Info) -> [] Keyboard_Info {
     for session() {
         if it.object_id == sync_id  break;
 
+        matched := false;
         for *kb: keyboards {
             if it.object_id == kb.keyboard.id {
+                matched = true;
                 event: Wl_Keyboard_Event;
                 unmarshal_event(*event, it.opcode, it.payload, recv);
                 if event.kind == .KEYMAP {
@@ -106,6 +111,7 @@ get_keyboards_info :: (seats: [] Seat_Info) -> [] Keyboard_Info {
                 break;
             }
         }
+        if !matched  route_foreign(*it);
     }
 
     return keyboards;
@@ -138,6 +144,7 @@ get_pointers_info :: (seats: [] Seat_Info) -> [] Pointer_Info {
     // Pointer has no initial burst like keymap — just drain the sync
     for session() {
         if it.object_id == sync_id  break;
+        route_foreign(*it);
     }
 
     return pointers;
@@ -199,7 +206,10 @@ get_touch_info :: (seats: [] Seat_Info) -> [] Touch_Info {
     wayland_send(*batch);
 
     // Touch has no initial burst — just drain the sync.
-    for session()  if it.object_id == sync_id  break;
+    for session() {
+        if it.object_id == sync_id  break;
+        route_foreign(*it);
+    }
 
     return touches;
 }
@@ -254,9 +264,12 @@ get_data_devices_info :: (seats: [] Seat_Info) -> [] Data_Device_Info, Wl_Data_D
     wayland_send(*batch);
 
     // Drain the sync. The compositor may introduce a data_offer for the current
-    // clipboard selection in this same burst; we let it fall through (we don't
-    // support paste yet) and only wait for the sync to know acquisition is done.
-    for session()  if it.object_id == sync_id  break;
+    // clipboard selection in this same burst; it goes to route_foreign with
+    // everything else, and we only wait for the sync to know acquisition is done.
+    for session() {
+        if it.object_id == sync_id  break;
+        route_foreign(*it);
+    }
 
     return devices, mgr;
 }

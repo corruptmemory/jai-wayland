@@ -64,8 +64,10 @@ get_screens_info :: () -> [] Screen_Info {
         if it.object_id == sync_id  break;
 
         // Find which output this event belongs to
+        matched := false;
         for output, oi: outputs {
             if it.object_id == output.id {
+                matched = true;
                 screen := *screens[oi];
                 event: Wl_Output_Event;
                 unmarshal_event(*event, it.opcode, it.payload, recv);
@@ -103,6 +105,7 @@ get_screens_info :: () -> [] Screen_Info {
                 break;
             }
         }
+        if !matched  route_foreign(*it);
     }
 
     return screens;
