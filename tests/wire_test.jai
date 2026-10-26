@@ -39,6 +39,8 @@ main :: () {
     test_wayland_send_refuses_overflowed_batch();
     test_receive_pop_fd_empty_logs_and_returns_minus_one();
     test_cache_free_unknown_id_logs_and_continues();
+    test_cache_alloc_uninitialised_connection_returns_zero();
+    test_wayland_send_short_write_keeps_unsent_tail();
 
     print("\n=== All wire tests passed ===\n");
 }
@@ -475,6 +477,111 @@ test_cache_free_unknown_id_logs_and_continues :: () {
     assert(cache.entries.count == 0, "freeing an unknown id should leave the cache empty");
     assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
     print("  PASS: cache_free_unknown_id_logs_and_continues\n");
+}
+
+test_cache_alloc_uninitialised_connection_returns_zero :: () {
+    conn: Wayland.Connection;  // next_id = 1: never initialised past wl_display
+    cache: Wayland.Id_Cache;
+
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    id: u32;
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        id = Wayland.cache_alloc(*cache, *conn);
+    }
+
+    assert(id == 0, "cache_alloc on an uninitialised connection should return 0, got %", id);
+    assert(cache.entries.count == 0, "a failed id must not enter the cache, got % entries", cache.entries.count);
+    assert(rec.errors.count == 1, "expected exactly one logged error, got %", rec.errors.count);
+    print("  PASS: cache_alloc_uninitialised_connection_returns_zero\n");
+}
+
+test_wayland_send_short_write_keeps_unsent_tail :: () {
+    sv: [2] s32;
+    rc := Socket.socketpair(Socket.AF_LOCAL, .STREAM, cast(Socket.IPPROTO) 0, *sv);
+    assert(rc == 0, "socketpair failed, errno=%", POSIX.errno());
+    defer { POSIX.close(sv[0]); POSIX.close(sv[1]); }
+
+    // A minimum-size send buffer and a non-blocking sender make sendmsg take only
+    // part of a full batch and then fail with EAGAIN while the peer is not reading.
+    // That is a deterministic short write, with no timing involved.
+    sndbuf: s32 = 1;  // the kernel raises this to its minimum
+    rc = Socket.setsockopt(sv[0], Socket.SOL_SOCKET, Socket.SO_SNDBUF, *sndbuf, size_of(s32));
+    assert(rc == 0, "setsockopt(SO_SNDBUF) failed, errno=%", POSIX.errno());
+    // The peer is non-blocking too. On a Unix socket the bytes are queued at the
+    // peer by the time sendmsg returns, so a drain only runs dry if the sender
+    // reported bytes it never sent. That then fails an assert instead of blocking forever.
+    for sv {
+        fl := POSIX.fcntl(it, POSIX.F_GETFL);
+        rc = POSIX.fcntl(it, POSIX.F_SETFL, fl | POSIX.O_NONBLOCK);
+        assert(rc == 0, "fcntl(O_NONBLOCK) failed, errno=%", POSIX.errno());
+    }
+
+    pipe_fds: [2] s32;
+    rc = POSIX.pipe(*pipe_fds);
+    assert(rc == 0, "pipe failed, errno=%", POSIX.errno());
+    defer { POSIX.close(pipe_fds[0]); POSIX.close(pipe_fds[1]); }
+
+    sender := Wayland.Connection.{ socket_fd = sv[0], next_id = 2 };
+    peer   := Wayland.Connection.{ socket_fd = sv[1], next_id = 2 };
+
+    // Fill the whole batch with a position-dependent pattern, so a byte dropped or
+    // sent twice anywhere in the stream fails the final comparison.
+    batch: Wayland.MessageBuilder;
+    src := NewArray(batch.out_buf.count, u8,, temp);
+    for * src  it.* = cast(u8)((it_index * 7 + 3) & 0xFF);
+    Wayland.message_queue(*batch, src.data, cast(u32) src.count);
+    Wayland.message_queue_fd(*batch, pipe_fds[0]);
+
+    inbox: Wayland.ReceiveBuffer;
+    rec: Error_Recorder;
+    defer free_errors(*rec);
+    failed_sends := 0;
+    done := false;
+    ctx := context;
+    ctx.logger      = record_errors;
+    ctx.logger_data = *rec;
+    push_context ctx {
+        for round: 1..64 {
+            before := batch.out_used;
+            if Wayland.wayland_send(*sender, *batch) { done = true; break; }
+
+            failed_sends += 1;
+            after := batch.out_used;
+            assert(after < before, "round %: the short write should have moved some bytes (% left of %)", round, after, before);
+            assert(batch.out_fds_count == 0, "round %: the fd rides the first sendmsg, so the batch must not keep it", round);
+
+            // The peer still holds everything, so a retry now moves nothing and
+            // must leave the batch exactly as it is.
+            assert(!Wayland.wayland_send(*sender, *batch), "round %: a send into a full socket should fail", round);
+            assert(batch.out_used == after, "round %: a send that moved nothing should keep the batch, % became %", round, after, batch.out_used);
+
+            // Drain everything sent so far, then send the rest.
+            sent_so_far := src.count - batch.out_used;
+            while inbox.in_used < sent_so_far {
+                n := Wayland.wayland_receive(*peer, *inbox);
+                assert(n > 0, "round %: the peer ran dry at % of % bytes sent", round, inbox.in_used, sent_so_far);
+            }
+        }
+        assert(done, "the batch was not fully sent in 64 rounds (% bytes left)", batch.out_used);
+
+        while inbox.in_used < src.count {
+            n := Wayland.wayland_receive(*peer, *inbox);
+            assert(n > 0, "the peer ran dry at % of % bytes: a send reported bytes it never sent", inbox.in_used, src.count);
+        }
+    }
+
+    assert(failed_sends >= 1, "setup: the batch must exceed the send buffer, or no short write happened");
+    assert(batch.out_used == 0 && batch.out_fds_count == 0, "the final send should reset the batch");
+    assert(rec.errors.count == 2 * failed_sends, "one logged error per failed send: % errors for % failures", rec.errors.count, 2 * failed_sends);
+    assert(inbox.in_used == src.count, "the peer should hold exactly % bytes, got %", src.count, inbox.in_used);
+    assert(memcmp(inbox.in_buf.data, src.data, src.count) == 0, "the peer should receive every byte exactly once, in order");
+    assert(inbox.in_fds_count == 1, "the fd should arrive exactly once, got %", inbox.in_fds_count);
+    POSIX.close(inbox.in_fds[0]);
+    print("  PASS: wayland_send_short_write_keeps_unsent_tail\n");
 }
 
 #scope_file

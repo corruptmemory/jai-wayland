@@ -106,6 +106,7 @@ cache_alloc :: (cache: *Id_Cache, conn: *Connection) -> u32 {
     }
 
     id := allocate_id(conn);
+    if id == 0  return 0;  // allocate_id logged why; a failed id never enters the cache
     array_add(*cache.entries, .{ id = id, live = true });
     return id;
 }
@@ -216,8 +217,14 @@ receive_pop_fd :: (buf: *ReceiveBuffer) -> s32 {
 // --- New API: Send/Receive ---
 
 // Send queued messages from a MessageBuilder via the connection socket.
-// Resets the batch on success. An overflowed batch is refused: it is logged,
-// nothing is sent, the batch is left as it is, and the result is false.
+// A stream socket can take part of a batch in one sendmsg (a signal, a full
+// socket buffer), so this loops until every byte has gone. The queued fds ride
+// only the first sendmsg that moves bytes. Resets the batch on success.
+// A sendmsg failure is logged and returns false without resetting the batch: it
+// keeps only the bytes (and fds) that never left, so a later send carries on with
+// the stream instead of repeating part of it.
+// An overflowed batch is refused: it is logged, nothing is sent, the batch is
+// left as it is, and the result is false.
 wayland_send :: (conn: *Connection, batch: *MessageBuilder) -> bool {
     if batch.overflowed {
         log_error("Wayland batch overflowed while queueing (% bytes, % fds held); refusing to send an incomplete request stream", batch.out_used, batch.out_fds_count);
@@ -225,25 +232,42 @@ wayland_send :: (conn: *Connection, batch: *MessageBuilder) -> bool {
     }
     if batch.out_used == 0  return true;
 
-    iov := iovec.{ iov_base = batch.out_buf.data, iov_len = cast(u64) batch.out_used };
-    msg := msghdr.{ msg_iov = *iov, msg_iovlen = 1 };
-
-    // Set up ancillary data for fd passing if we have queued fds.
     cmsg_buf: [CMSG_BUF_SIZE] u8;
-    if batch.out_fds_count > 0 {
-        fd_data_size := cast(int)(batch.out_fds_count * size_of(s32));
-        msg.msg_control = cmsg_buf.data;
-        msg.msg_controllen = cast(u64) CMSG_SPACE(fd_data_size);
+    sent: u32 = 0;
+    while sent < batch.out_used {
+        iov := iovec.{ iov_base = batch.out_buf.data + sent, iov_len = cast(u64)(batch.out_used - sent) };
+        msg := msghdr.{ msg_iov = *iov, msg_iovlen = 1 };
 
-        cmsg := CMSG_FIRSTHDR(*msg);
-        cmsg.cmsg_level = SOL_SOCKET;
-        cmsg.cmsg_type = cast(s32) SCM.RIGHTS;
-        cmsg.cmsg_len = cast(u64) CMSG_LEN(fd_data_size);
-        memcpy(CMSG_DATA(cmsg), cast(*u8) batch.out_fds.data, fd_data_size);
+        // Ancillary data for fd passing, on the first sendmsg only.
+        if sent == 0 && batch.out_fds_count > 0 {
+            fd_data_size := cast(int)(batch.out_fds_count * size_of(s32));
+            msg.msg_control = cmsg_buf.data;
+            msg.msg_controllen = cast(u64) CMSG_SPACE(fd_data_size);
+
+            cmsg := CMSG_FIRSTHDR(*msg);
+            cmsg.cmsg_level = SOL_SOCKET;
+            cmsg.cmsg_type = cast(s32) SCM.RIGHTS;
+            cmsg.cmsg_len = cast(u64) CMSG_LEN(fd_data_size);
+            memcpy(CMSG_DATA(cmsg), cast(*u8) batch.out_fds.data, fd_data_size);
+        }
+
+        bytes_sent := sendmsg(conn.socket_fd, *msg, cast(MSG) 0);
+        if bytes_sent <= 0 {
+            err := errno();
+            if bytes_sent < 0 && err == EINTR  continue;  // interrupted before any byte moved: retry
+
+            log_error("Wayland sendmsg returned % (errno %) after % of % bytes; the % unsent bytes stay in the batch", bytes_sent, err, sent, batch.out_used, batch.out_used - sent);
+            if sent > 0 {
+                // Drop the prefix that did go out, fds included: they left with it.
+                remaining := batch.out_used - sent;
+                for i: 0..(cast(s64) remaining) - 1  batch.out_buf[i] = batch.out_buf[(cast(s64) sent) + i];
+                batch.out_used = remaining;
+                batch.out_fds_count = 0;
+            }
+            return false;
+        }
+        sent += cast(u32) bytes_sent;
     }
-
-    bytes_sent := sendmsg(conn.socket_fd, *msg, cast(MSG) 0);
-    if bytes_sent < 0  return false;
 
     batch.out_used = 0;
     batch.out_fds_count = 0;
@@ -251,7 +275,8 @@ wayland_send :: (conn: *Connection, batch: *MessageBuilder) -> bool {
 }
 
 // Read incoming data into a ReceiveBuffer via the connection socket.
-// Returns number of bytes read, or -1 on error.
+// Returns number of bytes read, or -1 on error. Truncated control data
+// (MSG_CTRUNC) counts as an error: it is logged and the result is -1.
 wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
     // Compact the incoming message buffer: move unread data to front.
     available := buf.in_used - buf.in_read;
@@ -287,6 +312,13 @@ wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
     bytes_read := recvmsg(conn.socket_fd, *msg, cast(MSG) 0);
     if bytes_read <= 0  return bytes_read;
 
+    // MSG_CTRUNC: the control data did not fit, so the kernel discarded fds the
+    // compositor sent. The fd queue no longer lines up with the messages that
+    // reference it, so the connection is unusable; libwayland treats this case
+    // the same way. The fds that did arrive are closed below, and the result is -1,
+    // which callers treat as a lost connection.
+    truncated := (msg.msg_flags & cast(s32) MSG.CTRUNC) != 0;
+
     buf.in_used += cast(u32) bytes_read;
 
     // Walk the cmsg chain extracting file descriptors.
@@ -298,7 +330,9 @@ wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
             num_fds := payload_size / cast(u64) size_of(s32);
             for i: 0..cast(s64)(num_fds - 1) {
                 fd := (cast(*s32)(fd_data + i * size_of(s32))).*;
-                if buf.in_fds_count < buf.in_fds.count {
+                if truncated {
+                    close(fd);
+                } else if buf.in_fds_count < buf.in_fds.count {
                     buf.in_fds[buf.in_fds_count] = fd;
                     buf.in_fds_count += 1;
                 } else {
@@ -311,6 +345,10 @@ wayland_receive :: (conn: *Connection, buf: *ReceiveBuffer) -> s64 {
         cmsg = __cmsg_nxthdr(*msg, cmsg);
     }
 
+    if truncated {
+        log_error("Wayland recvmsg truncated the control data (MSG_CTRUNC): the kernel discarded received fds, so the connection is unusable");
+        return -1;
+    }
     return bytes_read;
 }
 

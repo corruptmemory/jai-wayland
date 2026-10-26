@@ -20,7 +20,7 @@ Wayland client library for Jai. Bypasses libwayland entirely — speaks the wire
 ./build.sh              # Build main → build/main
 ./build.sh - test       # Build and run 22 XML/protocol tests
 ./build.sh - gen_test   # Build and run 35 generator tests
-./build.sh - wire_test  # Build and run 27 wire protocol tests
+./build.sh - wire_test  # Build and run 29 wire protocol tests
 ./build.sh - xkb_test   # Build and run XKB keymap parser tests
 ./build.sh - dmabuf_test  # Build and run 2 dmabuf tests (DRM modifier assembly, feedback format-table parse)
 ./build.sh - registry_test  # Build and run 2 registry tests (bind by Global_Info: each global's own name, min-version negotiation)
@@ -154,13 +154,13 @@ The point: the vendored Simp/Input/Window_Creation run unchanged-in-shape on Way
 **Tests:**
 - `tests/xml_test.jai`: 22 tests (pull parser, entities, protocol parsing)
 - `tests/generator_test.jai`: 35 tests (naming, enums, events, requests, assembly, end-to-end)
-- `tests/wire_test.jai`: 27 tests (primitive writers/readers, header pack/unpack, string/array read/write, MessageBuilder queueing, ReceiveBuffer peek/consume/pop_fd, and the connection layer's logged refusals under an error-recording logger: batch and fd-queue overflow, `wayland_send` of an overflowed batch over a socketpair, empty fd FIFO, `cache_free` of an unknown id)
+- `tests/wire_test.jai`: 29 tests (primitive writers/readers, header pack/unpack, string/array read/write, MessageBuilder queueing, ReceiveBuffer peek/consume/pop_fd, and the connection layer's logged refusals under an error-recording logger: batch and fd-queue overflow, `wayland_send` of an overflowed batch over a socketpair, empty fd FIFO, `cache_free` of an unknown id, `cache_alloc` on an uninitialised connection, and a short write over a non-blocking socketpair that keeps exactly the unsent tail and delivers every byte and the fd once)
 - `tests/marshal_test.jai`: 9 tests (fixed args, fd, string, array, Fixed, empty, constructors — all target MessageBuilder)
 - `tests/unmarshal_test.jai`: 12 tests (round-trip fixed/string/array/Fixed/fd/empty, *void, *Interface temp alloc, tagged union dispatch with real Wl_Output_Event)
 - `tests/compile_test.jai`: 11 tests (imports generated module, verifies types/Fd/arg structs/version defaults compile)
 - `tests/dmabuf_test.jai`: 2 tests (`make_drm_modifier` keeps the high word; a memfd-backed feedback format table parses to the full 64-bit modifier)
 - `tests/registry_test.jai`: 2 tests (two `wl_output` globals bound by `Global_Info` write their own names 10 and 11 with new ids 3 and 4; the bound version is min(advertised, the descriptor's))
-- **Total: 123 tests across 9 test suites**
+- **Total: 125 tests across 9 test suites**
 
 ## Jai Toolchain
 
