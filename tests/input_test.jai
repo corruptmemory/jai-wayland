@@ -32,7 +32,7 @@ main :: () {
 
 // A press and release inside one frame must still read as pressed this frame:
 // the release keeps START and swaps DOWN for END. A release with no press this
-// frame is a plain END.
+// frame is a plain END. The tap then clears to NONE on the next frame.
 test_release_preserves_start_bit :: () {
     State :: Input.Key_Current_State;
 
@@ -44,6 +44,14 @@ test_release_preserves_start_bit :: () {
 
     none := Input.button_state_after_release(State.NONE);
     assert(none == State.END, "release of a key not known to be down = %", none);
+
+    // ...and it clears the next frame: the per-frame update takes a tapped
+    // key's START | END all the way to NONE, so it does not read as held.
+    k := cast(int) #char "A";
+    Input.input_button_states[k] = State.START | .END;
+    Input.input_per_frame_event_and_flag_update();
+    after := Input.input_button_states[k];
+    assert(after == State.NONE, "a tapped key's state the next frame = %", after);
 
     print("  PASS: release_preserves_start_bit\n");
 }
