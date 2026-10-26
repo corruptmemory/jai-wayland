@@ -4,7 +4,8 @@
 //           See docs/plans/2026-05-26-context-dispatch-stage1-design.md.
 // Modified: KeyRelease and ButtonRelease keep the START bit through
 //           button_state_after_release (wayland.jai), so a sub-frame tap still
-//           reads as pressed this frame. Deliberate deviation from upstream.
+//           reads as pressed this frame. Deliberate deviation from upstream's
+//           Linux arm (its Windows arm already keeps START).
 
 #import "X11";
 #import "String";  // @Cleanup: Remove this dependency on String?

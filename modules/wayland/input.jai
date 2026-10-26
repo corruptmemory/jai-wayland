@@ -80,6 +80,8 @@ get_seats_info :: () -> [] Seat_Info {
 // Acquire keyboards from seats that have the KEYBOARD capability. Binds a
 // wl_keyboard for each and collects its initial burst: the keymap, parsed while
 // its fd is live (the fd is closed here on every path), and the repeat_info.
+// A no_keymap or empty keymap is a WARNING (the protocol allows it); an XKB
+// keymap that cannot be mmapped is a log_error.
 get_keyboards_info :: (seats: [] Seat_Info) -> [] Keyboard_Info {
     // Count seats with keyboard capability
     kb_count: int;
@@ -115,14 +117,24 @@ get_keyboards_info :: (seats: [] Seat_Info) -> [] Keyboard_Info {
                 unmarshal_event(*event, it.opcode, it.payload, recv);
                 if event.kind == {
                   case .KEYMAP;
-                    // parse_keymap_fd mmaps a private copy and does NOT own the fd.
-                    fd := event.keymap.fd;
-                    kb.keymap, kb.keymap_valid = parse_keymap_fd(fd, event.keymap.size);
-                    if fd >= 0  close(cast(s32) fd);
-                    if !kb.keymap_valid {
-                        log_error("Wayland keymap parse failed for wl_keyboard % (format %, % bytes); keysyms unavailable",
-                                  kb.keyboard.id, event.keymap.format, event.keymap.size);
+                    fd   := event.keymap.fd;
+                    size := event.keymap.size;
+                    if event.keymap.format == cast(u32) Wl_Keyboard_Keymap_Format.XKB_V1 && size > 0 {
+                        // parse_keymap_fd mmaps a private copy and does NOT own the fd.
+                        // With size > 0 it fails only when the mmap does.
+                        kb.keymap, kb.keymap_valid = parse_keymap_fd(fd, size);
+                        if !kb.keymap_valid {
+                            log_error("Wayland keymap mmap failed for wl_keyboard % (% bytes, errno=%); keysyms unavailable",
+                                      kb.keyboard.id, size, errno());
+                        }
+                    } else {
+                        // no_keymap (or an empty keymap) is legitimate: the compositor
+                        // offers raw keycodes only. Degraded, not a failure.
+                        kb.keymap_valid = false;
+                        log("Wayland wl_keyboard % has no usable keymap (format %, % bytes); keysyms unavailable",
+                            kb.keyboard.id, event.keymap.format, size, flags = .WARNING);
                     }
+                    if fd >= 0  close(cast(s32) fd);
                   case .REPEAT_INFO;
                     kb.repeat_rate      = event.repeat_info.rate;
                     kb.repeat_delay     = event.repeat_info.delay;
@@ -173,7 +185,7 @@ get_pointers_info :: (seats: [] Seat_Info) -> [] Pointer_Info {
 // Match a message to a keyboard and unmarshal. Returns the event and true
 // if the message belongs to one of the keyboards, false otherwise.
 get_keyboard_event :: (header: WaylandMessageHeader, keyboards: [] Keyboard_Info, recv: *ReceiveBuffer) -> Wl_Keyboard_Event, bool {
-    for keyboards {
+    for * keyboards {  // by pointer: each record carries a ~15 KB Keymap
         if header.object_id == it.keyboard.id {
             event: Wl_Keyboard_Event;
             unmarshal_event(*event, header.opcode, header.payload, recv);

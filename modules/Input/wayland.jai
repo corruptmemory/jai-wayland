@@ -25,9 +25,11 @@ wl_mod_meta:  bool;
 // `wtype -k`, ~1 ms apart against a ~13 ms frame) reads as .START | .END,
 // "pressed and released this frame": edge readers (& .START) see the tap, held
 // readers (& .DOWN) see not-held, and the per-frame update clears both. The
-// distribution replaces the state with .END, which eats the edge before any
-// reader runs. Deliberate deviation, applied to keys and mouse buttons on both
-// Linux arms (here and x11.jai). From game-bootstrap 1168777.
+// distribution's Linux arm replaces the state with .END, which eats the edge
+// before any reader runs; its Windows arm (windows.jai, send_key_event) already
+// ORs .END in and so keeps START. Deliberate deviation from the Linux arm,
+// applied to keys and mouse buttons on both of ours (here and x11.jai). From
+// game-bootstrap 1168777.
 button_state_after_release :: (current: Key_Current_State) -> Key_Current_State {
     return .END | (current & .START);
 }
