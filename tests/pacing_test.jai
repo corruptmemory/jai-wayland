@@ -32,7 +32,8 @@ test_orphan_take_returns_true_once :: () {
     print("  PASS: orphan_take_returns_true_once\n");
 }
 
-// One past the cap drops the OLDEST entry; everything newer survives.
+// One past the cap drops the OLDEST entry; everything newer survives. The
+// oldest-first order must also survive a take from the middle of the list.
 test_orphan_cap_evicts_oldest :: () {
     assert(WS.WL_ORPHANED_CALLBACK_CAP == 256, "cap is %, the test counts on 256", WS.WL_ORPHANED_CALLBACK_CAP);
 
@@ -42,6 +43,17 @@ test_orphan_cap_evicts_oldest :: () {
     assert(!WS.wl_take_orphaned_frame_callback(*ww, 1), "oldest id 1 survived past the cap");
     assert(WS.wl_take_orphaned_frame_callback(*ww, 2),   "id 2 was evicted, only 1 should be");
     assert(WS.wl_take_orphaned_frame_callback(*ww, 257), "newest id 257 was not kept");
+
+    // Take, then overflow: after taking 1 from a full list, 257 refills it and
+    // 258 must evict 2 (now the oldest), not the second-newest 256.
+    taken: WS.Wayland_Window;
+    for id: 1..256  WS.wl_orphan_frame_callback(*taken, cast(u32) id);
+    assert(WS.wl_take_orphaned_frame_callback(*taken, 1), "take of orphaned 1 from a full list returned false");
+    WS.wl_orphan_frame_callback(*taken, 257);
+    WS.wl_orphan_frame_callback(*taken, 258);
+
+    assert(!WS.wl_take_orphaned_frame_callback(*taken, 2), "oldest id 2 survived the overflow after a take");
+    assert(WS.wl_take_orphaned_frame_callback(*taken, 256), "id 256 was evicted in place of the oldest");
 
     print("  PASS: orphan_cap_evicts_oldest\n");
 }

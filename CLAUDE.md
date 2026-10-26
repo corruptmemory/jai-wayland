@@ -161,7 +161,7 @@ The point: the vendored Simp/Input/Window_Creation run unchanged-in-shape on Way
 - `tests/compile_test.jai`: 11 tests (imports generated module, verifies types/Fd/arg structs/version defaults compile)
 - `tests/dmabuf_test.jai`: 3 tests (`make_drm_modifier` keeps the high word; a memfd-backed feedback format table parses to the full 64-bit modifier; over a socketpair, `collect_dmabuf_feedback` hands an interleaved foreign fd-bearing message to the session's `foreign_handler` while it is still the unconsumed head of the buffer, so FORMAT_TABLE pops its own fd and the fd FIFO drains)
 - `tests/registry_test.jai`: 2 tests (two `wl_output` globals bound by `Global_Info` write their own names 10 and 11 with new ids 3 and 4; the bound version is min(advertised, the descriptor's))
-- `tests/pacing_test.jai`: 2 tests (`Wayland_Support`'s frame-callback orphan list on a stack `Wayland_Window`: an orphaned id is taken back exactly once and a never-orphaned id not at all; orphaning ids 1..257 evicts only the oldest, keeping 2 and 257). Imports `Wayland_Support` by file with the `modules/`-first import path, as `hello_simp` is built.
+- `tests/pacing_test.jai`: 2 tests (`Wayland_Support`'s frame-callback orphan list on a stack `Wayland_Window`: an orphaned id is taken back exactly once and a never-orphaned id not at all; orphaning ids 1..257 evicts only the oldest, keeping 2 and 257, and after a take from a full list the next overflow still evicts the oldest). Imports `Wayland_Support` by file with the `modules/`-first import path, as `hello_simp` is built.
 - **Total: 128 tests across 10 test suites**
 
 ## Jai Toolchain

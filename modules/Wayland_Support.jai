@@ -874,11 +874,13 @@ wl_orphan_frame_callback :: (ww: *Wayland_Window, id: u32) {
 }
 
 // True, and the id is forgotten, when id is one of this window's orphaned frame
-// callbacks. Each orphan is taken at most once.
+// callbacks. Each orphan is taken at most once. The removal is ORDERED: the
+// list must stay oldest-first for wl_orphan_frame_callback's evict-index-0 to
+// drop the oldest (an unordered remove moves the newest into the hole).
 wl_take_orphaned_frame_callback :: (ww: *Wayland_Window, id: u32) -> bool {
     for ww.wl_orphaned_frame_callbacks {
         if it == id {
-            array_unordered_remove_by_index(*ww.wl_orphaned_frame_callbacks, it_index);
+            array_ordered_remove_by_index(*ww.wl_orphaned_frame_callbacks, it_index);
             return true;
         }
     }
@@ -956,9 +958,9 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
             wl_orphan_frame_callback(ww, pending_frame_callback);
         } else {
             // Genuine timeout (or a lost connection) → the surface isn't being
-            // presented (occluded). Orphan the id (it may still be live server-side; its done, if it
-            // ever comes, is the recovery signal) and mark starved so subsequent
-            // frames don't block.
+            // presented (occluded). Orphan the id (it may still be live
+            // server-side; its done, if it ever comes, is the recovery signal)
+            // and mark starved so subsequent frames don't block.
             wl_orphan_frame_callback(ww, pending_frame_callback);
             ww.wl_pacing_starved = true;
         }
@@ -971,9 +973,9 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
         // the app without committing another stale-size buffer; Input will emit
         // resize/quit on the next frame. Nothing is abandoned here: the pacing
         // block above already orphaned any unfired callback (the router recycles
-        // it on its late done) and zeroed wl_pending_frame_callback.
-        ww.wl_pending_frame_callback = 0;
-        ww.wl_frame_done = false;
+        // it on its late done) and left wl_pending_frame_callback and
+        // wl_frame_done clear (they are already clear when nothing was
+        // pending), so there is no pacing state left to reset.
         return;
     }
 
