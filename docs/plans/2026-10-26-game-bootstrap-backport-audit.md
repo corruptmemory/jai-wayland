@@ -464,6 +464,29 @@ picture as `vkcube`'s frames above. Three details the proof turned up:
   (`GL_INVALID_OPERATION` at `glEGLImageTargetTexture2DOES`). The test SKIPs there, naming
   the reason. A compositor on NVIDIA has to sample such buffers as external textures.
 
+**Step 2, the Vulkan path, presents across GPUs** (2026-10-31, `hello_vulkan_dmabuf`).
+Its refusal is gone: when the Vulkan device is not the compositor's main device, or that
+cannot be established, it presents through the copy path and never probes. It picks a
+format the compositor advertises with `LINEAR` and gives each slot a device-local optimal
+render target plus a system-memory `VkBuffer`, rows padded to 256 bytes, exported as the
+dma-buf. Every frame renders into the target, copies it into the buffer, releases the
+buffer to the foreign queue family and waits for the queue. Before reusing a slot it polls
+the dma-buf fd for `POLLOUT`, which waits out the read fences i915 attaches, because a
+`wl_buffer.release` does not mean the compositor's GPU has finished reading.
+`--copy-path` forces the path on the compositor's own GPU. It was validated in three
+stages, each riskier than the last:
+
+| Stage                                         | Result                                                                                                                                                    |
+|-----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Intel, `--copy-path`, live Hyprland           | Same GPU, so almost no risk; animating, correct, resize rebuilt the slots, clean close                                                                    |
+| RTX 3050 Ti, nested Hyprland (on the iGPU)    | Same binary and Mesa iris path that crashed three times; 600 bounded frames plus an interactive run, correct triangle, nested compositor alive throughout |
+| RTX 3050 Ti, live Hyprland                    | Correct and animating; a float and five resizes (16 slot allocations), no warnings, no read-fence timeouts, Hyprland alive                                |
+
+In both NVIDIA stages `bufinfo` showed each buffer exported by `drm` with `0000:00:02.0`
+attached and read fences from the Hyprland process on it, the same picture as NVIDIA's own
+WSI. With nothing else changed, Intel without the flag still takes the driver-first path
+(Intel tiled `0x0100000000000001` accepted).
+
 **Fixed along the way:** slot initialisation logs why it failed, and a failed GL bring-up
 exits with an error instead of drawing into no framebuffer while `hello_simp` claimed a
 clean run; `hello_simp` counts logged errors and exits 1 if there were any, and it quits on

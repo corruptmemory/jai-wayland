@@ -17,14 +17,22 @@
 // the probe finds nothing accepted (never worse than feedback-only selection).
 // Validated on Mesa (AMD/Intel) and NVIDIA pure-dGPU (RTX 3050 Ti).
 //
-// All of this is only for the compositor's own GPU. When the Vulkan device is a
-// different GPU from the compositor's main device (a hybrid laptop compositing on the
-// iGPU while this renders on the dGPU), or when that cannot be established, the
-// example refuses before its first probe, since a probe already hands over a real
-// dma-buf. A compositor may accept a buffer it cannot read: Hyprland 0.57 on an Intel
-// iGPU accepted NVIDIA-rendered buffers, block-linear and advertised LINEAR alike, then
-// aborted inside Mesa on its next frame, three times (2026-10-31, nomad-artix).
-// Presenting across GPUs needs a copy into memory the compositor's GPU can read.
+// All of that is only for the compositor's own GPU, because a probe already hands the
+// compositor a real dma-buf straight from the Vulkan device, and a compositor may
+// accept a buffer it cannot read: Hyprland 0.57 on an Intel iGPU accepted
+// NVIDIA-rendered buffers, block-linear and advertised LINEAR alike, then aborted inside
+// Mesa on its next frame, three times (2026-10-31, nomad-artix).
+//
+// So when the Vulkan device is a different GPU from the compositor's main device (a
+// hybrid laptop compositing on the iGPU while this renders on the dGPU), or when that
+// cannot be established, it presents through the COPY PATH instead, which is what
+// NVIDIA's own Wayland WSI does: render into a device-local OPTIMAL image as usual, then
+// every frame vkCmdCopyImageToBuffer it into a VkBuffer in SYSTEM memory (rows padded to
+// a 256-byte pitch), and hand the compositor that buffer as LINEAR. No probe runs and no
+// device-memory buffer is ever sent. headless_cross_gpu proves the compositor's GPU reads
+// such a buffer correctly. The format is one the compositor advertises with the LINEAR
+// modifier; if it advertises none, the example refuses. `--copy-path` forces the copy
+// path on the compositor's own GPU too (a safe way to exercise it on any box).
 
 #import,dir "../modules/wayland";
 Vulkan :: #import,dir "../modules/Vulkan";
@@ -50,6 +58,7 @@ Image_Config :: struct {
     label:               string;
     drm_format_modifier: u64;
     plane_count:         u32;
+    copy_path:           bool;   // render OPTIMAL, copy each frame into a system-memory LINEAR buffer
 }
 
 Vulkan_Context :: struct {
@@ -59,6 +68,8 @@ Vulkan_Context :: struct {
     queue:        Vulkan.VkQueue;
     queue_family: u32;
     command_pool: Vulkan.VkCommandPool;
+    has_foreign:  bool;   // VK_EXT_queue_family_foreign enabled
+    integrated:   bool;   // an iGPU: all of its memory is system memory
 }
 
 Vulkan_Triangle :: struct {
@@ -72,6 +83,8 @@ Vulkan_Buffer :: struct {
     image_view:  Vulkan.VkImageView;
     framebuffer: Vulkan.VkFramebuffer;
     memory:      Vulkan.VkDeviceMemory;
+    copy_buffer: Vulkan.VkBuffer;         // copy path only: the system-memory buffer the compositor reads
+    copy_memory: Vulkan.VkDeviceMemory;   // copy path only: its memory, which `fd` exports
     buffer:      Wl_Buffer;
     fd:          s32 = -1;
     offset:      u32;
@@ -85,6 +98,18 @@ Vulkan_Buffer :: struct {
 }
 
 main :: () {
+    force_copy_path := false;
+    args := get_command_line_arguments();
+    for args {
+        if it_index == 0  continue;
+        if it == "--copy-path"  force_copy_path = true;
+        else {
+            print("Unknown argument '%'.\nUsage: % [--copy-path]\n", it, args[0]);
+            print("  --copy-path  present through the system-memory copy even on the compositor's own GPU\n");
+            exit(1);
+        }
+    }
+
     if !init_wayland_session() {
         print("Failed to create Wayland session\n");
         return;
@@ -142,20 +167,31 @@ main :: () {
     if dmabuf_info.feedback_supported {
         feedback, feedback_ok = get_surface_dmabuf_feedback(*dmabuf_info.dmabuf, *surface);
     }
-    // Before the first probe: a probe already hands the compositor a real dma-buf.
-    if !renders_on_compositor_main_device(ctx.physical, feedback, feedback_ok) {
-        print("Refusing to present: this example hands the compositor dma-bufs straight from the Vulkan device,\n");
-        print("and a compositor on another GPU cannot be relied on to read them. Hyprland 0.57 on an Intel iGPU\n");
-        print("aborted on NVIDIA-rendered buffers, tiled and LINEAR alike, even ones it had advertised and accepted.\n");
-        print("Presenting across GPUs needs a copy into memory the compositor's GPU can read, which this example\n");
-        print("does not have. Run it on the compositor's GPU (VK_DRIVER_FILES selects the driver).\n");
-        exit(1);
+    // Decided before the first probe: a probe already hands the compositor a real dma-buf.
+    relation := compositor_gpu_relation(ctx.physical, feedback, feedback_ok);
+    copy_path := force_copy_path || relation != .SAME;
+    if copy_path {
+        if relation == .SAME  print("--copy-path: presenting through the system-memory copy on the compositor's own GPU\n");
+        else                  print("Presenting through the system-memory copy: the compositor may not be able to read this GPU's memory\n");
     }
 
-    // Driver-first selection: enumerate the Vulkan driver's own modifiers and probe
-    // each against the compositor; only fall back to the compositor-advertised list
-    // if nothing is accepted. See the file header for why (NVIDIA pure-dGPU).
-    config, config_ok := choose_image_config_driver_first(*ctx, *dmabuf_info.dmabuf);
+    config: Image_Config;
+    config_ok: bool;
+    if copy_path {
+        config, config_ok = choose_copy_path_config(*ctx, dmabuf_info, feedback, feedback_ok);
+        if !config_ok {
+            print("Refusing to present: the copy path needs a LINEAR ARGB/XRGB/ABGR/XBGR 8888 format the compositor\n");
+            print("advertises and a Vulkan device that can export a transfer-destination buffer from system memory,\n");
+            print("and one of them is missing (see above). Handing over this GPU's own buffers instead is what crashed\n");
+            print("Hyprland 0.57 on an Intel iGPU.\n");
+            exit(1);
+        }
+    } else {
+        // Driver-first selection: enumerate the Vulkan driver's own modifiers and probe
+        // each against the compositor; only fall back to the compositor-advertised list
+        // if nothing is accepted. See the file header for why (NVIDIA pure-dGPU).
+        config, config_ok = choose_image_config_driver_first(*ctx, *dmabuf_info.dmabuf);
+    }
 
     if !config_ok {
         print("Driver-enumerated probe found no compositor-accepted modifier; falling back to compositor-advertised selection.\n");
@@ -168,11 +204,12 @@ main :: () {
         return;
     }
 
-    print("Using image config: % fourcc=0x% modifier=0x% planes=%\n",
+    print("Using image config: % fourcc=0x% modifier=0x% planes=%%\n",
         config.label,
         formatInt(config.wayland_format, base=16),
         formatInt(config.drm_format_modifier, base=16, minimum_digits=16),
-        config.plane_count);
+        config.plane_count,
+        ifx config.copy_path then " (copy path: OPTIMAL render, system-memory LINEAR present)" else "");
 
     tri: Vulkan_Triangle;
     if !init_vulkan_triangle(*ctx, config, *tri)  return;
@@ -376,9 +413,30 @@ init_vulkan_slot :: (ctx: *Vulkan_Context, tri: *Vulkan_Triangle, config: Image_
 
 paint_vulkan_slot :: (ctx: Vulkan_Context, tri: Vulkan_Triangle, slot: *Vulkan_Buffer, angle: float) -> bool {
     first_use := !slot.ever_used;
+    if slot.copy_buffer != null && !first_use  wait_for_compositor_reads(slot);
     if !draw_vulkan_triangle(ctx, tri, slot, angle, first_use)  return false;
     slot.ever_used = true;
     return true;
+}
+
+// VK_QUEUE_FAMILY_FOREIGN_EXT. The generated binding spells it `~0-2`, an untyped
+// constant; this is the u32 the spec defines.
+QUEUE_FAMILY_FOREIGN : u32 : 0xffff_fffd;
+
+// wl_buffer.release says the compositor is done with a buffer, but its GPU may still be
+// reading: i915 attaches a read fence to the dma-buf for every use (step 1's bufinfo
+// showed one). Vulkan's writes do not wait on those, so the copy path waits on the CPU:
+// POLLOUT on a dma-buf fd is ready once every fence on it has signalled.
+COMPOSITOR_READ_WAIT_MS :: 100;
+
+wait_for_compositor_reads :: (slot: *Vulkan_Buffer) {
+    fds := pollfd.{ fd = slot.fd, events = POLLOUT };
+    ready := poll(*fds, 1, COMPOSITOR_READ_WAIT_MS);
+    if ready < 0 {
+        log_error("poll(POLLOUT) on copy-path dma-buf fd % failed (errno %); drawing without waiting for the compositor's reads", slot.fd, errno());
+    } else if ready == 0 {
+        log("Compositor reads of dma-buf fd % still pending after % ms; drawing anyway (expect a torn frame)", slot.fd, COMPOSITOR_READ_WAIT_MS, flags = .WARNING);
+    }
 }
 
 frame_limit_from_env :: () -> u32 {
@@ -483,6 +541,8 @@ init_vulkan_context :: (ctx: *Vulkan_Context) -> bool {
 
     ctx.device, ok = create_device(ctx.physical, ctx.queue_family);
     if !ok  return false;
+    ctx.has_foreign = device_supports_extension(ctx.physical, Vulkan.VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
+    ctx.integrated  = props.deviceType == .INTEGRATED_GPU;
     if !Vulkan.load_vulkan_device_functions(ctx.device) ||
        Vulkan.vkGetMemoryFdKHR == null ||
        Vulkan.vkGetImageDrmFormatModifierPropertiesEXT == null ||
@@ -498,7 +558,9 @@ init_vulkan_context :: (ctx: *Vulkan_Context) -> bool {
        Vulkan.vkCmdSetViewport == null ||
        Vulkan.vkCmdSetScissor == null ||
        Vulkan.vkCmdPushConstants == null ||
-       Vulkan.vkCmdDraw == null
+       Vulkan.vkCmdDraw == null ||
+       Vulkan.vkCmdCopyImageToBuffer == null ||
+       Vulkan.vkCreateBuffer == null
     {
         print("Could not load required Vulkan device functions.\n");
         return false;
@@ -604,11 +666,15 @@ create_device :: (physical: Vulkan.VkPhysicalDevice, queue_family: u32) -> Vulka
     queue_info.queueCount = 1;
     queue_info.pQueuePriorities = *priority;
 
-    extension_names: [8] *u8;
+    extension_names: [12] *u8;
     extension_count: u32;
     extension_names[extension_count] = Vulkan.VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME.data; extension_count += 1;
     extension_names[extension_count] = Vulkan.VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME.data; extension_count += 1;
     extension_names[extension_count] = Vulkan.VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME.data; extension_count += 1;
+    // The copy path releases its buffer to the foreign queue family (another driver).
+    if device_supports_extension(physical, Vulkan.VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME) {
+        extension_names[extension_count] = Vulkan.VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME.data; extension_count += 1;
+    }
 
     if device_supports_extension(physical, Vulkan.VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME) {
         extension_names[extension_count] = Vulkan.VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME.data; extension_count += 1;
@@ -772,26 +838,28 @@ choose_image_config_driver_first :: (ctx: *Vulkan_Context, dmabuf: *Zwp_Linux_Dm
     return .{}, false;
 }
 
+GPU_Relation :: enum { SAME; DIFFERENT; UNKNOWN; }
+
 // Whether the Vulkan device is the GPU the compositor composites on: its primary or
 // render node equals the feedback's main device (compositors report either node).
 // Anything unprovable (no feedback, a non-Linux dev_t, no VK_EXT_physical_device_drm)
-// counts as a different GPU, so the probe falls back to what the compositor advertises.
-renders_on_compositor_main_device :: (physical: Vulkan.VkPhysicalDevice, feedback: Dmabuf_Feedback_Info, feedback_ok: bool) -> bool {
+// is UNKNOWN, which main() treats like a different GPU: the copy path, never a probe.
+compositor_gpu_relation :: (physical: Vulkan.VkPhysicalDevice, feedback: Dmabuf_Feedback_Info, feedback_ok: bool) -> GPU_Relation {
     if !feedback_ok || !feedback.complete {
         print("Compositor sent no dmabuf feedback, so its main device is unknown; treating this as a different GPU.\n");
-        return false;
+        return .UNKNOWN;
     }
     main_major, main_minor, main_ok := dev_major_minor(feedback.main_device);
     if !main_ok {
         print("Compositor main device is a %-byte dev_t, not a Linux one; treating this as a different GPU.\n",
             feedback.main_device.count);
-        return false;
+        return .UNKNOWN;
     }
     drm, drm_ok := vulkan_device_drm_properties(physical);
     if !drm_ok {
         print("Vulkan device reports no DRM node (% unsupported); treating it as a different GPU from the compositor's %:%.\n",
             Vulkan.VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME, main_major, main_minor);
-        return false;
+        return .UNKNOWN;
     }
 
     major := cast(s64) main_major;
@@ -802,7 +870,172 @@ renders_on_compositor_main_device :: (physical: Vulkan.VkPhysicalDevice, feedbac
     print("Compositor main device %:%; Vulkan device primary %:% render %:% -> %\n",
         main_major, main_minor, drm.primaryMajor, drm.primaryMinor, drm.renderMajor, drm.renderMinor,
         ifx same then "same GPU" else "different GPU");
-    return same;
+    return ifx same then GPU_Relation.SAME else .DIFFERENT;
+}
+
+// ── The copy path ──
+
+COPY_PATH_PITCH_ALIGN :: 256;   // NVIDIA's own WSI pads LINEAR rows to 256 bytes too
+
+// A format the compositor advertises with the LINEAR modifier, in its preference order
+// (feedback tranches first, then the v3 global list), that this device can render
+// OPTIMAL and copy out of, with a buffer it can export as a dma-buf.
+choose_copy_path_config :: (ctx: *Vulkan_Context, info: Dmabuf_Info, feedback: Dmabuf_Feedback_Info, feedback_ok: bool) -> Image_Config, bool {
+    query: Vulkan.VkPhysicalDeviceExternalBufferInfo;
+    query.usage      = .TRANSFER_DST_BIT;
+    query.handleType = .DMA_BUF_BIT_EXT;
+    buffer_props: Vulkan.VkExternalBufferProperties;
+    Vulkan.vkGetPhysicalDeviceExternalBufferProperties(ctx.physical, *query, *buffer_props);
+    if !(buffer_props.externalMemoryProperties.externalMemoryFeatures & .EXPORTABLE_BIT) {
+        print("The Vulkan device cannot export a transfer-destination buffer as a dma-buf.\n");
+        return .{}, false;
+    }
+
+    usage := Vulkan.VkImageUsageFlagBits.COLOR_ATTACHMENT_BIT | .TRANSFER_SRC_BIT;
+    try :: (ctx: *Vulkan_Context, fm: Format_Modifier, usage: Vulkan.VkImageUsageFlags) -> Image_Config, bool {
+        if fm.modifier != DRM_FORMAT_MOD_LINEAR  return .{}, false;
+        cfg, ok := config_for_wayland_format(fm.format, fm.modifier, usage);
+        if !ok  return .{}, false;
+        props: Vulkan.VkFormatProperties;
+        Vulkan.vkGetPhysicalDeviceFormatProperties(ctx.physical, cfg.vk_format, *props);
+        need := Vulkan.VkFormatFeatureFlagBits.COLOR_ATTACHMENT_BIT | .TRANSFER_SRC_BIT;
+        if (props.optimalTilingFeatures & need) != need  return .{}, false;
+        cfg.copy_path   = true;
+        cfg.plane_count = 1;
+        return cfg, true;
+    }
+
+    if feedback_ok && feedback.complete {
+        for tranche: feedback.tranches  for fm: tranche.formats {
+            cfg, ok := try(ctx, fm, usage);
+            if ok  return cfg, true;
+        }
+    }
+    for fm: info.supported {
+        cfg, ok := try(ctx, fm, usage);
+        if ok  return cfg, true;
+    }
+    print("The compositor advertises no LINEAR ARGB/XRGB/ABGR/XBGR 8888 format this device can render.\n");
+    return .{}, false;
+}
+
+// A memory type the copy buffer may use that lives in system memory. On a discrete GPU
+// that is a type whose HEAP is not device-local; the type's own DEVICE_LOCAL bit is not
+// enough on its own, because a resizable-BAR type is host-visible and device-local at
+// once (NVIDIA's type 5 on the RTX 3050 Ti), and its pages are VRAM, which is what a
+// compositor on another GPU cannot read. An integrated GPU has no VRAM: it flags every
+// heap device-local, and all of them are system memory, so for it any type qualifies.
+find_system_memory_type :: (ctx: *Vulkan_Context, type_bits: u32) -> u32, bool {
+    props: Vulkan.VkPhysicalDeviceMemoryProperties;
+    Vulkan.vkGetPhysicalDeviceMemoryProperties(ctx.physical, *props);
+    for i: 0..cast(s64) props.memoryTypeCount - 1 {
+        if !(type_bits & (cast(u32) 1 << i))  continue;
+        type := props.memoryTypes[i];
+        heap := props.memoryHeaps[type.heapIndex];
+        if !ctx.integrated && ((heap.flags & .DEVICE_LOCAL_BIT) || (type.propertyFlags & .DEVICE_LOCAL_BIT))  continue;
+        return cast(u32) i, true;
+    }
+    return 0, false;
+}
+
+// The copy path's slot: a device-local OPTIMAL image to render into (never exported)
+// and a system-memory buffer, exported as the dma-buf, that every frame is copied into.
+create_copy_path_buffer :: (ctx: *Vulkan_Context, config: Image_Config, width: s32, height: s32, out: *Vulkan_Buffer) -> bool {
+    image_info: Vulkan.VkImageCreateInfo;
+    image_info.imageType     = ._2D;
+    image_info.format        = config.vk_format;
+    image_info.extent        = .{ width = cast(u32) width, height = cast(u32) height, depth = 1 };
+    image_info.mipLevels     = 1;
+    image_info.arrayLayers   = 1;
+    image_info.samples       = ._1_BIT;
+    image_info.tiling        = .OPTIMAL;
+    image_info.usage         = config.usage;
+    image_info.sharingMode   = .EXCLUSIVE;
+    image_info.initialLayout = .UNDEFINED;
+    result := Vulkan.vkCreateImage(ctx.device, *image_info, null, *out.image);
+    if result != .SUCCESS {
+        print("vkCreateImage(copy-path render target) failed: %\n", result);
+        return false;
+    }
+    req: Vulkan.VkMemoryRequirements;
+    Vulkan.vkGetImageMemoryRequirements(ctx.device, out.image, *req);
+    image_type, image_type_ok := find_memory_type(ctx.physical, req.memoryTypeBits, .DEVICE_LOCAL_BIT);
+    if !image_type_ok {
+        print("No device-local memory type for the copy-path render target.\n");
+        return false;
+    }
+    image_alloc: Vulkan.VkMemoryAllocateInfo;
+    image_alloc.allocationSize  = req.size;
+    image_alloc.memoryTypeIndex = image_type;
+    result = Vulkan.vkAllocateMemory(ctx.device, *image_alloc, null, *out.memory);
+    if result != .SUCCESS {
+        print("vkAllocateMemory(copy-path render target) failed: %\n", result);
+        return false;
+    }
+    result = Vulkan.vkBindImageMemory(ctx.device, out.image, out.memory, 0);
+    if result != .SUCCESS {
+        print("vkBindImageMemory(copy-path render target) failed: %\n", result);
+        return false;
+    }
+
+    stride := ((cast(u32) width * 4 + COPY_PATH_PITCH_ALIGN - 1) / COPY_PATH_PITCH_ALIGN) * COPY_PATH_PITCH_ALIGN;
+    external_info: Vulkan.VkExternalMemoryBufferCreateInfo;
+    external_info.handleTypes = .DMA_BUF_BIT_EXT;
+    buffer_info: Vulkan.VkBufferCreateInfo;
+    buffer_info.pNext       = *external_info;
+    buffer_info.size        = cast(u64) stride * cast(u64) height;
+    buffer_info.usage       = .TRANSFER_DST_BIT;
+    buffer_info.sharingMode = .EXCLUSIVE;
+    result = Vulkan.vkCreateBuffer(ctx.device, *buffer_info, null, *out.copy_buffer);
+    if result != .SUCCESS {
+        print("vkCreateBuffer(copy-path dma-buf) failed: %\n", result);
+        return false;
+    }
+    Vulkan.vkGetBufferMemoryRequirements(ctx.device, out.copy_buffer, *req);
+    // The invariant the copy path exists for: never hand the compositor device memory.
+    copy_type, copy_type_ok := find_system_memory_type(ctx, req.memoryTypeBits);
+    if !copy_type_ok {
+        print("No system-memory type fits the copy-path buffer (type bits 0x%); refusing to export device memory.\n",
+            formatInt(req.memoryTypeBits, base=16));
+        return false;
+    }
+    dedicated: Vulkan.VkMemoryDedicatedAllocateInfo;
+    dedicated.buffer = out.copy_buffer;
+    export_info: Vulkan.VkExportMemoryAllocateInfo;
+    export_info.pNext       = *dedicated;
+    export_info.handleTypes = .DMA_BUF_BIT_EXT;
+    copy_alloc: Vulkan.VkMemoryAllocateInfo;
+    copy_alloc.pNext           = *export_info;
+    copy_alloc.allocationSize  = req.size;
+    copy_alloc.memoryTypeIndex = copy_type;
+    result = Vulkan.vkAllocateMemory(ctx.device, *copy_alloc, null, *out.copy_memory);
+    if result != .SUCCESS {
+        print("vkAllocateMemory(copy-path dma-buf, system memory) failed: %\n", result);
+        return false;
+    }
+    result = Vulkan.vkBindBufferMemory(ctx.device, out.copy_buffer, out.copy_memory, 0);
+    if result != .SUCCESS {
+        print("vkBindBufferMemory(copy-path dma-buf) failed: %\n", result);
+        return false;
+    }
+
+    get_fd: Vulkan.VkMemoryGetFdInfoKHR;
+    get_fd.memory     = out.copy_memory;
+    get_fd.handleType = .DMA_BUF_BIT_EXT;
+    result = Vulkan.vkGetMemoryFdKHR(ctx.device, *get_fd, *out.fd);
+    if result != .SUCCESS {
+        print("vkGetMemoryFdKHR(copy-path dma-buf) failed: %\n", result);
+        return false;
+    }
+
+    out.offset   = 0;
+    out.stride   = stride;
+    out.modifier = DRM_FORMAT_MOD_LINEAR;
+    out.format   = config.wayland_format;
+    out.width    = width;
+    out.height   = height;
+    print("Copy-path DMA-BUF fd=% stride=% memory type % (system memory) modifier=LINEAR\n", out.fd, out.stride, copy_type);
+    return true;
 }
 
 vulkan_device_drm_properties :: (physical: Vulkan.VkPhysicalDevice) -> Vulkan.VkPhysicalDeviceDrmPropertiesEXT, bool {
@@ -961,6 +1194,8 @@ get_modifier_properties :: (physical: Vulkan.VkPhysicalDevice, format: Vulkan.Vk
 }
 
 create_vulkan_buffer :: (ctx: *Vulkan_Context, config: Image_Config, width: s32, height: s32, out: *Vulkan_Buffer) -> bool {
+    if config.copy_path  return create_copy_path_buffer(ctx, config, width, height, out);
+
     external_info: Vulkan.VkExternalMemoryImageCreateInfo;
     external_info.handleTypes = .DMA_BUF_BIT_EXT;
 
@@ -1074,6 +1309,8 @@ destroy_vulkan_buffer_without_wayland :: (ctx: *Vulkan_Context, buf: *Vulkan_Buf
     if buf.fd >= 0  close(buf.fd);
     if buf.memory != null  Vulkan.vkFreeMemory(ctx.device, buf.memory, null);
     if buf.image != null  Vulkan.vkDestroyImage(ctx.device, buf.image, null);
+    if buf.copy_buffer != null  Vulkan.vkDestroyBuffer(ctx.device, buf.copy_buffer, null);
+    if buf.copy_memory != null  Vulkan.vkFreeMemory(ctx.device, buf.copy_memory, null);
     buf.* = .{};
 }
 
@@ -1388,6 +1625,26 @@ draw_vulkan_triangle :: (ctx: Vulkan_Context, tri: Vulkan_Triangle, slot: *Vulka
         image               = slot.image,
         subresourceRange    = range,
     };
+    copy_path := slot.copy_buffer != null;
+    foreign := ifx ctx.has_foreign then QUEUE_FAMILY_FOREIGN else Vulkan.VK_QUEUE_FAMILY_EXTERNAL;
+    if copy_path {
+        // The render target never leaves this queue, and the pass clears it: discard
+        // last frame's contents instead of transferring ownership back.
+        to_color.oldLayout           = .UNDEFINED;
+        to_color.srcQueueFamilyIndex = Vulkan.VK_QUEUE_FAMILY_IGNORED;
+        to_color.dstQueueFamilyIndex = Vulkan.VK_QUEUE_FAMILY_IGNORED;
+        if !first_use {
+            // Take the copy buffer back from the compositor's driver before writing it.
+            acquire := Vulkan.VkBufferMemoryBarrier.{
+                dstAccessMask       = .TRANSFER_WRITE_BIT,
+                srcQueueFamilyIndex = foreign,
+                dstQueueFamilyIndex = ctx.queue_family,
+                buffer              = slot.copy_buffer,
+                size                = Vulkan.VK_WHOLE_SIZE,
+            };
+            Vulkan.vkCmdPipelineBarrier(cmd, .TOP_OF_PIPE_BIT, .TRANSFER_BIT, 0, 0, null, 1, *acquire, 0, null);
+        }
+    }
     Vulkan.vkCmdPipelineBarrier(cmd,
         .TOP_OF_PIPE_BIT, .COLOR_ATTACHMENT_OUTPUT_BIT,
         cast(Vulkan.VkDependencyFlags) 0,
@@ -1430,19 +1687,52 @@ draw_vulkan_triangle :: (ctx: Vulkan_Context, tri: Vulkan_Triangle, slot: *Vulka
     Vulkan.vkCmdDraw(cmd, 3, 1, 0, 0);
     Vulkan.vkCmdEndRenderPass(cmd);
 
-    to_general := Vulkan.VkImageMemoryBarrier.{
-        srcAccessMask       = .COLOR_ATTACHMENT_WRITE_BIT,
-        oldLayout           = .COLOR_ATTACHMENT_OPTIMAL,
-        newLayout           = .GENERAL,
-        srcQueueFamilyIndex = ctx.queue_family,
-        dstQueueFamilyIndex = Vulkan.VK_QUEUE_FAMILY_EXTERNAL,
-        image               = slot.image,
-        subresourceRange    = range,
-    };
-    Vulkan.vkCmdPipelineBarrier(cmd,
-        .COLOR_ATTACHMENT_OUTPUT_BIT, .BOTTOM_OF_PIPE_BIT,
-        cast(Vulkan.VkDependencyFlags) 0,
-        0, null, 0, null, 1, *to_general);
+    if copy_path {
+        // The copy: OPTIMAL render target -> LINEAR rows in system memory, `stride` apart.
+        to_src := Vulkan.VkImageMemoryBarrier.{
+            srcAccessMask       = .COLOR_ATTACHMENT_WRITE_BIT,
+            dstAccessMask       = .TRANSFER_READ_BIT,
+            oldLayout           = .COLOR_ATTACHMENT_OPTIMAL,
+            newLayout           = .TRANSFER_SRC_OPTIMAL,
+            srcQueueFamilyIndex = Vulkan.VK_QUEUE_FAMILY_IGNORED,
+            dstQueueFamilyIndex = Vulkan.VK_QUEUE_FAMILY_IGNORED,
+            image               = slot.image,
+            subresourceRange    = range,
+        };
+        Vulkan.vkCmdPipelineBarrier(cmd, .COLOR_ATTACHMENT_OUTPUT_BIT, .TRANSFER_BIT, 0, 0, null, 0, null, 1, *to_src);
+
+        region := Vulkan.VkBufferImageCopy.{
+            bufferRowLength   = slot.stride / 4,   // in texels
+            bufferImageHeight = cast(u32) slot.height,
+            imageSubresource  = .{ aspectMask = .COLOR_BIT, layerCount = 1 },
+            imageExtent       = .{ width = cast(u32) slot.width, height = cast(u32) slot.height, depth = 1 },
+        };
+        Vulkan.vkCmdCopyImageToBuffer(cmd, slot.image, .TRANSFER_SRC_OPTIMAL, slot.copy_buffer, 1, *region);
+
+        // Hand the buffer to the compositor's driver, which acquires it implicitly.
+        release := Vulkan.VkBufferMemoryBarrier.{
+            srcAccessMask       = .TRANSFER_WRITE_BIT,
+            srcQueueFamilyIndex = ctx.queue_family,
+            dstQueueFamilyIndex = foreign,
+            buffer              = slot.copy_buffer,
+            size                = Vulkan.VK_WHOLE_SIZE,
+        };
+        Vulkan.vkCmdPipelineBarrier(cmd, .TRANSFER_BIT, .BOTTOM_OF_PIPE_BIT, 0, 0, null, 1, *release, 0, null);
+    } else {
+        to_general := Vulkan.VkImageMemoryBarrier.{
+            srcAccessMask       = .COLOR_ATTACHMENT_WRITE_BIT,
+            oldLayout           = .COLOR_ATTACHMENT_OPTIMAL,
+            newLayout           = .GENERAL,
+            srcQueueFamilyIndex = ctx.queue_family,
+            dstQueueFamilyIndex = Vulkan.VK_QUEUE_FAMILY_EXTERNAL,
+            image               = slot.image,
+            subresourceRange    = range,
+        };
+        Vulkan.vkCmdPipelineBarrier(cmd,
+            .COLOR_ATTACHMENT_OUTPUT_BIT, .BOTTOM_OF_PIPE_BIT,
+            cast(Vulkan.VkDependencyFlags) 0,
+            0, null, 0, null, 1, *to_general);
+    }
 
     result = Vulkan.vkEndCommandBuffer(cmd);
     if result != .SUCCESS {
