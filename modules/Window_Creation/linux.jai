@@ -19,6 +19,12 @@
 //               Window_Type and unwrap .x11 internally before handing
 //               off to XGetWindowAttributes.
 //           See docs/plans/2026-05-26-context-dispatch-stage1-design.md.
+//           (e) The X11 arm steps wanted_msaa down (8 -> 4 -> 2 -> 0) when
+//               glXChooseVisual finds no visual, logging a warning, and fails
+//               loud (log_error + exit) if none exists even without MSAA.
+//               Upstream dereferenced the NULL: every Simp program segfaulted
+//               under NVIDIA PRIME render offload, whose GLX visuals carry no
+//               MSAA (found on the hybrid laptop, 2026-10-31).
 
 
 //
@@ -158,22 +164,49 @@ create_window :: (width: int, height: int, window_name: string, window_x := 0, w
 
     screen := DefaultScreen(d);
 
-    // These attributes must match the attibutes we use to create the GL context. :GlContextAttributes
-    //        -rluba, 2021-11-30
-    attr := s32.[
-        GLX_RGBA,
-        GLX_DEPTH_SIZE, 24,
-        GLX_DOUBLEBUFFER,
-        GLX_RED_SIZE, 8,
-        GLX_GREEN_SIZE, 8,
-        GLX_BLUE_SIZE, 8,
-        GLX_STENCIL_SIZE, 8,
-        GLX_SAMPLE_BUFFERS, cast(s32) ifx wanted_msaa then 1 else 0,
-        GLX_SAMPLES,        wanted_msaa,
-        None
-    ];
+    // jai-wayland: step the sample count down (8 -> 4 -> 2 -> 0) until GLX has a
+    // matching visual. Under NVIDIA PRIME render offload the GLX visual list
+    // carries no multisampled visual at all (MSAA exists only as FBConfigs), so
+    // any GLX_SAMPLES > 0 returned NULL here and upstream dereferenced it.
+    // glx_create_context derives its FBConfig from this window's visual, so the
+    // context's chosen_msaa follows whatever count is picked here.
+    samples := wanted_msaa;
+    vi: *XVisualInfo;
+    while true {
+        // These attributes must match the attibutes we use to create the GL context. :GlContextAttributes
+        //        -rluba, 2021-11-30
+        attr := s32.[
+            GLX_RGBA,
+            GLX_DEPTH_SIZE, 24,
+            GLX_DOUBLEBUFFER,
+            GLX_RED_SIZE, 8,
+            GLX_GREEN_SIZE, 8,
+            GLX_BLUE_SIZE, 8,
+            GLX_STENCIL_SIZE, 8,
+            GLX_SAMPLE_BUFFERS, cast(s32) ifx samples > 0 then 1 else 0,
+            GLX_SAMPLES,        samples,
+            None
+        ];
 
-    vi := glXChooseVisual(d, screen, attr.data);
+        vi = glXChooseVisual(d, screen, attr.data);
+        if vi || samples <= 0  break;
+
+        samples /= 2;
+        if samples < 2  samples = 0;  // 2 steps straight to 0: one sample is no MSAA
+    }
+
+    if !vi {
+        // Unrecoverable for the same reason as in create_window_wayland: the
+        // (unmodifiable) callers do not validity-check the result, and a
+        // sentinel would only move the crash into GLX.
+        log_error("create_window: no GLX visual with RGBA 8/8/8, depth 24, stencil 8 and double buffering, even without MSAA");
+        XUnlockDisplay(d);
+        exit(1);  // Basic.exit
+    }
+
+    if samples != wanted_msaa {
+        log("create_window: no GLX visual with % MSAA samples; using %", wanted_msaa, samples, flags = .WARNING);
+    }
     // log("XVisualInfo: %", <<vi);
     cmap := XCreateColormap(d, parent_local.x11, vi.visual, AllocNone);
 
