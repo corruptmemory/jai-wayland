@@ -1,10 +1,14 @@
 # Explicit sync for the dma-buf present paths (design)
 
-**Status: approved 2026-10-31, in progress.** Covers the GL path in `Wayland_Support` (every
-Simp example) and `hello_vulkan_dmabuf`, both its same-GPU (driver-first) mode and its
-cross-GPU copy path. The `wl_shm` readback is out of scope: the protocol guarantees explicit
-sync only for dma-buf buffers, and an shm commit on a surface using it can be an
-`unsupported_buffer` protocol error.
+**Status: implemented 2026-10-31, validated on the hybrid laptop** (commits `d60c43f`
+syncobj wrappers, `39672af` EGL native fence, `660ba99` GL path, `cf65b25`
+`hello_vulkan_dmabuf`). **Still to run in dGPU-only mode** (NVIDIA as the compositor's
+GPU): `hello_simp` and `skeletal_animation` on the NVIDIA GL BO path, `hello_vulkan_dmabuf`
+driver-first, and `JAI_WAYLAND_EXPLICIT_SYNC=0` once. Covers the GL path in
+`Wayland_Support` (every Simp example) and `hello_vulkan_dmabuf`, both its same-GPU
+(driver-first) mode and its cross-GPU copy path. The `wl_shm` readback is out of scope: the
+protocol guarantees explicit sync only for dma-buf buffers, and an shm commit on a surface
+using it can be an `unsupported_buffer` protocol error.
 
 ## Why
 
@@ -212,6 +216,12 @@ As the copy path did it, staged:
 - **Regression:** `JAI_WAYLAND_EXPLICIT_SYNC=0` and `--no-explicit-sync` keep today's paths.
 - **dGPU-only mode:** the NVIDIA GL BO path and Vulkan driver-first, with NVIDIA's native
   fence and `nvidia-drm` timelines.
+
+**As run.** The nested sandbox turned out not to apply: a nested Hyprland runs on the
+Wayland backend and does not advertise `wp_linux_drm_syncobj_manager_v1`. It exercised the
+fallback (`hello_simp`, "explicit sync off", rc 0), and every explicit-sync run went to the
+live instance. Results are in the backport audit's laptop section. GL's end-of-frame CPU wait
+fell from 3.2-4.1 ms to 0.13-0.17 ms, with no release-point wait in 1440 frames.
 
 ## Non-goals
 
