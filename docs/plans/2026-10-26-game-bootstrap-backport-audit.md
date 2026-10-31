@@ -400,11 +400,39 @@ was pure-dGPU mode, which this run did not repeat. **The proposed last-resort `A
 block-linear layout, and handing that to a compositor on another GPU is exactly what
 crashed Hyprland. It may only run when the client renders on the compositor's own GPU.
 
-**Hybrid mode needs a copy path.** No NVIDIA-rendered dma-buf, tiled or `LINEAR`, could be
-handed to the Intel compositor safely. The working hypothesis, unconfirmed because `dmesg`
-needs root, is that NVIDIA exports device memory the iGPU cannot read. Presenting from the
-dGPU needs a copy into memory the compositor's GPU can read (an shm readback, or a buffer
-the iGPU allocates or can import). Not designed yet.
+**Hybrid mode needs a copy path, and NVIDIA's own drivers show what it must do.** Our
+NVIDIA buffers crashed the Intel-composited Hyprland, but games and `vkcube` presenting
+from the same GPU to the same compositor work. With root, the cause separates cleanly. The
+kernel logged **no GPU hang** at any of the three crashes; Mesa iris aborted in userspace
+(`dri_create_fence_fd`, from Hyprland's `CEGLSync::create`). Crash 1 (NVIDIA tiled
+`0x0300000000606015`): Hyprland's log tail shows `eglCreateImageKHR` failing with
+`EGL_BAD_MATCH` three times, since Intel's EGL cannot import NVIDIA's layout, yet Hyprland
+had answered `created` and carried on into the abort; a client should not be able to do
+that to a compositor, so that half is a Hyprland bug. Crashes 2 and 3 (advertised
+`LINEAR`): the import succeeded and the same abort followed, consistent with i915 accepting
+the layout but being unable to use pages in NVIDIA video memory, where our buffers lived.
+
+What NVIDIA's own window-system code does instead, observed on this laptop:
+
+| Behaviour                              | Evidence                                                                                                                                                                                           |
+|----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Reads the compositor's dmabuf feedback | `vkcube --wsi wayland` on NVIDIA under `WAYLAND_DEBUG=1`: `main_device` and tranche target on every swapchain (re)creation, 12 rounds in one run                                                   |
+| Presents `LINEAR` buffers              | Every `zwp_linux_buffer_params_v1.add(fd, 0, 0, 8192, 0, 0)`: modifier 0:0, stride = width x bytes per pixel aligned to 256 (`vkcube` chose `XB4H`)                                                |
+| In memory the iGPU can map             | `/sys/kernel/debug/dma_buf/bufinfo` (sudo): each NVIDIA-exported buffer (`exp_name drm`) lists the Intel GPU `0000:00:02.0` as attached; these GPUs have no peer-to-peer, so that is system memory |
+| Copies to get there                    | NVIDIA's Vulkan lists no renderable `LINEAR` modifier (0 of 24) and its GL cannot render to `LINEAR`, so the `LINEAR` buffers it presents are a copy of what it rendered                           |
+| Uses explicit sync                     | `wp_linux_drm_syncobj_surface_v1.set_acquire_point` / `set_release_point` on every one of 1500 frames                                                                                              |
+| Same on its X11 path                   | Order of the Sinking Star (D3D12, vkd3d-proton, NVIDIA Vulkan, via XWayland): 3 NVIDIA-exported 2560x1600x4 buffers, Intel attached twice (XWayland and Hyprland), no `prime-run` needed           |
+
+**The recipe for this library** (`hello_vulkan_dmabuf` first, where it replaces today's
+refusal, then the GL path): when the client GPU is not the compositor's main device, keep
+rendering into the fast device-local images, then each frame copy into a `LINEAR` image
+bound to host-visible, non-device-local memory, export that as the dma-buf with modifier 0,
+and pace it with `wp_linux_drm_syncobj` (or at least a fence wait). Verify with
+`sudo cat /sys/kernel/debug/dma_buf/bufinfo`: the compositor GPU's PCI address must appear
+under the buffer's attached devices. Proton note: Valve's official builds ship no Wine
+Wayland driver (`winewayland.drv`; checked in Proton Experimental 11.0-20261027b, and
+third-party docs say the same of the others), so `PROTON_ENABLE_WAYLAND=1` only works in
+GE-Proton and Proton-CachyOS, and every Proton game here goes through XWayland.
 
 **Fixed along the way:** slot initialisation logs why it failed, and a failed GL bring-up
 exits with an error instead of drawing into no framebuffer while `hello_simp` claimed a
