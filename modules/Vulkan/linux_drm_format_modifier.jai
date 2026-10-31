@@ -1,7 +1,9 @@
-// Minimal Linux supplement for VK_EXT_image_drm_format_modifier.
+// Minimal Linux supplement for VK_EXT_image_drm_format_modifier and
+// VK_EXT_physical_device_drm.
 //
-// The vendored Jai Vulkan headers are v1.1.85 and predate this extension, but
-// modern Vulkan DMA-BUF export on Linux needs DRM-format-modifier image tiling.
+// The vendored Jai Vulkan headers are v1.1.85 and predate both extensions, but
+// modern Vulkan DMA-BUF export on Linux needs DRM-format-modifier image tiling,
+// and a client on a hybrid machine needs to know which DRM node it renders on.
 
 VK_EXT_image_drm_format_modifier :: 1;
 VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_SPEC_VERSION :: 2;
@@ -69,3 +71,23 @@ PFN_vkGetImageDrmFormatModifierPropertiesEXT :: #type (
 ) -> VkResult #c_call;
 
 vkGetImageDrmFormatModifierPropertiesEXT: PFN_vkGetImageDrmFormatModifierPropertiesEXT;
+
+// VK_EXT_physical_device_drm: the DRM primary and render nodes (major:minor) a
+// physical device is, so a client can tell whether it renders on the
+// compositor's main device. Chained into vkGetPhysicalDeviceProperties2.
+VK_EXT_physical_device_drm :: 1;
+VK_EXT_PHYSICAL_DEVICE_DRM_SPEC_VERSION :: 1;
+VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME :: "VK_EXT_physical_device_drm";
+
+VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT: VkStructureType: 1000353000;
+
+VkPhysicalDeviceDrmPropertiesEXT :: struct {
+    sType:        VkStructureType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT;
+    pNext:        *void;
+    hasPrimary:   VkBool32;
+    hasRender:    VkBool32;
+    primaryMajor: s64;
+    primaryMinor: s64;
+    renderMajor:  s64;
+    renderMinor:  s64;
+}

@@ -362,6 +362,61 @@ advertised` and needs a last-resort `ABGR8888` + `DRM_FORMAT_MOD_INVALID` attemp
 requires no advertisement. V2 should drop the global-list fallback in favour of that
 last resort, since it is dead code on v4+.
 
+## Live checks (2026-10-31, laptop: X11 and Hyprland 0.57.0, Iris Xe + RTX 3050 Ti)
+
+`nomad-artix`, hybrid graphics: the Intel iGPU drives the panel, the RTX 3050 Ti
+(driver 615.78.08) renders on request. Jai beta 0.2.030.
+
+### X11 (i3; NVIDIA through PRIME render offload)
+
+| Check                                 | Item | Result | Evidence                                                                                                                                                                                                                                                                               |
+|---------------------------------------|------|--------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 12 test suites                        | 9    | pass   | 139 tests on Jai beta 0.2.030; `gl_picker_test` passes on Intel (an i915 CCS modifier is rejected) and SKIPs on NVIDIA (all 13 `ABGR8888` modifiers single-plane)                                                                                                                      |
+| `headless_gl`, both GPUs              | 1    | pass   | NVIDIA rejects native-pixmap import (`0x300c`) and imports by DMA-BUF with modifier `0x300000000e08014`, high word intact                                                                                                                                                              |
+| `headless_vulkan(_dmabuf)`, both GPUs | -    | pass   | NVIDIA exports `0x0300000000606015`, Intel `LINEAR`                                                                                                                                                                                                                                    |
+| `hello_x11_gl`, both GPUs             | -    | pass   | NVIDIA run maps `libGLX_nvidia`; triangle renders; exit 0 on `WM_DELETE_WINDOW`                                                                                                                                                                                                        |
+| Simp stack on X11 (10 examples)       | -    | fixed  | All render on Intel. On NVIDIA every one segfaulted in `create_window`: PRIME offload's 12 GLX visuals include no multisampled one, so `glXChooseVisual` returned NULL for the default 4x MSAA. Upstream bug, also in the pre-backport build; fixed by the 8-4-2-0 step-down (3c1e5dd) |
+| sub-frame tap, X11                    | 7    | pass   | A press+release in one XTEST flush opens a GetRect dropdown 4/4 on the current build and 0/4 with both release sites reverted; a slow click opens on both                                                                                                                              |
+
+### Hyprland 0.57.0 (compositing on the Intel iGPU)
+
+| Check                           | Item | Result           | Evidence                                                                                                                                                                                                                                                                                                 |
+|---------------------------------|------|------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `hello_globals`, `hello_dmabuf` | 1    | finding          | `zwp_linux_dmabuf_v1` v5, so no global list; one tranche, on Intel's `renderD128` (226:128), offering `LINEAR`, Intel tiled and `INVALID`, no NVIDIA layout                                                                                                                                              |
+| Intel sweep (13 programs)       | 4, 8 | pass             | All render and exit 0 on xdg close; the GL slots use `ABGR8888` `LINEAR`, first in Hyprland's tranche; `hello_vulkan_dmabuf` gets Intel tiled `0x0100000000000001` accepted first                                                                                                                        |
+| `app_id`                        | 5    | pass             | Every window carries its name as `class`; the pre-backport build's windows have an empty one                                                                                                                                                                                                             |
+| `simp_multiple_windows`         | -    | fixed            | Only clear colours showed, in the pre-backport build too. The viewport crop's source rect is post-transform, so it must start at `cap_h - log_h`, not 0; a floated `hello_simp` shrunk to 500x350 lost its quad the same way. Fixed in `wl_update_viewport_crop`                                         |
+| NVIDIA client, GL               | 1    | cannot present   | The picker lands on `ABGR8888` `LINEAR`, the only shared layout. NVIDIA's GBM refuses `LINEAR` with `GBM_BO_USE_RENDERING`; allocated without it, the BO imports but its FBO is `GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT` (`0x8cd6`)                                                                        |
+| NVIDIA client, Vulkan           | 1    | crashed Hyprland | Hyprland accepted NVIDIA tiled `0x0300000000606015` and, later, advertised `LINEAR`, then aborted (SIGABRT in Mesa iris `dri_create_fence_fd`, from `CEGLSync::create`) on its next frame, three times. `hello_vulkan_dmabuf` now refuses before its first probe when its device is not the compositor's |
+
+**The owed NVIDIA re-test, answered.** Hyprland advertises `zwp_linux_dmabuf_v1` v5, so the
+global list is empty by protocol, as predicted. The GL path logs `Using dmabuf surface
+feedback for format selection` and picks `ABGR8888` `LINEAR`: the corrected tranches do
+offer a format GBM reports as usable, but NVIDIA cannot render into it, so the stop is the
+BO allocation, now logged as `BO-backed slot failed: GBM could not allocate ...`, not `no
+GBM-usable ABGR/XBGR 8888 dmabuf format advertised`. This is hybrid mode; the June result
+was pure-dGPU mode, which this run did not repeat. **The proposed last-resort `ABGR8888` +
+`DRM_FORMAT_MOD_INVALID` attempt is dangerous in hybrid mode:** NVIDIA would pick its own
+block-linear layout, and handing that to a compositor on another GPU is exactly what
+crashed Hyprland. It may only run when the client renders on the compositor's own GPU.
+
+**Hybrid mode needs a copy path.** No NVIDIA-rendered dma-buf, tiled or `LINEAR`, could be
+handed to the Intel compositor safely. The working hypothesis, unconfirmed because `dmesg`
+needs root, is that NVIDIA exports device memory the iGPU cannot read. Presenting from the
+dGPU needs a copy into memory the compositor's GPU can read (an shm readback, or a buffer
+the iGPU allocates or can import). Not designed yet.
+
+**Fixed along the way:** slot initialisation logs why it failed, and a failed GL bring-up
+exits with an error instead of drawing into no framebuffer while `hello_simp` claimed a
+clean run; `hello_simp` counts logged errors and exits 1 if there were any, and it quits on
+`Event.QUIT`, so an X11 window-manager close works.
+
+**Tooling notes for this compositor:** Hyprland 0.57's Lua `hyprctl dispatch` runs
+dispatchers (`hl.dsp.window.close({ window = "address:..." })`, `hl.dsp.window.float`,
+`hl.dsp.window.resize({ x = ..., y = ..., window = ... })`); a bare `hyprctl eval` of one
+returns `ok` and does nothing. A shell that outlives a compositor restart (herdr) keeps a
+stale `HYPRLAND_INSTANCE_SIGNATURE`.
+
 ## V2 invariants
 
 Each line names the failure it prevents.

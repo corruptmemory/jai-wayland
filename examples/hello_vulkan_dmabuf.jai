@@ -16,6 +16,15 @@
 // actually import. Falls back to selecting from the compositor's advertised list if
 // the probe finds nothing accepted (never worse than feedback-only selection).
 // Validated on Mesa (AMD/Intel) and NVIDIA pure-dGPU (RTX 3050 Ti).
+//
+// All of this is only for the compositor's own GPU. When the Vulkan device is a
+// different GPU from the compositor's main device (a hybrid laptop compositing on the
+// iGPU while this renders on the dGPU), or when that cannot be established, the
+// example refuses before its first probe, since a probe already hands over a real
+// dma-buf. A compositor may accept a buffer it cannot read: Hyprland 0.57 on an Intel
+// iGPU accepted NVIDIA-rendered buffers, block-linear and advertised LINEAR alike, then
+// aborted inside Mesa on its next frame, three times (2026-10-31, nomad-artix).
+// Presenting across GPUs needs a copy into memory the compositor's GPU can read.
 
 #import,dir "../modules/wayland";
 Vulkan :: #import,dir "../modules/Vulkan";
@@ -126,6 +135,23 @@ main :: () {
     if !init_vulkan_context(*ctx)  return;
     defer destroy_vulkan_context(*ctx);
 
+    // The feedback names the compositor's main device, and when the Vulkan device is a
+    // different GPU it is also the set of layouts the compositor can read.
+    feedback: Dmabuf_Feedback_Info;
+    feedback_ok := false;
+    if dmabuf_info.feedback_supported {
+        feedback, feedback_ok = get_surface_dmabuf_feedback(*dmabuf_info.dmabuf, *surface);
+    }
+    // Before the first probe: a probe already hands the compositor a real dma-buf.
+    if !renders_on_compositor_main_device(ctx.physical, feedback, feedback_ok) {
+        print("Refusing to present: this example hands the compositor dma-bufs straight from the Vulkan device,\n");
+        print("and a compositor on another GPU cannot be relied on to read them. Hyprland 0.57 on an Intel iGPU\n");
+        print("aborted on NVIDIA-rendered buffers, tiled and LINEAR alike, even ones it had advertised and accepted.\n");
+        print("Presenting across GPUs needs a copy into memory the compositor's GPU can read, which this example\n");
+        print("does not have. Run it on the compositor's GPU (VK_DRIVER_FILES selects the driver).\n");
+        exit(1);
+    }
+
     // Driver-first selection: enumerate the Vulkan driver's own modifiers and probe
     // each against the compositor; only fall back to the compositor-advertised list
     // if nothing is accepted. See the file header for why (NVIDIA pure-dGPU).
@@ -133,12 +159,7 @@ main :: () {
 
     if !config_ok {
         print("Driver-enumerated probe found no compositor-accepted modifier; falling back to compositor-advertised selection.\n");
-        feedback: Dmabuf_Feedback_Info;
-        feedback_ok := false;
-        if dmabuf_info.feedback_supported {
-            feedback, feedback_ok = get_surface_dmabuf_feedback(*dmabuf_info.dmabuf, *surface);
-            if feedback_ok  print("Using dmabuf surface feedback for Vulkan format selection\n");
-        }
+        if feedback_ok  print("Using dmabuf surface feedback for Vulkan format selection\n");
         config, config_ok = choose_image_config(ctx.physical, dmabuf_info, feedback, feedback_ok);
     }
 
@@ -727,6 +748,7 @@ gather_driver_candidates :: (physical: Vulkan.VkPhysicalDevice) -> [..] Image_Co
 
 // Drive selection from the driver, then let the COMPOSITOR be the arbiter: probe each
 // candidate with the async create + created/failed handshake; first ACCEPTED wins.
+// Only valid on the compositor's own GPU; main() refuses before getting here otherwise.
 choose_image_config_driver_first :: (ctx: *Vulkan_Context, dmabuf: *Zwp_Linux_Dmabuf_V1) -> Image_Config, bool {
     candidates := gather_driver_candidates(ctx.physical);
     defer array_free(candidates);
@@ -748,6 +770,50 @@ choose_image_config_driver_first :: (ctx: *Vulkan_Context, dmabuf: *Zwp_Linux_Dm
         if accepted  return cfg.*, true;
     }
     return .{}, false;
+}
+
+// Whether the Vulkan device is the GPU the compositor composites on: its primary or
+// render node equals the feedback's main device (compositors report either node).
+// Anything unprovable (no feedback, a non-Linux dev_t, no VK_EXT_physical_device_drm)
+// counts as a different GPU, so the probe falls back to what the compositor advertises.
+renders_on_compositor_main_device :: (physical: Vulkan.VkPhysicalDevice, feedback: Dmabuf_Feedback_Info, feedback_ok: bool) -> bool {
+    if !feedback_ok || !feedback.complete {
+        print("Compositor sent no dmabuf feedback, so its main device is unknown; treating this as a different GPU.\n");
+        return false;
+    }
+    main_major, main_minor, main_ok := dev_major_minor(feedback.main_device);
+    if !main_ok {
+        print("Compositor main device is a %-byte dev_t, not a Linux one; treating this as a different GPU.\n",
+            feedback.main_device.count);
+        return false;
+    }
+    drm, drm_ok := vulkan_device_drm_properties(physical);
+    if !drm_ok {
+        print("Vulkan device reports no DRM node (% unsupported); treating it as a different GPU from the compositor's %:%.\n",
+            Vulkan.VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME, main_major, main_minor);
+        return false;
+    }
+
+    major := cast(s64) main_major;
+    minor := cast(s64) main_minor;
+    is_primary := drm.hasPrimary != 0 && drm.primaryMajor == major && drm.primaryMinor == minor;
+    is_render  := drm.hasRender  != 0 && drm.renderMajor  == major && drm.renderMinor  == minor;
+    same := is_primary || is_render;
+    print("Compositor main device %:%; Vulkan device primary %:% render %:% -> %\n",
+        main_major, main_minor, drm.primaryMajor, drm.primaryMinor, drm.renderMajor, drm.renderMinor,
+        ifx same then "same GPU" else "different GPU");
+    return same;
+}
+
+vulkan_device_drm_properties :: (physical: Vulkan.VkPhysicalDevice) -> Vulkan.VkPhysicalDeviceDrmPropertiesEXT, bool {
+    drm: Vulkan.VkPhysicalDeviceDrmPropertiesEXT;
+    if Vulkan.vkGetPhysicalDeviceProperties2 == null  return drm, false;
+    if !device_supports_extension(physical, Vulkan.VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME)  return drm, false;
+
+    props: Vulkan.VkPhysicalDeviceProperties2;
+    props.pNext = *drm;
+    Vulkan.vkGetPhysicalDeviceProperties2(physical, *props);
+    return drm, true;
 }
 
 // Create a small Vulkan image with `config`'s modifier, export it, hand it to the

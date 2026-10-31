@@ -346,13 +346,17 @@ wl_window_init_viewport :: (ww: *Wayland_Window) {
 
 // Crop the (possibly oversized) buffer down to the logical region and set the
 // surface (logical) size. Simp renders the logical content into glViewport(0,0,
-// log_w,log_h) — the GL bottom-LEFT of the capacity-sized FBO — so the logical
-// content occupies the buffer's [0,log_w] x [0,log_h] corner. set_buffer_transform
-// (FLIPPED_180) is a pure VERTICAL flip (X unchanged), so in post-transform surface
-// space the logical content stays at the origin corner: src = (0, 0, log_w, log_h).
-// (The earlier (cap_w-log_w, 0) offset was wrong — it passed a meaningless test
-// because glClear ignores the viewport and fills the WHOLE capacity buffer, so any
-// src_x crop shows solid clear; the off-centre QUAD in hello_simp is the real probe.)
+// log_w,log_h), which is the buffer's first log_h rows (GL row 0 is the first row
+// in memory). The source rectangle is in surface coordinates AFTER buffer_transform
+// (viewporter.xml), and set_buffer_transform(FLIPPED_180) is a pure VERTICAL flip:
+// X is unchanged, but the first rows of the buffer become the LAST rows of the
+// surface. So src = (0, cap_h - log_h, log_w, log_h).
+// Probe with a sub-region pattern after a LARGE shrink: glClear ignores the
+// viewport and fills the whole capacity buffer, so a clear-only test passes any
+// crop, and a crop off by cap_h - log_h is invisible while log_h is close to cap_h.
+// That is how both earlier versions passed: (cap_w-log_w, 0), and then (0, 0) until
+// 2026-10-31, when Hyprland 0.57 retiling simp_multiple_windows (and a floated
+// hello_simp resized down) showed nothing but the clear colour.
 wl_update_viewport_crop :: (ww: *Wayland_Window) {
     if !ww.wl_have_viewport  return;
 
@@ -362,9 +366,9 @@ wl_update_viewport_crop :: (ww: *Wayland_Window) {
     log_h := ww.height;
     if log_w <= 0 || log_h <= 0 || cap_w <= 0 || cap_h <= 0  return;
 
-    batch: Wl.MessageBuilder;
+    batch: Wl.MessageBuilder;  // src_y = cap_h - log_h: see the comment above.
     Wl.wp_viewport_set_source(*batch, *ww.wl_viewport,
-        wl_fixed_from_int(0), wl_fixed_from_int(0),
+        wl_fixed_from_int(0), wl_fixed_from_int(cap_h - log_h),
         wl_fixed_from_int(log_w), wl_fixed_from_int(log_h));
     Wl.wp_viewport_set_destination(*batch, *ww.wl_viewport, log_w, log_h);
     Wl.wayland_send(*batch);
@@ -473,10 +477,16 @@ wl_slot_init :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linux_Dma
                  batch: *Wl.MessageBuilder, format: u32, modifier: u64, width: s32, height: s32,
                  backend: Wl_Gl_Backend = .AUTO, log_success := true) -> bool
 {
-    if backend == .MESA_TEXTURE_EXPORT
-        return wl_slot_init_mesa(slot, egl, dmabuf, batch, format, modifier, width, height);
+    // Each path returns why it failed; the level depends on whether anything follows.
+    // An AUTO BO failure is only a warning, since the Mesa fallback may still work.
+    if backend == .MESA_TEXTURE_EXPORT {
+        ok, why := wl_slot_init_mesa(slot, egl, dmabuf, batch, format, modifier, width, height);
+        if !ok  log_error("Wayland_Support: Mesa texture-export slot failed: %", why);
+        return ok;
+    }
 
-    if wl_slot_init_bo(slot, egl, dmabuf, batch, format, modifier, width, height) {
+    bo_ok, bo_why := wl_slot_init_bo(slot, egl, dmabuf, batch, format, modifier, width, height);
+    if bo_ok {
         if log_success {
             log("Initialized BO-backed slot buffer=% format=0x% modifier=0x%",
                 slot.buffer.id,
@@ -486,32 +496,46 @@ wl_slot_init :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linux_Dma
         return true;
     }
 
-    if backend == .GBM_BO  return false;
+    if backend == .GBM_BO {
+        log_error("Wayland_Support: BO-backed slot failed: %", bo_why);
+        return false;
+    }
 
     // AUTO: BO init failed, fall back to Mesa texture export.
     wl_slot_destroy(slot, egl);
     slot.* = .{};
-    log("BO-backed slot initialization failed; falling back to Mesa texture export", flags=.WARNING);
-    return wl_slot_init_mesa(slot, egl, dmabuf, batch, format, modifier, width, height);
+    log("Wayland_Support: BO-backed slot failed (%); falling back to Mesa texture export", bo_why, flags=.WARNING);
+    mesa_ok, mesa_why := wl_slot_init_mesa(slot, egl, dmabuf, batch, format, modifier, width, height);
+    if !mesa_ok  log_error("Wayland_Support: the Mesa texture-export fallback failed too: %", mesa_why);
+    return mesa_ok;
 }
 
 wl_slot_init_bo :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linux_Dmabuf_V1,
-                    batch: *Wl.MessageBuilder, format: u32, modifier: u64, width: s32, height: s32) -> bool
+                    batch: *Wl.MessageBuilder, format: u32, modifier: u64, width: s32, height: s32) -> ok: bool, why: string
 {
-    if Gbm.gbm_bo_create == null || Gbm.gbm_bo_destroy == null  return false;
-    if glEGLImageTargetTexture2DOES == null  return false;
+    if Gbm.gbm_bo_create == null || Gbm.gbm_bo_destroy == null  return false, "gbm_bo_create / gbm_bo_destroy are not loaded";
+    if glEGLImageTargetTexture2DOES == null  return false, "glEGLImageTargetTexture2DOES is not loaded (no GL_OES_EGL_image)";
 
     flags := cast(u32) Gbm.GBM_BO_USE_RENDERING;
     if Gbm.gbm_device_is_format_supported != null {
-        if Gbm.gbm_device_is_format_supported(egl.gbm, format, flags) == 0  return false;
+        if Gbm.gbm_device_is_format_supported(egl.gbm, format, flags) == 0
+            return false, tprint("the GBM device cannot render to format 0x%", formatInt(format, base=16));
     }
 
+    // NVIDIA's GBM refuses DRM_FORMAT_MOD_LINEAR together with GBM_BO_USE_RENDERING
+    // (it allocates LINEAR only with no usage flags, and its GL then reports the FBO
+    // incomplete), which is how an NVIDIA client fails here against a compositor on
+    // a hybrid laptop's Intel iGPU, whose feedback offers no NVIDIA layout (2026-10-31).
     slot.bo = Gpu.create_bo_with_modifier(egl.gbm, width, height, format, modifier, flags);
-    if slot.bo == null  return false;
+    if slot.bo == null
+        return false, tprint("GBM could not allocate a %x% BO with format 0x% modifier 0x% for rendering",
+            width, height, formatInt(format, base=16), formatInt(modifier, base=16));
 
     image_ok: bool;
     slot.image, slot.image_fd, image_ok = Gpu.create_image_from_gbm_bo(egl.dpy, slot.bo, width, height);
-    if !image_ok  return false;
+    if !image_ok
+        return false, tprint("EGL could not import the BO (format 0x% modifier 0x%) as an EGLImage",
+            formatInt(format, base=16), formatInt(modifier, base=16));
 
     glGenTextures(1, *slot.tex);
     glBindTexture(GL_TEXTURE_2D, slot.tex);
@@ -524,17 +548,20 @@ wl_slot_init_bo :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linux_
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
         GL_TEXTURE_2D, slot.tex, 0);
     wl_attach_depth_rbo(slot, width, height);  // depth buffer for 3D apps (skeletal-animation)
-    if glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE  return false;
+    status := glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if status != GL_FRAMEBUFFER_COMPLETE
+        return false, tprint("the BO-backed framebuffer is incomplete (status 0x%, format 0x% modifier 0x%)",
+            formatInt(status, base=16), formatInt(format, base=16), formatInt(modifier, base=16));
 
-    if Gbm.gbm_bo_get_fd == null || Gbm.gbm_bo_get_stride == null  return false;
+    if Gbm.gbm_bo_get_fd == null || Gbm.gbm_bo_get_stride == null  return false, "gbm_bo_get_fd / gbm_bo_get_stride are not loaded";
     fd := Gbm.gbm_bo_get_fd(slot.bo);
-    if fd < 0  return false;
+    if fd < 0  return false, "gbm_bo_get_fd could not export the BO as a dma-buf";
 
     slot.fd = fd;
     slot.stride = Gbm.gbm_bo_get_stride(slot.bo);
     slot.offset = ifx Gbm.gbm_bo_get_offset != null then Gbm.gbm_bo_get_offset(slot.bo, 0) else 0;
     planes := ifx Gbm.gbm_bo_get_plane_count != null then Gbm.gbm_bo_get_plane_count(slot.bo) else 1;
-    if planes != 1  return false;
+    if planes != 1  return false, tprint("the BO has % planes; the present path exports one", planes);
 
     actual_format := ifx Gbm.gbm_bo_get_format != null then Gbm.gbm_bo_get_format(slot.bo) else format;
     actual_modifier := ifx Gbm.gbm_bo_get_modifier != null then Gbm.gbm_bo_get_modifier(slot.bo) else modifier;
@@ -545,12 +572,16 @@ wl_slot_init_bo :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linux_
     slot.height = height;
     slot.bo_backed = true;
     wl_slot_make_buffer(batch, dmabuf, *slot.buffer, slot.fd, slot.offset, slot.stride, actual_format, actual_modifier, width, height);
-    return true;
+    return true, "";
 }
 
 wl_slot_init_mesa :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linux_Dmabuf_V1,
-                      batch: *Wl.MessageBuilder, format: u32, modifier: u64, width: s32, height: s32) -> bool
+                      batch: *Wl.MessageBuilder, format: u32, modifier: u64, width: s32, height: s32) -> ok: bool, why: string
 {
+    // Mesa-only extension: NVIDIA's EGL leaves these null, and calling one would crash.
+    if EGL.eglCreateImageKHR == null || EGL.eglExportDMABUFImageMESA == null
+        return false, "eglCreateImageKHR / eglExportDMABUFImageMESA are not loaded (EGL_MESA_image_dma_buf_export is Mesa-only)";
+
     glGenTextures(1, *slot.tex);
     glBindTexture(GL_TEXTURE_2D, slot.tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, cast(GLsizei) width, cast(GLsizei) height, 0,
@@ -563,14 +594,17 @@ wl_slot_init_mesa :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linu
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
         GL_TEXTURE_2D, slot.tex, 0);
     wl_attach_depth_rbo(slot, width, height);  // depth buffer for 3D apps (skeletal-animation)
-    if glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE  return false;
+    status := glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if status != GL_FRAMEBUFFER_COMPLETE
+        return false, tprint("the texture framebuffer is incomplete (status 0x%)", formatInt(status, base=16));
 
     slot.image = EGL.eglCreateImageKHR(egl.dpy, egl.ctx, EGL.EGL_GL_TEXTURE_2D_KHR,
         cast(EGL.EGLClientBuffer) cast(u64) slot.tex, null);
-    if !slot.image  return false;
+    if !slot.image  return false, "eglCreateImageKHR could not wrap the GL texture as an EGLImage";
 
     fd, stride, offset: s32;
-    if EGL.eglExportDMABUFImageMESA(egl.dpy, slot.image, *fd, *stride, *offset) != EGL.EGL_TRUE  return false;
+    if EGL.eglExportDMABUFImageMESA(egl.dpy, slot.image, *fd, *stride, *offset) != EGL.EGL_TRUE
+        return false, "eglExportDMABUFImageMESA could not export the texture as a dma-buf";
     slot.fd = fd;
     slot.stride = cast(u32) stride;
     slot.offset = cast(u32) offset;
@@ -580,7 +614,7 @@ wl_slot_init_mesa :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linu
     slot.height = height;
 
     wl_slot_make_buffer(batch, dmabuf, *slot.buffer, fd, cast(u32) offset, cast(u32) stride, format, modifier, width, height);
-    return true;
+    return true, "";
 }
 
 // Builds the zwp_linux_dmabuf_v1 params and creates the wl_buffer into `buffer`.

@@ -237,6 +237,20 @@ copy_bytes :: (dst: *[..] u8, src: [] u8) {
     for src  array_add(dst, it);
 }
 
+// The DRM major:minor that a compositor-sent dev_t names. main_device and each
+// tranche's target_device carry the raw bytes of the compositor's dev_t, which on
+// Linux is a native-endian u64 in glibc's makedev() layout: minor in bits 0-7 and
+// 20-43, major in bits 8-19 and 44-63. ok is false unless the array is exactly
+// eight bytes, so a caller treats the device as unknown rather than guessing.
+dev_major_minor :: (dev: [] u8) -> major: u32, minor: u32, ok: bool {
+    if dev.count != size_of(u64)  return 0, 0, false;
+    d: u64;
+    memcpy(*d, dev.data, size_of(u64));
+    major := ((d & 0x00000000000fff00) >> 8) | ((d & 0xfffff00000000000) >> 32);
+    minor :=  (d & 0x00000000000000ff)       | ((d & 0x00000ffffff00000) >> 12);
+    return cast(u32) major, cast(u32) minor, true;
+}
+
 // Pick the first matching format in compositor tranche order. This does not
 // apply renderer-specific capability checks; callers that own GBM/Vulkan state
 // should filter tranche entries before committing to the result.

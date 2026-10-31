@@ -12,8 +12,32 @@ main :: () {
     test_make_drm_modifier_keeps_high_word();
     test_format_table_parse_keeps_high_word();
     test_feedback_collector_routes_foreign_fd_message();
+    test_dev_major_minor_decodes_linux_dev_t();
 
     print("\n=== All dmabuf tests passed ===\n");
+}
+
+// main_device / target_device carry the raw bytes of the compositor's dev_t
+// (native-endian u64, glibc makedev layout).
+test_dev_major_minor_decodes_linux_dev_t :: () {
+    // renderD128 is DRM 226:128: makedev gives 0xe280, sent little-endian.
+    // (hello_dmabuf prints these bytes in wire order, as 0x80e2000000000000.)
+    major, minor, ok := Wayland.dev_major_minor(u8.[0x80, 0xe2, 0, 0, 0, 0, 0, 0]);
+    assert(ok && major == 226 && minor == 128, "renderD128 decoded as %:% ok=%", major, minor, ok);
+
+    // A minor above 255 lives in bits 20-43: makedev(226, 300) = 0x10e22c.
+    major, minor, ok = Wayland.dev_major_minor(u8.[0x2c, 0xe2, 0x10, 0, 0, 0, 0, 0]);
+    assert(ok && major == 226 && minor == 300, "makedev(226, 300) decoded as %:% ok=%", major, minor, ok);
+
+    // A major above 4095 lives in bits 44-63: makedev(0x1234, 5) = 0x100000023405.
+    major, minor, ok = Wayland.dev_major_minor(u8.[0x05, 0x34, 0x02, 0, 0, 0x10, 0, 0]);
+    assert(ok && major == 0x1234 && minor == 5, "makedev(0x1234, 5) decoded as 0x%:% ok=%", formatInt(major, base = 16), minor, ok);
+
+    // Anything but eight bytes is another platform's dev_t: unknown, not a guess.
+    _, _, ok = Wayland.dev_major_minor(u8.[1, 2, 3, 4]);
+    assert(!ok, "a 4-byte dev_t decoded as ok");
+
+    print("  PASS: dev_major_minor_decodes_linux_dev_t\n");
 }
 
 test_make_drm_modifier_keeps_high_word :: () {

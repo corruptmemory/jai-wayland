@@ -38,7 +38,26 @@ Simp :: #import "Simp";
 WIDTH  :: 800;
 HEIGHT :: 600;
 
+// Counts errors on their way to the logger that was already installed, so the
+// closing line claims a clean run only when nothing failed (the logger-as-hook
+// pattern the project's tests use).
+Error_Counter :: struct {
+    errors:    int;
+    next:      Logger;
+    next_data: *void;
+}
+
+count_errors :: (message: string, data: *void, info: Log_Info) {
+    counter := cast(*Error_Counter) data;
+    if info.common_flags & .ERROR  counter.errors += 1;
+    counter.next(message, counter.next_data, info);
+}
+
 main :: () {
+    counter := Error_Counter.{ next = context.logger, next_data = context.logger_data };
+    context.logger      = count_errors;
+    context.logger_data = *counter;
+
     window := create_window(window_name = "hello_simp", width = WIDTH, height = HEIGHT);
     Simp.set_render_target(window);  // ONCE — triggers Simp BACKEND_INIT.
 
@@ -57,6 +76,12 @@ main :: () {
         for events_this_frame {
             if it.type == .KEYBOARD && it.key_pressed != 0 && it.key_code == cast(Key_Code) #char "Q" {
                 print("hello_simp: 'q' pressed — exiting\n");
+                quit = true;
+            }
+            // A window-manager close. On X11 this is the only way it arrives:
+            // Simp.window_should_close answers for Wayland windows only.
+            if it.type == .QUIT {
+                print("hello_simp: close requested — exiting\n");
                 quit = true;
             }
         }
@@ -100,6 +125,10 @@ main :: () {
         if frame_limit > 0 && frame >= frame_limit  break;
     }
 
+    if counter.errors > 0 {
+        print("hello_simp: ran % frame(s), but % error(s) were logged\n", frame, counter.errors);
+        exit(1);
+    }
     print("hello_simp: presented % frame(s) cleanly\n", frame);
 }
 

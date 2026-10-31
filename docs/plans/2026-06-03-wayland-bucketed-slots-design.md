@@ -4,6 +4,8 @@ Date: 2026-06-03
 Branch: `pacing-experiments`
 Status: **Done (2026-06-03).** Implemented and validated. One correction from this design: the `FLIPPED_180 × viewport` crop source rect is `(0, 0, log_w, log_h)`, **not** the tentatively-predicted `(cap_w − logical_w, cap_h − logical_h)` — FLIPPED_180 is a pure vertical flip (X unchanged) and Simp renders into the buffer's origin corner. See `2026-06-03-wayland-bucketed-slots.md` for the implementation status and calibration notes.
 
+> **Correction (2026-10-31):** the crop source rect `(0, 0, log_w, log_h)` recorded here is wrong. The viewport source rect is in surface coordinates after `buffer_transform`, so under FLIPPED_180 it is `(0, cap_h - log_h, log_w, log_h)`. `(0, 0)` only looked right while `log_h` was close to `cap_h`; on Hyprland 0.57 a large shrink showed only the clear colour. Fixed in `wl_update_viewport_crop`; see CLAUDE.md Next Steps #2.
+
 ## Motivation
 
 Compositor-driven resize currently reallocates the entire per-window slot stack

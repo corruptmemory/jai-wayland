@@ -20,21 +20,25 @@ wl_window_for :: (info: *Window_Info) -> *WS.Wayland_Window {
     return WS.find_wayland_window(info.window.wayland.surface);
 }
 
+// Both failures below are fatal, as in create_window_wayland: Simp's callers cannot
+// see a failed bring-up (gl.jai marks the window initted regardless), so carrying on
+// would draw into no framebuffer every frame while the program believed it was
+// presenting.
 wl_backend_init :: (info: *Window_Info) {
     ww := wl_window_for(info);
     if !ww {
         // create_window_wayland registers the record before Simp ever sees the
         // window; a miss means the window was built off our create path.
-        log_error("Simp Wayland: no Wayland_Window registered for surface %", info.window.wayland.surface);
-        return;
+        log_error("Simp Wayland: no Wayland_Window registered for surface %; exiting", info.window.wayland.surface);
+        exit(1);  // Basic.exit
     }
     // Read the size from the registry record, not info.window_width:
     // set_render_target calls backend_init BEFORE update_window populates
     // info.window_width. wl_window_init_gl reads ww.width/height (set at
     // create-time / updated by the pump on configure).
     if !WS.wl_window_init_gl(ww) {
-        log_error("Simp Wayland: GL bring-up failed");
-        return;
+        log_error("Simp Wayland: GL bring-up failed (cause logged above); exiting");
+        exit(1);  // Basic.exit
     }
 
     // Simp's GL backend uses `the_gl_context` as the process-wide "did we do
