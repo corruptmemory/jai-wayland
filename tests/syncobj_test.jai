@@ -12,6 +12,9 @@
 // By NAME, with the modules/-first import path, so this is the instance
 // Wayland_Support itself uses.
 Gpu :: #import "gpu";
+#import "GL";
+EGL :: #import "EGL";
+WS  :: #import,file "../modules/Wayland_Support.jai";
 
 main :: () {
     print("=== Syncobj Tests ===\n\n");
@@ -33,6 +36,8 @@ main :: () {
         test_export_import_same_timeline(drm_fd);
         test_sync_file_round_trip(drm_fd);
         test_wait_on_destroyed_handle_logs_one_error(drm_fd);
+        test_store_acquire_fence_closes_stale_fd();
+        test_gl_fence_signals_timeline_point();
     }
     if rec.errors.count != rec.expected_errors {
         for rec.errors  print("  logged error: %\n", it);
@@ -145,4 +150,56 @@ test_wait_on_destroyed_handle_logs_one_error :: (drm_fd: s32) {
     assert(result == .ERROR, "a wait on a destroyed handle should fail, got %", result);
     assert(rec.errors.count == before + 1, "a failed wait should log one error, logged %", rec.errors.count - before);
     print("  PASS: a wait on a destroyed handle fails and logs one error\n");
+}
+
+// An app turn (a configure arriving while the present waits on the previous frame)
+// returns to the app without committing, so the next frame's fence replaces one that
+// never reached the compositor. The stale fd must be closed, not leaked.
+test_store_acquire_fence_closes_stale_fd :: () {
+    pipe_fds: [2] s32;
+    assert(pipe(*pipe_fds) == 0, "pipe failed");
+    defer close(pipe_fds[1]);
+    stale, fresh := pipe_fds[0], dup(pipe_fds[1]);
+
+    slot: WS.Wl_Gl_Slot;
+    WS.wl_store_acquire_fence(*slot, stale);
+    WS.wl_store_acquire_fence(*slot, fresh);
+    assert(slot.acquire_fence_fd == fresh, "the slot should hold the newest fence");
+    assert(fcntl(stale, F_GETFD) == -1, "the replaced fence fd % should have been closed", stale);
+    close(fresh);
+    print("  PASS: storing a new acquire fence closes the stale one\n");
+}
+
+// The present path's GL fence: on the render node Wayland_Support would use, a
+// clear followed by wl_native_fence_fd yields a sync_file that, attached to a
+// timeline point, signals once the GPU has done the clear.
+test_gl_fence_signals_timeline_point :: () {
+    egl: WS.Wl_Egl_State;
+    if !WS.wl_egl_init(*egl, .{}) {
+        print("  SKIP: no EGL/GBM context on this box\n");
+        return;
+    }
+    defer WS.wl_egl_destroy(*egl);
+    if !WS.wl_have_native_fence {
+        print("  SKIP: the EGL display has no EGL_ANDROID_native_fence_sync\n");
+        return;
+    }
+    if !Gpu.syncobj_timeline_supported(egl.drm_fd) {
+        print("  SKIP: the EGL render node has no timeline sync objects\n");
+        return;
+    }
+
+    glClearColor(0.25, 0.5, 0.75, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    fd := WS.wl_native_fence_fd(egl);
+    assert(fd >= 0, "wl_native_fence_fd returned no sync_file");
+    defer close(fd);
+
+    t, ok := Gpu.syncobj_create(egl.drm_fd);
+    assert(ok, "syncobj_create failed");
+    defer Gpu.syncobj_destroy(egl.drm_fd, t);
+    assert(Gpu.syncobj_import_sync_file(egl.drm_fd, t, 1, fd), "importing the GL fence failed");
+    result := Gpu.syncobj_wait(egl.drm_fd, .[t], .[1], 1_000_000_000);
+    assert(result == .SIGNALED, "the GL fence should signal within a second, got %", result);
+    print("  PASS: a GL native fence imported at a timeline point signals\n");
 }

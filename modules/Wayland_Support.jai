@@ -238,6 +238,7 @@ wl_egl_init :: (egl: *Wl_Egl_State, preference: Gpu.Device_Preference) -> bool {
 
     if EGL.eglInitialize(egl.dpy, null, null) != EGL.EGL_TRUE  return false;
     if !EGL.init_egl_extensions(egl.dpy)  return false;
+    wl_have_native_fence = EGL.init_egl_fence_extensions(egl.dpy);
 
     EGL.eglBindAPI(EGL.EGL_OPENGL_API);
     config_attrs := s32.[
@@ -277,6 +278,39 @@ wl_egl_destroy :: (egl: *Wl_Egl_State) {
 
 wl_shared_egl: Wl_Egl_State;
 wl_shared_egl_initialized: bool;
+
+// Set by wl_egl_init: the display exports GPU fences as sync_files
+// (EGL_ANDROID_native_fence_sync), the GL half of explicit sync.
+wl_have_native_fence: bool;
+
+// A sync_file that signals when every GL command issued so far has executed, or -1
+// and why not. Flushes: the driver creates the fd when the fence command is
+// submitted. The caller owns the fd.
+wl_native_fence_fd :: (egl: Wl_Egl_State) -> s32, reason: string {
+    if !wl_have_native_fence  return -1, "the EGL display has no EGL_ANDROID_native_fence_sync";
+
+    attrs := EGL.EGLint.[EGL.EGL_NONE];
+    sync := EGL.eglCreateSyncKHR(egl.dpy, EGL.EGL_SYNC_NATIVE_FENCE_ANDROID, attrs.data);
+    if sync == EGL.EGL_NO_SYNC_KHR {
+        return -1, tprint("eglCreateSyncKHR(EGL_SYNC_NATIVE_FENCE_ANDROID) failed (EGL error 0x%)", formatInt(EGL.eglGetError(), base=16));
+    }
+    defer EGL.eglDestroySyncKHR(egl.dpy, sync);
+
+    glFlush();
+    fd := EGL.eglDupNativeFenceFDANDROID(egl.dpy, sync);
+    if fd == EGL.EGL_NO_NATIVE_FENCE_FD_ANDROID {
+        return -1, tprint("eglDupNativeFenceFDANDROID failed (EGL error 0x%)", formatInt(EGL.eglGetError(), base=16));
+    }
+    return fd, "";
+}
+
+// Park the frame's fence on its slot until the present attaches it to an acquire
+// point. A fence already parked belongs to a frame that was never committed (the
+// present returned for an app turn), so it is closed.
+wl_store_acquire_fence :: (slot: *Wl_Gl_Slot, fd: s32) {
+    if slot.acquire_fence_fd >= 0  close(slot.acquire_fence_fd);
+    slot.acquire_fence_fd = fd;
+}
 
 // The first window to bring up GL picks the GPU for every window: the context is
 // shared. `preference` is the compositor's main device when that window knew it.

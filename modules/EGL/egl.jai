@@ -13,6 +13,7 @@ EGLContext      :: *void;
 EGLSurface      :: *void;
 EGLImage        :: *void;   // aka EGLImageKHR
 EGLClientBuffer :: *void;
+EGLSyncKHR      :: *void;
 
 EGLBoolean :: u32;
 EGLint     :: s32;
@@ -69,6 +70,13 @@ EGL_DMA_BUF_PLANE0_PITCH_EXT   :: 0x3274;
 EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT :: 0x3443;
 EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT :: 0x3444;
 
+// EGL_ANDROID_native_fence_sync (on EGL_KHR_fence_sync): a fence the driver exports
+// as a sync_file fd once the commands before it are flushed. Explicit sync attaches
+// it to the commit's acquire point.
+EGL_NO_SYNC_KHR                :: cast(EGLSyncKHR) null;
+EGL_SYNC_NATIVE_FENCE_ANDROID  :: 0x3144;
+EGL_NO_NATIVE_FENCE_FD_ANDROID :: -1;
+
 // Core function pointers — populated by init_egl() via dlsym.
 eglGetPlatformDisplay: #type (platform: EGLenum, native_display: *void, attrib_list: *EGLAttrib) -> EGLDisplay #c_call;
 eglInitialize:         #type (dpy: EGLDisplay, major: *EGLint, minor: *EGLint) -> EGLBoolean #c_call;
@@ -88,3 +96,9 @@ eglCreateImageKHR:             #type (dpy: EGLDisplay, ctx: EGLContext, target: 
 eglDestroyImageKHR:            #type (dpy: EGLDisplay, image: EGLImage) -> EGLBoolean #c_call;
 eglExportDMABUFImageQueryMESA: #type (dpy: EGLDisplay, image: EGLImage, fourcc: *s32, num_planes: *s32, modifiers: *u64) -> EGLBoolean #c_call;
 eglExportDMABUFImageMESA:      #type (dpy: EGLDisplay, image: EGLImage, fds: *s32, strides: *s32, offsets: *s32) -> EGLBoolean #c_call;
+
+// Populated by init_egl_fence_extensions(), only when the display lists
+// EGL_ANDROID_native_fence_sync; null otherwise.
+eglCreateSyncKHR:              #type (dpy: EGLDisplay, type: EGLenum, attrib_list: *EGLint) -> EGLSyncKHR #c_call;
+eglDestroySyncKHR:             #type (dpy: EGLDisplay, sync: EGLSyncKHR) -> EGLBoolean #c_call;
+eglDupNativeFenceFDANDROID:    #type (dpy: EGLDisplay, sync: EGLSyncKHR) -> EGLint #c_call;
