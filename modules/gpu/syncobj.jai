@@ -85,6 +85,16 @@ syncobj_import_sync_file :: (drm_fd: s32, timeline: u32, point: u64, sync_file: 
     return true;
 }
 
+// Attach the work a commit waits on to `point`: the fence in `sync_file`, or, when
+// there is none (-1), signal the point from the CPU because the caller knows the work
+// is already complete. Two callers pass -1: the GL path after its glFinish fallback,
+// and Vulkan, whose SYNC_FD export may legally return -1 for a semaphore that has
+// already signalled. Does not close `sync_file`.
+syncobj_attach_fence :: (drm_fd: s32, timeline: u32, point: u64, sync_file: s32) -> bool {
+    if sync_file < 0  return syncobj_signal(drm_fd, timeline, point);
+    return syncobj_import_sync_file(drm_fd, timeline, point, sync_file);
+}
+
 // The fence at `point` of `timeline` as a sync_file the caller owns; -1 on failure
 // (including a point nobody has attached a fence to yet).
 syncobj_export_sync_file :: (drm_fd: s32, timeline: u32, point: u64) -> s32 {

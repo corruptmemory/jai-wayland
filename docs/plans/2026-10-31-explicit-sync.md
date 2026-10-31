@@ -44,8 +44,10 @@ generated `linux_drm_syncobj_v1` bindings.
 4. **A compositor without the global** (other compositors, or the desktop's Hyprland
    0.56.2 if it lacks it). Behaviour must be byte-for-byte today's. Checked in Task 3's
    live step with `JAI_WAYLAND_EXPLICIT_SYNC=0`, and in Task 4 with `--no-explicit-sync`.
-5. **An occluded window** (another workspace). Release points must still free slots, or the
-   bounded wait warns rather than hangs. Checked in Task 3's live step.
+5. **An occluded window** (another workspace). Release points must still free slots; if
+   none ever signals, the GL wait warns once and keeps waiting, as the design (section 3)
+   and the old `wl_pump(true)` loop do. Visible, not silent; not bounded. Checked in Task 3's
+   live step (corrected after the final review).
 
 ---
 

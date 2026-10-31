@@ -493,11 +493,13 @@ commit_slot :: (batch: *MessageBuilder, surface: *Wl_Surface, ctx: *Vulkan_Conte
     if ctx.explicit_sync {
         acquire := slot.sync_point + 1;
         release := acquire + 1;
-        ok := slot.acquire_fd >= 0 && Gpu.syncobj_import_sync_file(ctx.drm_fd, slot.sync_timeline, acquire, slot.acquire_fd);
+        // acquire_fd is -1 when the export found the semaphore already signalled
+        // (spec-legal): the point is then signalled from the CPU.
+        ok := Gpu.syncobj_attach_fence(ctx.drm_fd, slot.sync_timeline, acquire, slot.acquire_fd);
         if slot.acquire_fd >= 0  close(slot.acquire_fd);
         slot.acquire_fd = -1;
         if !ok {
-            log_error("No acquire fence for slot buffer %; cannot commit it under explicit sync", slot.buffer.id);
+            log_error("Could not set the acquire point for slot buffer %; cannot commit it under explicit sync", slot.buffer.id);
             return false;
         }
         wp_linux_drm_syncobj_surface_v1_set_acquire_point(batch, syncobj_surface, *slot.sync_timeline_obj,
@@ -529,6 +531,8 @@ refresh_slot_releases :: (ctx: *Vulkan_Context, slots: [] Vulkan_Buffer) {
 // wait here on the release points, bounded. -1 (with a warning) on timeout; the next
 // event retries.
 RELEASE_WAIT_NS :: 1_000_000_000;
+// How long a slot's last submit may take before a draw or a destroy gives up on it.
+FENCE_WAIT_NS   :: 1_000_000_000;
 
 wait_for_released_slot :: (ctx: *Vulkan_Context, slots: [] Vulkan_Buffer) -> int {
     handles: [2] u32;
@@ -580,6 +584,8 @@ setup_explicit_sync :: (ctx: *Vulkan_Context, wanted: bool) -> reason: string {
     _, advertised := get_global("wp_linux_drm_syncobj_manager_v1");
     if !advertised  return "the compositor does not advertise wp_linux_drm_syncobj_manager_v1";
     if !ctx.has_semaphore_fd || Vulkan.vkGetSemaphoreFdKHR == null  return "the device lacks VK_KHR_external_semaphore_fd";
+    // Core in Vulkan 1.1; a 1.0 instance (see init_vulkan_context) may not have it.
+    if Vulkan.vkGetPhysicalDeviceExternalSemaphoreProperties == null  return "the Vulkan instance lacks vkGetPhysicalDeviceExternalSemaphoreProperties (Vulkan 1.1)";
 
     info := Vulkan.VkPhysicalDeviceExternalSemaphoreInfo.{ handleType = .SYNC_FD_BIT };
     props: Vulkan.VkExternalSemaphoreProperties;
@@ -1538,7 +1544,14 @@ destroy_vulkan_buffer_without_wayland :: (ctx: *Vulkan_Context, buf: *Vulkan_Buf
     // The per-frame queue wait is gone under explicit sync: let this slot's last
     // submit finish before freeing what it uses.
     if buf.fence != null {
-        Vulkan.vkWaitForFences(ctx.device, 1, *buf.fence, Vulkan.VK_TRUE, RELEASE_WAIT_NS);
+        result := Vulkan.vkWaitForFences(ctx.device, 1, *buf.fence, Vulkan.VK_TRUE, FENCE_WAIT_NS);
+        if result != .SUCCESS {
+            // Destroying objects a pending submit still uses is undefined behaviour:
+            // say so, and wait for the whole device instead.
+            print("Warning: slot buffer %'s last submit is not done after % ms (%); waiting for the device before destroying it\n",
+                  buf.buffer.id, FENCE_WAIT_NS / 1_000_000, result);
+            Vulkan.vkDeviceWaitIdle(ctx.device);
+        }
         Vulkan.vkDestroyFence(ctx.device, buf.fence, null);
     }
     if buf.cmd != null          Vulkan.vkFreeCommandBuffers(ctx.device, ctx.command_pool, 1, *buf.cmd);
@@ -1829,7 +1842,7 @@ create_vulkan_slot_render_targets :: (ctx: *Vulkan_Context, tri: *Vulkan_Triangl
 draw_vulkan_triangle :: (ctx: Vulkan_Context, tri: Vulkan_Triangle, slot: *Vulkan_Buffer, angle: float, first_use: bool) -> bool {
     // The slot's last submit must be done with its command buffer before it is
     // re-recorded. Normally long signalled: the slot was presented and released since.
-    result := Vulkan.vkWaitForFences(ctx.device, 1, *slot.fence, Vulkan.VK_TRUE, RELEASE_WAIT_NS);
+    result := Vulkan.vkWaitForFences(ctx.device, 1, *slot.fence, Vulkan.VK_TRUE, FENCE_WAIT_NS);
     if result != .SUCCESS {
         print("vkWaitForFences on the slot's last submit failed: %\n", result);
         return false;
@@ -1996,7 +2009,8 @@ draw_vulkan_triangle :: (ctx: Vulkan_Context, tri: Vulkan_Triangle, slot: *Vulka
     if ctx.explicit_sync {
         // The compositor waits on this fence (the commit's acquire point), not the CPU.
         // Exporting a SYNC_FD has copy transference: the semaphore is unsignalled again
-        // afterwards, ready for the next submit.
+        // afterwards, ready for the next submit. A driver may return SUCCESS with fd -1
+        // when the semaphore has already signalled; commit_slot treats that as done.
         get_fd := Vulkan.VkSemaphoreGetFdInfoKHR.{ semaphore = slot.render_done, handleType = .SYNC_FD_BIT };
         if slot.acquire_fd >= 0  close(slot.acquire_fd);
         slot.acquire_fd = -1;

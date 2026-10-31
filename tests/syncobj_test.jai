@@ -37,6 +37,7 @@ main :: () {
         test_export_import_same_timeline(drm_fd);
         test_sync_file_round_trip(drm_fd);
         test_wait_on_destroyed_handle_logs_one_error(drm_fd);
+        test_attach_fence_without_fd_signals_point(drm_fd);
         test_store_acquire_fence_closes_stale_fd();
         test_gl_fence_signals_timeline_point();
         test_cpu_signal_fallback_sets_acquire(drm_fd);
@@ -273,4 +274,24 @@ test_retired_slot_reaped_on_release_point :: (drm_fd: s32) {
     assert(ww.wl_retired.count == 0, "a retired slot should be reaped once its release point signals");
     assert(batch.out_used > 0, "reaping should queue the wl_buffer and timeline destroys");
     print("  PASS: a retired slot is reaped when its release point signals\n");
+}
+
+// A Vulkan driver may export an already-signalled SYNC_FD semaphore as fd -1 (the
+// spec allows it; a small frame can finish before the export). "No fence" then means
+// "already done", as after the GL glFinish fallback: the point is signalled from the
+// CPU instead of the commit failing.
+test_attach_fence_without_fd_signals_point :: (drm_fd: s32) {
+    t, ok := Gpu.syncobj_create(drm_fd);
+    assert(ok, "syncobj_create failed");
+    defer Gpu.syncobj_destroy(drm_fd, t);
+
+    assert(Gpu.syncobj_attach_fence(drm_fd, t, 1, -1), "attaching 'no fence' should signal the point");
+    assert(Gpu.syncobj_point_signaled(drm_fd, t, 1), "point 1 should read signalled");
+
+    sync_file := Gpu.syncobj_export_sync_file(drm_fd, t, 1);
+    assert(sync_file >= 0, "exporting point 1 failed");
+    defer close(sync_file);
+    assert(Gpu.syncobj_attach_fence(drm_fd, t, 2, sync_file), "attaching a real sync_file failed");
+    assert(Gpu.syncobj_point_signaled(drm_fd, t, 2), "point 2 carries a signalled fence and should read signalled");
+    print("  PASS: attaching fd -1 signals the point; a real sync_file is imported\n");
 }
