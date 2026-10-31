@@ -559,7 +559,30 @@ The nested-Hyprland sandbox could not be used for this. A nested Hyprland runs o
 Wayland backend and does not advertise `wp_linux_drm_syncobj_manager_v1`, so every
 explicit-sync run went straight to the live instance; the nested one exercised the
 fallback instead. Every buffer commit there is the one NVIDIA's own driver already makes
-on this laptop. Still to run: the dGPU-only boot, with NVIDIA as the compositor's GPU.
+on this laptop.
+
+**dGPU-only boot, same day.** The MUX takes the iGPU off the PCI bus, so the RTX 3050 Ti
+is the only GPU (`renderD128`, `nvidia-drm` 615.78.08) and Hyprland 0.57 composites on it.
+The compositor advertises `zwp_linux_dmabuf_v1` v5, so the global format list is empty, and
+its one feedback tranche, on its own device, offers `AB24` with NVIDIA's block-linear
+modifiers `0x0300000000606010`-`…15` plus `INVALID`. The June note that NVIDIA's tranches
+offer no GBM-usable ABGR/XBGR format was the modifier parse dropping each modifier's high
+word: with it fixed, the GL path picks `ABGR8888` `0x0300000000606010` from the surface
+feedback (`Using dmabuf surface feedback for format selection`), and on a v5 compositor the
+global-list fallback has nothing to offer. The full suite passes on this box (155 PASS;
+`gl_picker_test` SKIPs because NVIDIA's 13 ABGR8888 modifiers are all single-plane).
+The same timing patch, reverted after: 3.0-3.6 ms in `glFinish` became 0.14-0.16 ms, and
+the vsync wait absorbs the difference (`hello_simp` is vsync-capped at ~16.5 ms a frame
+either way).
+
+| Run (dGPU-only)                                      | Result                                                                                       |
+|------------------------------------------------------|----------------------------------------------------------------------------------------------|
+| `hello_simp`, `skeletal_animation`, NVIDIA GL BO     | rc 0, frames correct, explicit sync on, three BO slots on `0x0300000000606010`               |
+| Eight more Simp examples and `hello_clipboard`       | All rc 0 on a compositor close, frames correct, explicit sync on (both windows of the multi) |
+| `hello_simp`, six floated resizes, 5 s hidden        | Three slot reallocations, new timelines each; alive while hidden; animating after            |
+| `hello_vulkan_dmabuf`, driver-first                  | First candidate `0x0300000000606015` accepted, explicit sync on, 600 frames, rc 0            |
+| `JAI_WAYLAND_EXPLICIT_SYNC=0` / `--no-explicit-sync` | The `glFinish` / queue-wait paths, rc 0, frames correct                                      |
+| `JAI_WAYLAND_COPY_PATH=1`                            | The `wl_shm` readback on the compositor's own GPU, rc 0, frames correct                      |
 
 **Tooling notes for this compositor:** Hyprland 0.57's Lua `hyprctl dispatch` runs
 dispatchers (`hl.dsp.window.close({ window = "address:..." })`, `hl.dsp.window.float`,

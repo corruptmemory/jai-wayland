@@ -1,10 +1,13 @@
 # Explicit sync for the dma-buf present paths (design)
 
-**Status: implemented 2026-10-31, validated on the hybrid laptop** (commits `d60c43f`
-syncobj wrappers, `39672af` EGL native fence, `660ba99` GL path, `cf65b25`
-`hello_vulkan_dmabuf`). **Still to run in dGPU-only mode** (NVIDIA as the compositor's
-GPU): `hello_simp` and `skeletal_animation` on the NVIDIA GL BO path, `hello_vulkan_dmabuf`
-driver-first, and `JAI_WAYLAND_EXPLICIT_SYNC=0` once. Covers the GL path in
+**Status: implemented 2026-10-31, validated on the hybrid laptop and in dGPU-only mode**
+(commits `d60c43f` syncobj wrappers, `39672af` EGL native fence, `660ba99` GL path,
+`cf65b25` `hello_vulkan_dmabuf`, `1019c90` final-review fixes). In dGPU-only mode
+(Hyprland 0.57 composited by the RTX 3050 Ti itself, the iGPU off the bus) the ten Simp
+examples run on the NVIDIA GL BO path with explicit sync, `hello_vulkan_dmabuf` presents
+driver-first with it, and both fallbacks work; the end-of-frame CPU wait fell from 3.0-3.6 ms
+(`glFinish`) to 0.14-0.16 ms. Results in the backport audit's "Explicit sync, both paths"
+section. Covers the GL path in
 `Wayland_Support` (every Simp example) and `hello_vulkan_dmabuf`, both its same-GPU
 (driver-first) mode and its cross-GPU copy path. The `wl_shm` readback is out of scope: the
 protocol guarantees explicit sync only for dma-buf buffers, and an shm commit on a surface
