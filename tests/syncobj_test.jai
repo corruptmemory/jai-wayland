@@ -15,6 +15,7 @@ Gpu :: #import "gpu";
 #import "GL";
 EGL :: #import "EGL";
 WS  :: #import,file "../modules/Wayland_Support.jai";
+Wl  :: #import "wayland";
 
 main :: () {
     print("=== Syncobj Tests ===\n\n");
@@ -38,6 +39,9 @@ main :: () {
         test_wait_on_destroyed_handle_logs_one_error(drm_fd);
         test_store_acquire_fence_closes_stale_fd();
         test_gl_fence_signals_timeline_point();
+        test_cpu_signal_fallback_sets_acquire(drm_fd);
+        test_release_point_frees_slot(drm_fd);
+        test_retired_slot_reaped_on_release_point(drm_fd);
     }
     if rec.errors.count != rec.expected_errors {
         for rec.errors  print("  logged error: %\n", it);
@@ -202,4 +206,71 @@ test_gl_fence_signals_timeline_point :: () {
     result := Gpu.syncobj_wait(egl.drm_fd, .[t], .[1], 1_000_000_000);
     assert(result == .SIGNALED, "the GL fence should signal within a second, got %", result);
     print("  PASS: a GL native fence imported at a timeline point signals\n");
+}
+
+// A frame whose fence could not be made (the present falls back to glFinish) still
+// has to commit with an acquire point: the protocol requires both points on every
+// buffer commit. With no fence parked, the point is signalled from the CPU.
+test_cpu_signal_fallback_sets_acquire :: (drm_fd: s32) {
+    slot: WS.Wl_Gl_Slot;
+    t, ok := Gpu.syncobj_create(drm_fd);
+    assert(ok, "syncobj_create failed");
+    defer Gpu.syncobj_destroy(drm_fd, t);
+    slot.sync_timeline = t;
+
+    acquire, release, set := WS.wl_set_acquire_point(drm_fd, *slot);
+    assert(set && acquire == 1 && release == 2, "the first commit should use points 1 and 2, got % and % (ok %)", acquire, release, set);
+    assert(Gpu.syncobj_point_signaled(drm_fd, t, 1), "with no fence parked the acquire point should be signalled from the CPU");
+    assert(!Gpu.syncobj_point_signaled(drm_fd, t, 2), "the release point is the compositor's to signal");
+
+    // The compositor's release of commit 1 lands before commit 2 reuses the slot.
+    assert(Gpu.syncobj_signal(drm_fd, t, 2), "signalling the release point failed");
+    acquire, release, set = WS.wl_set_acquire_point(drm_fd, *slot);
+    assert(set && acquire == 3 && release == 4, "the second commit should use points 3 and 4, got % and %", acquire, release);
+    print("  PASS: commit n uses acquire 2n-1 and release 2n; no fence means a CPU-signalled acquire\n");
+}
+
+// Once a surface uses explicit sync, wl_buffer.release is undefined: a slot is free
+// again only when its release point has signalled.
+test_release_point_frees_slot :: (drm_fd: s32) {
+    ww: WS.Wayland_Window;
+    ww.wl_explicit_sync = true;
+    t, ok := Gpu.syncobj_create(drm_fd);
+    assert(ok, "syncobj_create failed");
+    defer Gpu.syncobj_destroy(drm_fd, t);
+    ww.wl_slots[0].sync_timeline = t;
+    ww.wl_slots[0].in_flight     = true;
+    ww.wl_slots[0].release_point = 2;
+
+    WS.wl_refresh_slot_releases(drm_fd, *ww);
+    assert(ww.wl_slots[0].in_flight, "a slot whose release point has not signalled must stay in flight");
+    assert(Gpu.syncobj_signal(drm_fd, t, 2), "signalling the release point failed");
+    WS.wl_refresh_slot_releases(drm_fd, *ww);
+    assert(!ww.wl_slots[0].in_flight && ww.wl_slots[0].release_point == 0, "a signalled release point should free the slot");
+    print("  PASS: a slot leaves flight when its release point signals, not before\n");
+}
+
+// A slot retired by a resize while the compositor still held it must still be
+// destroyed once released, although no wl_buffer.release can be relied on.
+test_retired_slot_reaped_on_release_point :: (drm_fd: s32) {
+    ww: WS.Wayland_Window;
+    ww.wl_explicit_sync = true;
+    t, ok := Gpu.syncobj_create(drm_fd);
+    assert(ok, "syncobj_create failed");
+    retired: WS.Wl_Gl_Slot;
+    retired.buffer.id     = 1000;   // a destroy is queued for it, never sent
+    retired.sync_timeline = t;      // owned by the slot now: reaping destroys it
+    retired.in_flight     = true;
+    retired.release_point = 2;
+    array_add(*ww.wl_retired, retired);
+    egl := WS.Wl_Egl_State.{ drm_fd = drm_fd };
+
+    batch: Wl.MessageBuilder;
+    WS.wl_reap_retired(*batch, egl, *ww);
+    assert(ww.wl_retired.count == 1, "a retired slot whose release point has not signalled must be kept");
+    assert(Gpu.syncobj_signal(drm_fd, t, 2), "signalling the release point failed");
+    WS.wl_reap_retired(*batch, egl, *ww);
+    assert(ww.wl_retired.count == 0, "a retired slot should be reaped once its release point signals");
+    assert(batch.out_used > 0, "reaping should queue the wl_buffer and timeline destroys");
+    print("  PASS: a retired slot is reaped when its release point signals\n");
 }

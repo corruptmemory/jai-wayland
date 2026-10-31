@@ -166,10 +166,19 @@ Wl_Gl_Slot :: struct {
     shm_fd:    s32 = -1;
     shm_data:  *void;
     shm_size:  s64;
-    // Placeholders for EGL_KHR_fence_sync + wp_linux_drm_syncobj_v1 explicit sync.
-    // Currently unused — glFinish() provides coarse but correct GPU ordering.
+    // Explicit sync (wp_linux_drm_syncobj_v1) only; see wl_finish_frame. The frame's
+    // GL fence as a sync_file, parked until the present attaches it to an acquire point.
     acquire_fence_fd: s32 = -1;
-    release_fence_fd: s32 = -1;
+    // The slot's timeline sync object (a DRM handle on wl_shared_egl.drm_fd), its
+    // export fd (open only until the import request is sent) and the compositor's
+    // import of it. Commit n of this slot uses acquire point 2n-1 and release point
+    // 2n: one timeline per slot keeps every point added in increasing order, because
+    // a slot is committed again only after its last release point has signalled.
+    sync_timeline:     u32;
+    sync_timeline_fd:  s32 = -1;
+    sync_timeline_obj: Wl.Wp_Linux_Drm_Syncobj_Timeline_V1;
+    sync_point:        u64;   // the last point used (the last release point)
+    release_point:     u64;   // pending release point; 0 when the compositor holds nothing
 }
 
 // EGL display/context + GBM device + drm fd. Simp's GL objects (shaders, VBOs,
@@ -370,6 +379,129 @@ wl_ensure_viewporter :: () {
     }
     wl_have_viewporter = true;
     log("Wayland_Support: wp_viewporter available; using bucketed slot capacity");
+}
+
+// ─────────────────────── Explicit sync (linux-drm-syncobj-v1) ─────────────
+// Each buffer commit carries an acquire point (the client's GPU fence: the compositor
+// waits on it before reading) and a release point (the compositor's: signalled once
+// it has finished with the buffer). Replaces glFinish before the commit and the
+// wl_buffer.release-driven slot rotation. dma-buf windows only: an shm commit on a
+// surface using it can be an unsupported_buffer protocol error. See
+// docs/plans/2026-10-31-explicit-sync-design.md.
+
+wl_syncobj_manager: Wl.Wp_Linux_Drm_Syncobj_Manager_V1;
+wl_have_syncobj: bool;
+wl_syncobj_initialized: bool;
+
+wl_ensure_syncobj :: () {
+    if wl_syncobj_initialized  return;
+    wl_syncobj_initialized = true;
+
+    _, ok := Wl.get_global("wp_linux_drm_syncobj_manager_v1");
+    if !ok  return;
+
+    wl_syncobj_manager = .{ id = Wl.allocate_id() };
+    batch: Wl.MessageBuilder;
+    if !Wl.wl_registry_bind(*batch, Wl.registry(), *wl_syncobj_manager) || !Wl.wayland_send(*batch) {
+        wl_syncobj_manager = .{};
+        return;
+    }
+    wl_have_syncobj = true;
+}
+
+// Whether a dma-buf window can use explicit sync, and if not, why. Needs the shared
+// EGL context (its render node and display).
+wl_explicit_sync_available :: () -> bool, reason: string {
+    value := getenv("JAI_WAYLAND_EXPLICIT_SYNC");
+    if value != null && to_string(value) == "0"  return false, "JAI_WAYLAND_EXPLICIT_SYNC=0";
+    wl_ensure_syncobj();
+    if !wl_have_syncobj  return false, "the compositor does not advertise wp_linux_drm_syncobj_manager_v1";
+    if !wl_have_native_fence  return false, "the EGL display has no EGL_ANDROID_native_fence_sync";
+    if !Gpu.syncobj_timeline_supported(wl_shared_egl.drm_fd)  return false, "the render node has no timeline sync objects";
+    return true, "";
+}
+
+// Give a new slot its timeline: create it, export it, and queue the compositor's
+// import into `batch`. The export fd must stay open until the batch is sent; the
+// caller closes it after the send (wl_close_sent_timeline_fds).
+wl_slot_init_sync :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, batch: *Wl.MessageBuilder) -> bool, reason: string {
+    handle, ok := Gpu.syncobj_create(egl.drm_fd);
+    if !ok  return false, "creating the slot's timeline sync object failed";
+    slot.sync_timeline = handle;
+    slot.sync_timeline_fd = Gpu.syncobj_export(egl.drm_fd, handle);
+    if slot.sync_timeline_fd < 0  return false, "exporting the slot's timeline failed";
+    slot.sync_timeline_obj = .{ id = Wl.allocate_id() };
+    Wl.wp_linux_drm_syncobj_manager_v1_import_timeline(batch, *wl_syncobj_manager, slot.sync_timeline_obj.id, cast(Wl.Fd) slot.sync_timeline_fd);
+    return true, "";
+}
+
+wl_close_sent_timeline_fds :: (slots: [] Wl_Gl_Slot) {
+    for * slots {
+        if it.sync_timeline_fd >= 0  close(it.sync_timeline_fd);
+        it.sync_timeline_fd = -1;
+    }
+}
+
+// The end of a frame, before the present: under explicit sync, park a GL fence on the
+// current slot (no CPU wait); otherwise glFinish, so the GPU is done before the
+// commit. A fence that cannot be made falls back to glFinish for that frame, with
+// one warning per window; the present then signals the acquire point from the CPU.
+wl_finish_frame :: (ww: *Wayland_Window) {
+    if !ww.wl_explicit_sync || ww.wl_current < 0 {
+        glFinish();
+        return;
+    }
+
+    slot := *ww.wl_slots[ww.wl_current];
+    fd, why := wl_native_fence_fd(wl_shared_egl);
+    if fd < 0 {
+        if !ww.wl_fence_warned {
+            log("Wayland_Support: no GL fence for this frame (%); falling back to glFinish", why, flags=.WARNING);
+            ww.wl_fence_warned = true;
+        }
+        glFinish();
+    }
+    wl_store_acquire_fence(slot, fd);
+}
+
+// Explicit sync, every slot in flight: wait for any in-flight slot's release point,
+// in short slices with the Wayland socket pumped between them (pings, configures),
+// as the implicit path blocks in wl_pump(true). Warns once if it passes a second.
+WL_RELEASE_WAIT_SLICE_NS :: 10_000_000;
+
+wl_wait_for_release :: (ww: *Wayland_Window, waited_since: float64) {
+    handles: [SIMP_WL_SLOT_COUNT] u32;
+    points:  [SIMP_WL_SLOT_COUNT] u64;
+    n := 0;
+    for ww.wl_slots {
+        if !it.in_flight || it.release_point == 0  continue;
+        handles[n] = it.sync_timeline;
+        points[n]  = it.release_point;
+        n += 1;
+    }
+
+    if n == 0 {
+        wl_pump_timed(10);
+        return;
+    }
+
+    hs := array_view(handles, 0, n);
+    ps := array_view(points, 0, n);
+    result := Gpu.syncobj_wait(wl_shared_egl.drm_fd, hs, ps, WL_RELEASE_WAIT_SLICE_NS);
+    if result == .ERROR {
+        // The kernel refused the wait (already logged). Spinning on it would hang the
+        // render loop, so give the slots back and accept a possibly torn frame.
+        log_error("Wayland_Support: cannot wait on release points; reusing slots without waiting");
+        for * ww.wl_slots { it.in_flight = false; it.release_point = 0; }
+        return;
+    }
+    wl_refresh_slot_releases(wl_shared_egl.drm_fd, ww);
+    wl_pump_timed(0);
+
+    if !ww.wl_sync_wait_warned && seconds_since_init() - waited_since > 1.0 {
+        log("Wayland_Support: no release point signalled for over a second; the compositor still holds every buffer", flags=.WARNING);
+        ww.wl_sync_wait_warned = true;
+    }
 }
 
 // Create a wp_viewport for this surface (once). No-op if viewporter is absent.
@@ -834,7 +966,8 @@ wl_slot_destroy :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State) {
     if slot.fd >= 0  close(slot.fd);
     if slot.image_fd >= 0  close(slot.image_fd);
     if slot.acquire_fence_fd >= 0  close(slot.acquire_fence_fd);
-    if slot.release_fence_fd >= 0  close(slot.release_fence_fd);
+    if slot.sync_timeline_fd >= 0  close(slot.sync_timeline_fd);
+    if slot.sync_timeline != 0  Gpu.syncobj_destroy(egl.drm_fd, slot.sync_timeline);
     if slot.shm_data != null  munmap(slot.shm_data, cast(u64) slot.shm_size);
     if slot.shm_fd >= 0  close(slot.shm_fd);
 }
@@ -848,7 +981,7 @@ wl_retire_slots :: (batch: *Wl.MessageBuilder, retired: *[..] Wl_Gl_Slot, slots:
         if slot.in_flight {
             array_add(retired, slot.*);
         } else {
-            Wl.wl_buffer_destroy(batch, *slot.buffer);
+            wl_queue_slot_destroy(batch, slot);
             wl_slot_destroy(slot, egl);
         }
 
@@ -861,7 +994,7 @@ wl_retire_slots :: (batch: *Wl.MessageBuilder, retired: *[..] Wl_Gl_Slot, slots:
 wl_release_retired_slot :: (batch: *Wl.MessageBuilder, retired: *[..] Wl_Gl_Slot, object_id: u32, egl: Wl_Egl_State) -> bool {
     for * slot, i: retired.* {
         if slot.buffer.id == object_id {
-            Wl.wl_buffer_destroy(batch, *slot.buffer);
+            wl_queue_slot_destroy(batch, slot);
             wl_slot_destroy(slot, egl);
             array_unordered_remove_by_index(retired, i);
             return true;
@@ -869,6 +1002,71 @@ wl_release_retired_slot :: (batch: *Wl.MessageBuilder, retired: *[..] Wl_Gl_Slot
     }
 
     return false;
+}
+
+// The protocol objects of a slot being destroyed: its wl_buffer and, under explicit
+// sync, the compositor's import of its timeline. The timeline's destroy request
+// leaves the points already set in place, and the compositor holds its own
+// references to both the dma-buf and the sync object.
+wl_queue_slot_destroy :: (batch: *Wl.MessageBuilder, slot: *Wl_Gl_Slot) {
+    Wl.wl_buffer_destroy(batch, *slot.buffer);
+    if slot.sync_timeline_obj.id != 0  Wl.wp_linux_drm_syncobj_timeline_v1_destroy(batch, *slot.sync_timeline_obj);
+}
+
+// Explicit sync: a slot leaves flight when its release point has signalled.
+wl_refresh_slot_releases :: (drm_fd: s32, ww: *Wayland_Window) {
+    for * ww.wl_slots {
+        if !it.in_flight || it.release_point == 0  continue;
+        if Gpu.syncobj_point_signaled(drm_fd, it.sync_timeline, it.release_point) {
+            it.in_flight     = false;
+            it.release_point = 0;
+        }
+    }
+}
+
+// Explicit sync: destroy retired slots whose release point has signalled. A
+// wl_buffer.release for one still destroys it in the router, whichever comes first;
+// a retired slot is never written again, so either is safe.
+wl_reap_retired :: (batch: *Wl.MessageBuilder, egl: Wl_Egl_State, ww: *Wayland_Window) {
+    if !ww.wl_explicit_sync  return;
+    i := 0;
+    while i < ww.wl_retired.count {
+        slot := *ww.wl_retired[i];
+        if slot.release_point == 0 || Gpu.syncobj_point_signaled(egl.drm_fd, slot.sync_timeline, slot.release_point) {
+            wl_queue_slot_destroy(batch, slot);
+            wl_slot_destroy(slot, egl);
+            array_unordered_remove_by_index(*ww.wl_retired, i);
+            continue;
+        }
+        i += 1;
+    }
+}
+
+// Attach the slot's parked fence to its next acquire point, or signal that point
+// from the CPU when there is none (wl_finish_frame fell back to glFinish, so the GPU
+// is done). Returns the commit's acquire and release points. Consumes the fence fd.
+wl_set_acquire_point :: (drm_fd: s32, slot: *Wl_Gl_Slot) -> acquire: u64, release: u64, ok: bool {
+    acquire := slot.sync_point + 1;
+    release := acquire + 1;
+
+    ok: bool;
+    if slot.acquire_fence_fd >= 0 {
+        ok = Gpu.syncobj_import_sync_file(drm_fd, slot.sync_timeline, acquire, slot.acquire_fence_fd);
+        close(slot.acquire_fence_fd);
+        slot.acquire_fence_fd = -1;
+        if !ok && glFinish != null {
+            // The fence never reached the timeline. Make the GPU finish, then the
+            // CPU-signalled point below is true.
+            glFinish();
+            ok = Gpu.syncobj_signal(drm_fd, slot.sync_timeline, acquire);
+        }
+    } else {
+        ok = Gpu.syncobj_signal(drm_fd, slot.sync_timeline, acquire);
+    }
+    if !ok  return 0, 0, false;
+
+    slot.sync_point = release;
+    return acquire, release, true;
 }
 
 wl_find_free_slot :: (slots: [] Wl_Gl_Slot) -> int {
@@ -907,6 +1105,15 @@ Wayland_Window :: struct {
     wl_format:      u32;                         // chosen DRM fourcc
     wl_modifier:    u64;                         // chosen DRM modifier
     wl_backend:     Wl_Gl_Backend;               // SHM_READBACK when the compositor is on another GPU; else AUTO
+
+    // Explicit sync (wp_linux_drm_syncobj_v1), decided in wl_window_init_gl. When on,
+    // every buffer commit carries acquire/release points, wl_finish_frame exports a
+    // GL fence instead of calling glFinish, and a slot is reused only once its release
+    // point has signalled (the protocol makes wl_buffer.release undefined).
+    wl_explicit_sync:     bool;
+    wl_syncobj_surface:   Wl.Wp_Linux_Drm_Syncobj_Surface_V1;
+    wl_fence_warned:      bool;   // the GL fence fallback warned once
+    wl_sync_wait_warned:  bool;   // a release-point wait passed a second, warned once
 
     // wp_viewport crops the bucketed buffer to the logical surface size.
     wl_viewport:      Wl.Wp_Viewport;
@@ -1203,6 +1410,19 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
     slot := *ww.wl_slots[ww.wl_current];
     if slot.shm_data != null  wl_read_back_slot(slot, ww.width, ww.height);
     batch: Wl.MessageBuilder;
+    if ww.wl_explicit_sync {
+        acquire, release, ok := wl_set_acquire_point(wl_shared_egl.drm_fd, slot);
+        if !ok {
+            // No acquire point means no legal commit; drop the frame (already logged).
+            log_error("Wayland_Support: no acquire point for this frame; not presenting it");
+            return;
+        }
+        Wl.wp_linux_drm_syncobj_surface_v1_set_acquire_point(*batch, *ww.wl_syncobj_surface, *slot.sync_timeline_obj,
+            cast(u32) (acquire >> 32), cast(u32) (acquire & 0xFFFF_FFFF));
+        Wl.wp_linux_drm_syncobj_surface_v1_set_release_point(*batch, *ww.wl_syncobj_surface, *slot.sync_timeline_obj,
+            cast(u32) (release >> 32), cast(u32) (release & 0xFFFF_FFFF));
+        slot.release_point = release;
+    }
     frame_callback_id := Wl.cache_alloc(*ww.wl_frame_cache);
     ww.wl_pending_frame_callback = frame_callback_id;
     ww.wl_frame_done = false;
@@ -1220,11 +1440,20 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
     // release, so we never overwrite an in-flight buffer (tear-safe); Simp's swap
     // glFinish already guaranteed the GPU finished before commit.
     wl_pump(false);
+    if ww.wl_explicit_sync {
+        // wl_buffer.release is undefined under explicit sync: release points decide.
+        wl_refresh_slot_releases(wl_shared_egl.drm_fd, ww);
+        reap_batch: Wl.MessageBuilder;
+        wl_reap_retired(*reap_batch, wl_shared_egl, ww);
+        if reap_batch.out_used > 0  Wl.wayland_send(*reap_batch);
+    }
     nxt := wl_find_free_slot(ww.wl_slots);
+    waited_since := seconds_since_init();
     while nxt < 0 {
         sess := context.wayland_session;
         if !sess || sess.connection_lost  break;
-        wl_pump(true);
+        if ww.wl_explicit_sync  wl_wait_for_release(ww, waited_since);
+        else                    wl_pump(true);
         nxt = wl_find_free_slot(ww.wl_slots);
     }
     if nxt >= 0  ww.wl_current = cast(s32) nxt;
@@ -1292,6 +1521,11 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
         ww.wl_modifier = modifier;
         log("Wayland_Support: using format=0x% modifier=0x%",
             formatInt(format, base=16), formatInt(modifier, base=16));
+
+        available, why := wl_explicit_sync_available();
+        ww.wl_explicit_sync = available;
+        if available  log("Wayland_Support: explicit sync on (wp_linux_drm_syncobj_v1): GL fences instead of glFinish");
+        else          log("Wayland_Support: explicit sync off (%); glFinish before each commit", why);
     }
 
     // Decide the slot allocation capacity. With wp_viewporter we allocate at the
@@ -1314,6 +1548,19 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
             log_error("Wayland_Support: failed to initialize slot %", i);
             return false;
         }
+        if ww.wl_explicit_sync {
+            ok, why := wl_slot_init_sync(slot, wl_shared_egl, *batch);
+            if !ok {
+                log_error("Wayland_Support: slot %: %", i, why);
+                return false;
+            }
+        }
+    }
+    // Before the first buffer commit: from here on every commit that attaches a
+    // buffer must carry both points.
+    if ww.wl_explicit_sync {
+        ww.wl_syncobj_surface = .{ id = Wl.allocate_id() };
+        Wl.wp_linux_drm_syncobj_manager_v1_get_surface(*batch, *wl_syncobj_manager, ww.wl_syncobj_surface.id, *ww.surface);
     }
     // GL renders into the FBO with row 0 at the BOTTOM (OpenGL convention); the
     // dma-buf is then scanned out top-down, so every frame would appear vertically
@@ -1324,6 +1571,7 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     // here; it persists across resizes and applies at the first present's commit.
     Wl.wl_surface_set_buffer_transform(*batch, *ww.surface, cast(s32) Wl.Wl_Output_Transform.FLIPPED_180);
     Wl.wayland_send(*batch);
+    wl_close_sent_timeline_fds(ww.wl_slots);
 
     ww.wl_current = 0;
     ww.wl_slot_width  = cap_w;
@@ -1341,6 +1589,9 @@ wl_realloc_slots :: (ww: *Wayland_Window, w: s32, h: s32) -> bool {
     if !wl_make_current()  return false;
 
     retire_batch: Wl.MessageBuilder;
+    // Explicit sync: free whatever the compositor has finished with, so only slots
+    // it still holds are retired.
+    if ww.wl_explicit_sync  wl_refresh_slot_releases(wl_shared_egl.drm_fd, ww);
     wl_retire_slots(*retire_batch, *ww.wl_retired, ww.wl_slots, wl_shared_egl);
     Wl.wayland_send(*retire_batch);
 
@@ -1353,8 +1604,17 @@ wl_realloc_slots :: (ww: *Wayland_Window, w: s32, h: s32) -> bool {
             ww.wl_initted = false;
             return false;
         }
+        if ww.wl_explicit_sync {
+            ok, why := wl_slot_init_sync(slot, wl_shared_egl, *alloc_batch);
+            if !ok {
+                log_error("Wayland_Support: slot % realloc: % — window disabled", i, why);
+                ww.wl_initted = false;
+                return false;
+            }
+        }
     }
     Wl.wayland_send(*alloc_batch);
+    wl_close_sent_timeline_fds(ww.wl_slots);
     ww.wl_current = 0;
     ww.wl_slot_width  = w;
     ww.wl_slot_height = h;
@@ -2313,7 +2573,10 @@ wl_route_message :: (header: *Wl.WaylandMessageHeader) -> routed: bool, done: bo
         for * ww: wayland_global_windows {
             for * ww.wl_slots {
                 if it.buffer.id == header.object_id {
-                    it.in_flight = false;
+                    // Under explicit sync the event's timing is undefined, and the
+                    // compositor's GPU may still be reading: only the release point
+                    // frees the slot (wl_refresh_slot_releases).
+                    if !ww.wl_explicit_sync  it.in_flight = false;
                     // Let wl_present_and_pace's throttle (a blocking wl_pump)
                     // stop as soon as an active slot frees. (Async present
                     // dropped the frame callback that used to set `done`.)

@@ -77,9 +77,9 @@ wl_swap_buffers :: (info: *Window_Info) {
     // so presenting would commit a null buffer. Skip rather than corrupt.
     if !ww || !ww.wl_initted  return;
 
-    // Coarse GPU sync before handing the BO to the compositor — same as hello_gl.
-    // Explicit fences are a future item (slot.acquire/release_fence_fd placeholders).
-    glFinish();
+    // GPU sync before handing the buffer to the compositor: under explicit sync a GL
+    // fence the commit's acquire point carries (no CPU wait), otherwise glFinish.
+    WS.wl_finish_frame(ww);
 
     // Present the current slot. wl_present_and_pace uses the previous frame
     // callback as a bounded vsync throttle — the blocking, vsync-locked swap Simp
