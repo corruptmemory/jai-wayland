@@ -89,6 +89,7 @@ VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
     #load "linux_drm_format_modifier.jai";
 
     vkGetMemoryFdKHR: PFN_vkGetMemoryFdKHR;
+    vkGetSemaphoreFdKHR: PFN_vkGetSemaphoreFdKHR;
     vkGetMemoryFdPropertiesKHR: PFN_vkGetMemoryFdPropertiesKHR;
 } else {
     #assert false  "Unsupported OS";

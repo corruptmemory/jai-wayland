@@ -378,6 +378,7 @@ load_vulkan_device_functions :: (device: VkDevice) -> bool {
     #if OS == .LINUX || OS == .ANDROID {
         if vkGetImageDrmFormatModifierPropertiesEXT == null  vkGetImageDrmFormatModifierPropertiesEXT = xx vkGetDeviceProcAddr(device, "vkGetImageDrmFormatModifierPropertiesEXT");
         if vkGetMemoryFdKHR == null  vkGetMemoryFdKHR = xx vkGetDeviceProcAddr(device, "vkGetMemoryFdKHR");
+        if vkGetSemaphoreFdKHR == null  vkGetSemaphoreFdKHR = xx vkGetDeviceProcAddr(device, "vkGetSemaphoreFdKHR");
         if vkGetMemoryFdPropertiesKHR == null  vkGetMemoryFdPropertiesKHR = xx vkGetDeviceProcAddr(device, "vkGetMemoryFdPropertiesKHR");
     }
     if vkGetPhysicalDeviceDisplayPlaneProperties2KHR == null  vkGetPhysicalDeviceDisplayPlaneProperties2KHR = xx vkGetDeviceProcAddr(device, "vkGetPhysicalDeviceDisplayPlaneProperties2KHR");

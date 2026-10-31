@@ -36,6 +36,7 @@
 
 #import,dir "../modules/wayland";
 Vulkan :: #import,dir "../modules/Vulkan";
+Gpu    :: #import,dir "../modules/gpu";
 
 #import "Basic";
 #import "File";
@@ -70,6 +71,13 @@ Vulkan_Context :: struct {
     command_pool: Vulkan.VkCommandPool;
     has_foreign:  bool;   // VK_EXT_queue_family_foreign enabled
     integrated:   bool;   // an iGPU: all of its memory is system memory
+    has_semaphore_fd: bool;   // VK_KHR_external_semaphore_fd enabled
+    // Explicit sync (linux-drm-syncobj-v1): each commit carries an acquire point (the
+    // submit's SYNC_FD semaphore) and a release point the compositor signals; see
+    // setup_explicit_sync. drm_fd is this device's render node, where the timelines live.
+    explicit_sync: bool;
+    drm_fd:        s32 = -1;
+    syncobj_manager: Wp_Linux_Drm_Syncobj_Manager_V1;
 }
 
 Vulkan_Triangle :: struct {
@@ -95,17 +103,33 @@ Vulkan_Buffer :: struct {
     height:      s32;
     in_flight: bool;
     ever_used: bool;
+    // Per slot, both modes: a reusable command buffer and the fence of its last submit.
+    cmd:   Vulkan.VkCommandBuffer;
+    fence: Vulkan.VkFence;
+    // Explicit sync only. render_done is signalled by each submit and exported as the
+    // commit's acquire fence (acquire_fd). One timeline per slot: commit n uses acquire
+    // point 2n-1 and release point 2n, so points are always added in increasing order.
+    render_done:       Vulkan.VkSemaphore;
+    acquire_fd:        s32 = -1;
+    sync_timeline:     u32;
+    sync_timeline_fd:  s32 = -1;
+    sync_timeline_obj: Wp_Linux_Drm_Syncobj_Timeline_V1;
+    sync_point:        u64;
+    release_point:     u64;   // pending; 0 when the compositor holds nothing
 }
 
 main :: () {
     force_copy_path := false;
+    want_explicit_sync := true;
     args := get_command_line_arguments();
     for args {
         if it_index == 0  continue;
         if it == "--copy-path"  force_copy_path = true;
+        else if it == "--no-explicit-sync"  want_explicit_sync = false;
         else {
-            print("Unknown argument '%'.\nUsage: % [--copy-path]\n", it, args[0]);
-            print("  --copy-path  present through the system-memory copy even on the compositor's own GPU\n");
+            print("Unknown argument '%'.\nUsage: % [--copy-path] [--no-explicit-sync]\n", it, args[0]);
+            print("  --copy-path         present through the system-memory copy even on the compositor's own GPU\n");
+            print("  --no-explicit-sync  wait for the GPU before each commit instead of handing the compositor fences\n");
             exit(1);
         }
     }
@@ -218,6 +242,18 @@ main :: () {
     if !init_vulkan_triangle(*ctx, config, *tri)  return;
     defer destroy_vulkan_triangle(*ctx, *tri);
 
+    reason := setup_explicit_sync(*ctx, want_explicit_sync);
+    if ctx.explicit_sync  print("Explicit sync: on (wp_linux_drm_syncobj_v1, SYNC_FD semaphores, timelines on the render node)\n");
+    else                  print("Explicit sync: off (%); waiting for the GPU before each commit\n", reason);
+    defer if ctx.drm_fd >= 0  close(ctx.drm_fd);
+    syncobj_surface: Wp_Linux_Drm_Syncobj_Surface_V1;
+    if ctx.explicit_sync {
+        // Before the first buffer commit: from here on every commit that attaches a
+        // buffer must carry both points (commit_slot).
+        syncobj_surface.id = allocate_id();
+        wp_linux_drm_syncobj_manager_v1_get_surface(*batch, *ctx.syncobj_manager, syncobj_surface.id, *surface);
+    }
+
     slots: [2] Vulkan_Buffer;
     for * slot, i: slots {
         if !init_vulkan_slot(*ctx, *tri, config, *dmabuf_info.dmabuf, *batch, win_width, win_height, slot) {
@@ -234,9 +270,7 @@ main :: () {
     frame_callback_id := cache_alloc(*frame_cache);
     xdg_surface_ack_configure(*batch, *xdg_surface, configure_serial);
     wl_surface_frame(*batch, *surface, frame_callback_id);
-    wl_surface_attach(*batch, *surface, *slots[0].buffer, 0, 0);
-    wl_surface_damage_buffer(*batch, *surface, 0, 0, slots[0].width, slots[0].height);
-    wl_surface_commit(*batch, *surface);
+    if !commit_slot(*batch, *surface, *ctx, *syncobj_surface, *slots[0])  return;
     wayland_send(*batch);
     slots[0].in_flight = true;
 
@@ -261,6 +295,11 @@ main :: () {
 
     for session() {
         defer {
+            if ctx.explicit_sync {
+                // wl_buffer.release is undefined under explicit sync: release points decide.
+                refresh_slot_releases(*ctx, slots);
+                if reap_retired_slots(*ctx, *batch, *retired_slots)  wayland_send(*batch);
+            }
             if resize_pending && !frame_requested {
                 retire_slots(*ctx, *batch, *retired_slots, slots);
 
@@ -280,9 +319,9 @@ main :: () {
                 frame_callback_id = cache_alloc(*frame_cache);
                 xdg_surface_ack_configure(*batch, *xdg_surface, resize_serial);
                 wl_surface_frame(*batch, *surface, frame_callback_id);
-                wl_surface_attach(*batch, *surface, *slots[0].buffer, 0, 0);
-                wl_surface_damage_buffer(*batch, *surface, 0, 0, slots[0].width, slots[0].height);
-                wl_surface_commit(*batch, *surface);
+                if !commit_slot(*batch, *surface, *ctx, *syncobj_surface, *slots[0]) {
+                    assert(false, "Failed to commit resized Vulkan slot");
+                }
                 wayland_send(*batch);
 
                 slots[0].in_flight = true;
@@ -292,6 +331,7 @@ main :: () {
                 resize_pending = false;
             } else if dirty && !frame_requested && !resize_pending {
                 slot_idx := find_free_slot(slots);
+                if slot_idx < 0 && ctx.explicit_sync  slot_idx = wait_for_released_slot(*ctx, slots);
                 if slot_idx >= 0 {
                     slot := *slots[slot_idx];
                     if !paint_vulkan_slot(ctx, tri, slot, rotation_angle(rotation_start)) {
@@ -300,9 +340,9 @@ main :: () {
 
                     frame_callback_id = cache_alloc(*frame_cache);
                     wl_surface_frame(*batch, *surface, frame_callback_id);
-                    wl_surface_attach(*batch, *surface, *slot.buffer, 0, 0);
-                    wl_surface_damage_buffer(*batch, *surface, 0, 0, slot.width, slot.height);
-                    wl_surface_commit(*batch, *surface);
+                    if !commit_slot(*batch, *surface, *ctx, *syncobj_surface, slot) {
+                        assert(false, "Failed to commit Vulkan slot");
+                    }
                     wayland_send(*batch);
 
                     slot.in_flight = true;
@@ -329,7 +369,9 @@ main :: () {
             matched := false;
             obj_id := it.object_id;
             for * slots  if it.buffer.id == obj_id {
-                it.in_flight = false;
+                // Under explicit sync the event's timing is undefined and the
+                // compositor's GPU may still be reading: the release point decides.
+                if !ctx.explicit_sync  it.in_flight = false;
                 matched = true;
                 break;
             }
@@ -405,18 +447,177 @@ init_vulkan_slot :: (ctx: *Vulkan_Context, tri: *Vulkan_Triangle, config: Image_
                      batch: *MessageBuilder, width: s32, height: s32, slot: *Vulkan_Buffer) -> bool {
     slot.* = .{};
     if !create_vulkan_buffer(ctx, config, width, height, slot)  return false;
-    if !create_vulkan_slot_render_targets(ctx, tri, config, slot) {
+    if !create_vulkan_slot_render_targets(ctx, tri, config, slot) || !create_slot_sync(ctx, slot) {
         destroy_vulkan_buffer_without_wayland(ctx, slot);
         return false;
     }
     queue_dmabuf_buffer(batch, dmabuf, *slot.buffer,
         slot.fd, slot.offset, slot.stride, slot.format, slot.modifier, slot.width, slot.height);
+    if ctx.explicit_sync {
+        slot.sync_timeline_obj = .{ id = allocate_id() };
+        wp_linux_drm_syncobj_manager_v1_import_timeline(batch, *ctx.syncobj_manager, slot.sync_timeline_obj.id, cast(Fd) slot.sync_timeline_fd);
+    }
     return true;
+}
+
+// The slot's command buffer and fence (created signalled, so the first draw does not
+// wait), plus, under explicit sync, its exportable semaphore and its timeline (the fd
+// stays open until the slot is destroyed, past the send of its import).
+create_slot_sync :: (ctx: *Vulkan_Context, slot: *Vulkan_Buffer) -> bool {
+    alloc := Vulkan.VkCommandBufferAllocateInfo.{ commandPool = ctx.command_pool, level = .PRIMARY, commandBufferCount = 1 };
+    result := Vulkan.vkAllocateCommandBuffers(ctx.device, *alloc, *slot.cmd);
+    if result != .SUCCESS { print("vkAllocateCommandBuffers failed: %\n", result); return false; }
+
+    fence_info := Vulkan.VkFenceCreateInfo.{ flags = .SIGNALED_BIT };
+    result = Vulkan.vkCreateFence(ctx.device, *fence_info, null, *slot.fence);
+    if result != .SUCCESS { print("vkCreateFence failed: %\n", result); return false; }
+
+    if !ctx.explicit_sync  return true;
+
+    export := Vulkan.VkExportSemaphoreCreateInfo.{ handleTypes = .SYNC_FD_BIT };
+    sem_info := Vulkan.VkSemaphoreCreateInfo.{ pNext = *export };
+    result = Vulkan.vkCreateSemaphore(ctx.device, *sem_info, null, *slot.render_done);
+    if result != .SUCCESS { print("vkCreateSemaphore(SYNC_FD export) failed: %\n", result); return false; }
+
+    ok: bool;
+    slot.sync_timeline, ok = Gpu.syncobj_create(ctx.drm_fd);
+    if !ok  return false;
+    slot.sync_timeline_fd = Gpu.syncobj_export(ctx.drm_fd, slot.sync_timeline);
+    return slot.sync_timeline_fd >= 0;
+}
+
+// The one place a buffer is attached and committed. Under explicit sync it first
+// attaches the submit's fence to the slot's next acquire point and sets both points.
+commit_slot :: (batch: *MessageBuilder, surface: *Wl_Surface, ctx: *Vulkan_Context,
+                syncobj_surface: *Wp_Linux_Drm_Syncobj_Surface_V1, slot: *Vulkan_Buffer) -> bool {
+    if ctx.explicit_sync {
+        acquire := slot.sync_point + 1;
+        release := acquire + 1;
+        ok := slot.acquire_fd >= 0 && Gpu.syncobj_import_sync_file(ctx.drm_fd, slot.sync_timeline, acquire, slot.acquire_fd);
+        if slot.acquire_fd >= 0  close(slot.acquire_fd);
+        slot.acquire_fd = -1;
+        if !ok {
+            log_error("No acquire fence for slot buffer %; cannot commit it under explicit sync", slot.buffer.id);
+            return false;
+        }
+        wp_linux_drm_syncobj_surface_v1_set_acquire_point(batch, syncobj_surface, *slot.sync_timeline_obj,
+            cast(u32) (acquire >> 32), cast(u32) (acquire & 0xFFFF_FFFF));
+        wp_linux_drm_syncobj_surface_v1_set_release_point(batch, syncobj_surface, *slot.sync_timeline_obj,
+            cast(u32) (release >> 32), cast(u32) (release & 0xFFFF_FFFF));
+        slot.sync_point    = release;
+        slot.release_point = release;
+    }
+    wl_surface_attach(batch, surface, *slot.buffer, 0, 0);
+    wl_surface_damage_buffer(batch, surface, 0, 0, slot.width, slot.height);
+    wl_surface_commit(batch, surface);
+    return true;
+}
+
+// Explicit sync: a slot leaves flight when its release point has signalled.
+refresh_slot_releases :: (ctx: *Vulkan_Context, slots: [] Vulkan_Buffer) {
+    for * slots {
+        if !it.in_flight || it.release_point == 0  continue;
+        if Gpu.syncobj_point_signaled(ctx.drm_fd, it.sync_timeline, it.release_point) {
+            it.in_flight     = false;
+            it.release_point = 0;
+        }
+    }
+}
+
+// Explicit sync, a frame is due and both slots are in flight: the event loop sleeps on
+// the Wayland socket and wl_buffer.release can no longer be relied on to wake it, so
+// wait here on the release points, bounded. -1 (with a warning) on timeout; the next
+// event retries.
+RELEASE_WAIT_NS :: 1_000_000_000;
+
+wait_for_released_slot :: (ctx: *Vulkan_Context, slots: [] Vulkan_Buffer) -> int {
+    handles: [2] u32;
+    points:  [2] u64;
+    n := 0;
+    for slots {
+        if !it.in_flight || it.release_point == 0 || n >= handles.count  continue;
+        handles[n] = it.sync_timeline;
+        points[n]  = it.release_point;
+        n += 1;
+    }
+    if n == 0  return -1;
+    result := Gpu.syncobj_wait(ctx.drm_fd, array_view(handles, 0, n), array_view(points, 0, n), RELEASE_WAIT_NS);
+    if result == .TIMED_OUT  log("No release point signalled within % ms; skipping this frame", RELEASE_WAIT_NS / 1_000_000, flags = .WARNING);
+    refresh_slot_releases(ctx, slots);
+    return find_free_slot(slots);
+}
+
+// Explicit sync: destroy retired slots whose release point has signalled (a
+// wl_buffer.release for one still destroys it first if it comes). True if anything
+// was queued into `batch`.
+reap_retired_slots :: (ctx: *Vulkan_Context, batch: *MessageBuilder, retired: *[..] Vulkan_Buffer) -> bool {
+    queued := false;
+    i := 0;
+    while i < retired.count {
+        slot := *(retired.*)[i];
+        if slot.release_point == 0 || Gpu.syncobj_point_signaled(ctx.drm_fd, slot.sync_timeline, slot.release_point) {
+            queue_slot_destroy(batch, slot);
+            destroy_vulkan_buffer_without_wayland(ctx, slot);
+            array_unordered_remove_by_index(retired, i);
+            queued = true;
+            continue;
+        }
+        i += 1;
+    }
+    return queued;
+}
+
+// The protocol objects of a slot being destroyed: its wl_buffer and, under explicit
+// sync, the compositor's import of its timeline (points already set stay set).
+queue_slot_destroy :: (batch: *MessageBuilder, slot: *Vulkan_Buffer) {
+    wl_buffer_destroy(batch, *slot.buffer);
+    if slot.sync_timeline_obj.id != 0  wp_linux_drm_syncobj_timeline_v1_destroy(batch, *slot.sync_timeline_obj);
+}
+
+// Turns explicit sync on when everything it needs is present; otherwise says why not.
+setup_explicit_sync :: (ctx: *Vulkan_Context, wanted: bool) -> reason: string {
+    if !wanted  return "--no-explicit-sync";
+    _, advertised := get_global("wp_linux_drm_syncobj_manager_v1");
+    if !advertised  return "the compositor does not advertise wp_linux_drm_syncobj_manager_v1";
+    if !ctx.has_semaphore_fd || Vulkan.vkGetSemaphoreFdKHR == null  return "the device lacks VK_KHR_external_semaphore_fd";
+
+    info := Vulkan.VkPhysicalDeviceExternalSemaphoreInfo.{ handleType = .SYNC_FD_BIT };
+    props: Vulkan.VkExternalSemaphoreProperties;
+    Vulkan.vkGetPhysicalDeviceExternalSemaphoreProperties(ctx.physical, *info, *props);
+    if !(props.externalSemaphoreFeatures & .EXPORTABLE_BIT)  return "the device cannot export SYNC_FD semaphores";
+
+    drm, drm_ok := vulkan_device_drm_properties(ctx.physical);
+    if !drm_ok || !drm.hasRender  return "the device does not name its DRM render node (VK_EXT_physical_device_drm)";
+    nodes: [..] Gpu.Render_Node_Info;
+    Gpu.discover_render_nodes(*nodes);
+    path := "";
+    for nodes  if it.major == cast(u32) drm.renderMajor && it.minor == cast(u32) drm.renderMinor  path = it.path;
+    if path == ""  return tprint("no render node matches the device's %:%", drm.renderMajor, drm.renderMinor);
+    fd := open(temp_c_string(path), O_RDWR | O_CLOEXEC);
+    if fd < 0  return tprint("cannot open % (errno %)", path, errno());
+    if !Gpu.syncobj_timeline_supported(fd) {
+        close(fd);
+        return tprint("% has no timeline sync objects", path);
+    }
+
+    ctx.syncobj_manager = .{ id = allocate_id() };
+    batch: MessageBuilder;
+    if !wl_registry_bind(*batch, registry(), *ctx.syncobj_manager) || !wayland_send(*batch) {
+        close(fd);
+        ctx.syncobj_manager = .{};
+        return "binding wp_linux_drm_syncobj_manager_v1 failed";
+    }
+    ctx.drm_fd = fd;
+    ctx.explicit_sync = true;
+    return "";
 }
 
 paint_vulkan_slot :: (ctx: Vulkan_Context, tri: Vulkan_Triangle, slot: *Vulkan_Buffer, angle: float) -> bool {
     first_use := !slot.ever_used;
-    if slot.copy_buffer != null && !first_use  wait_for_compositor_reads(slot);
+    // Under explicit sync the slot was chosen only after its release point signalled,
+    // which covers the compositor GPU's reads; the compositor may also stop attaching
+    // the implicit read fences POLLOUT waits on.
+    if slot.copy_buffer != null && !first_use && !ctx.explicit_sync  wait_for_compositor_reads(slot);
     if !draw_vulkan_triangle(ctx, tri, slot, angle, first_use)  return false;
     slot.ever_used = true;
     return true;
@@ -470,7 +671,7 @@ retire_slots :: (ctx: *Vulkan_Context, batch: *MessageBuilder, retired: *[..] Vu
         if slot.in_flight {
             array_add(retired, slot.*);
         } else {
-            wl_buffer_destroy(batch, *slot.buffer);
+            queue_slot_destroy(batch, slot);
             destroy_vulkan_buffer_without_wayland(ctx, slot);
         }
 
@@ -481,7 +682,7 @@ retire_slots :: (ctx: *Vulkan_Context, batch: *MessageBuilder, retired: *[..] Vu
 release_retired_slot :: (ctx: *Vulkan_Context, batch: *MessageBuilder, retired: *[..] Vulkan_Buffer, object_id: u32) -> bool {
     for * slot, i: retired.* {
         if slot.buffer.id == object_id {
-            wl_buffer_destroy(batch, *slot.buffer);
+            queue_slot_destroy(batch, slot);
             destroy_vulkan_buffer_without_wayland(ctx, slot);
             array_unordered_remove_by_index(retired, i);
             return true;
@@ -545,6 +746,7 @@ init_vulkan_context :: (ctx: *Vulkan_Context, main_major: u32, main_minor: u32, 
     ctx.device, ok = create_device(ctx.physical, ctx.queue_family);
     if !ok  return false;
     ctx.has_foreign = device_supports_extension(ctx.physical, Vulkan.VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
+    ctx.has_semaphore_fd = device_supports_extension(ctx.physical, Vulkan.VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
     ctx.integrated  = props.deviceType == .INTEGRATED_GPU;
     if !Vulkan.load_vulkan_device_functions(ctx.device) ||
        Vulkan.vkGetMemoryFdKHR == null ||
@@ -690,7 +892,7 @@ create_device :: (physical: Vulkan.VkPhysicalDevice, queue_family: u32) -> Vulka
     queue_info.queueCount = 1;
     queue_info.pQueuePriorities = *priority;
 
-    extension_names: [12] *u8;
+    extension_names: [14] *u8;
     extension_count: u32;
     extension_names[extension_count] = Vulkan.VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME.data; extension_count += 1;
     extension_names[extension_count] = Vulkan.VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME.data; extension_count += 1;
@@ -711,6 +913,11 @@ create_device :: (physical: Vulkan.VkPhysicalDevice, queue_family: u32) -> Vulka
     }
     if device_supports_extension(physical, Vulkan.VK_KHR_BIND_MEMORY_2_EXTENSION_NAME) {
         extension_names[extension_count] = Vulkan.VK_KHR_BIND_MEMORY_2_EXTENSION_NAME.data; extension_count += 1;
+    }
+    // Explicit sync exports each submit's semaphore as a SYNC_FD (VK_KHR_external_semaphore
+    // is core in 1.1; the fd half is not).
+    if device_supports_extension(physical, Vulkan.VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME) {
+        extension_names[extension_count] = Vulkan.VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME.data; extension_count += 1;
     }
     if device_supports_extension(physical, Vulkan.VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME) {
         extension_names[extension_count] = Vulkan.VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME.data; extension_count += 1;
@@ -1321,13 +1528,24 @@ create_vulkan_buffer :: (ctx: *Vulkan_Context, config: Image_Config, width: s32,
 destroy_vulkan_buffer :: (ctx: *Vulkan_Context, buf: *Vulkan_Buffer) {
     if buf.buffer.id != 0 {
         batch: MessageBuilder;
-        wl_buffer_destroy(*batch, *buf.buffer);
+        queue_slot_destroy(*batch, buf);
         wayland_send(*batch);
     }
     destroy_vulkan_buffer_without_wayland(ctx, buf);
 }
 
 destroy_vulkan_buffer_without_wayland :: (ctx: *Vulkan_Context, buf: *Vulkan_Buffer) {
+    // The per-frame queue wait is gone under explicit sync: let this slot's last
+    // submit finish before freeing what it uses.
+    if buf.fence != null {
+        Vulkan.vkWaitForFences(ctx.device, 1, *buf.fence, Vulkan.VK_TRUE, RELEASE_WAIT_NS);
+        Vulkan.vkDestroyFence(ctx.device, buf.fence, null);
+    }
+    if buf.cmd != null          Vulkan.vkFreeCommandBuffers(ctx.device, ctx.command_pool, 1, *buf.cmd);
+    if buf.render_done != null  Vulkan.vkDestroySemaphore(ctx.device, buf.render_done, null);
+    if buf.acquire_fd >= 0        close(buf.acquire_fd);
+    if buf.sync_timeline_fd >= 0  close(buf.sync_timeline_fd);
+    if buf.sync_timeline != 0     Gpu.syncobj_destroy(ctx.drm_fd, buf.sync_timeline);
     if buf.framebuffer != null  Vulkan.vkDestroyFramebuffer(ctx.device, buf.framebuffer, null);
     if buf.image_view != null   Vulkan.vkDestroyImageView(ctx.device, buf.image_view, null);
     if buf.fd >= 0  close(buf.fd);
@@ -1609,19 +1827,16 @@ create_vulkan_slot_render_targets :: (ctx: *Vulkan_Context, tri: *Vulkan_Triangl
 }
 
 draw_vulkan_triangle :: (ctx: Vulkan_Context, tri: Vulkan_Triangle, slot: *Vulkan_Buffer, angle: float, first_use: bool) -> bool {
-    alloc := Vulkan.VkCommandBufferAllocateInfo.{
-        commandPool        = ctx.command_pool,
-        level              = .PRIMARY,
-        commandBufferCount = 1,
-    };
-
-    cmd: Vulkan.VkCommandBuffer;
-    result := Vulkan.vkAllocateCommandBuffers(ctx.device, *alloc, *cmd);
+    // The slot's last submit must be done with its command buffer before it is
+    // re-recorded. Normally long signalled: the slot was presented and released since.
+    result := Vulkan.vkWaitForFences(ctx.device, 1, *slot.fence, Vulkan.VK_TRUE, RELEASE_WAIT_NS);
     if result != .SUCCESS {
-        print("vkAllocateCommandBuffers failed: %\n", result);
+        print("vkWaitForFences on the slot's last submit failed: %\n", result);
         return false;
     }
-    defer Vulkan.vkFreeCommandBuffers(ctx.device, ctx.command_pool, 1, *cmd);
+    Vulkan.vkResetFences(ctx.device, 1, *slot.fence);
+    cmd := slot.cmd;
+    Vulkan.vkResetCommandBuffer(cmd, 0);
 
     begin := Vulkan.VkCommandBufferBeginInfo.{
         flags = .ONE_TIME_SUBMIT_BIT,
@@ -1768,10 +1983,29 @@ draw_vulkan_triangle :: (ctx: Vulkan_Context, tri: Vulkan_Triangle, slot: *Vulka
         commandBufferCount = 1,
         pCommandBuffers    = *cmd,
     };
-    result = Vulkan.vkQueueSubmit(ctx.queue, 1, *submit, null);
+    if ctx.explicit_sync {
+        submit.signalSemaphoreCount = 1;
+        submit.pSignalSemaphores    = *slot.render_done;
+    }
+    result = Vulkan.vkQueueSubmit(ctx.queue, 1, *submit, slot.fence);
     if result != .SUCCESS {
         print("vkQueueSubmit failed: %\n", result);
         return false;
+    }
+
+    if ctx.explicit_sync {
+        // The compositor waits on this fence (the commit's acquire point), not the CPU.
+        // Exporting a SYNC_FD has copy transference: the semaphore is unsignalled again
+        // afterwards, ready for the next submit.
+        get_fd := Vulkan.VkSemaphoreGetFdInfoKHR.{ semaphore = slot.render_done, handleType = .SYNC_FD_BIT };
+        if slot.acquire_fd >= 0  close(slot.acquire_fd);
+        slot.acquire_fd = -1;
+        result = Vulkan.vkGetSemaphoreFdKHR(ctx.device, *get_fd, *slot.acquire_fd);
+        if result != .SUCCESS {
+            print("vkGetSemaphoreFdKHR(SYNC_FD) failed: %\n", result);
+            return false;
+        }
+        return true;
     }
 
     result = Vulkan.vkQueueWaitIdle(ctx.queue);

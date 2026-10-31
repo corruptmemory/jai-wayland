@@ -487,11 +487,11 @@ the dma-buf fd for `POLLOUT`, which waits out the read fences i915 attaches, bec
 `--copy-path` forces the path on the compositor's own GPU. It was validated in three
 stages, each riskier than the last:
 
-| Stage                                         | Result                                                                                                                                                    |
-|-----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Intel, `--copy-path`, live Hyprland           | Same GPU, so almost no risk; animating, correct, resize rebuilt the slots, clean close                                                                    |
-| RTX 3050 Ti, nested Hyprland (on the iGPU)    | Same binary and Mesa iris path that crashed three times; 600 bounded frames plus an interactive run, correct triangle, nested compositor alive throughout |
-| RTX 3050 Ti, live Hyprland                    | Correct and animating; a float and five resizes (16 slot allocations), no warnings, no read-fence timeouts, Hyprland alive                                |
+| Stage                                      | Result                                                                                                                                                    |
+|--------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Intel, `--copy-path`, live Hyprland        | Same GPU, so almost no risk; animating, correct, resize rebuilt the slots, clean close                                                                    |
+| RTX 3050 Ti, nested Hyprland (on the iGPU) | Same binary and Mesa iris path that crashed three times; 600 bounded frames plus an interactive run, correct triangle, nested compositor alive throughout |
+| RTX 3050 Ti, live Hyprland                 | Correct and animating; a float and five resizes (16 slot allocations), no warnings, no read-fence timeouts, Hyprland alive                                |
 
 In both NVIDIA stages `bufinfo` showed each buffer exported by `drm` with `0000:00:02.0`
 attached and read fences from the Hyprland process on it, the same picture as NVIDIA's own
@@ -533,6 +533,33 @@ stayed up throughout. Intel by default still takes the BO-backed dma-buf path
 exits with an error instead of drawing into no framebuffer while `hello_simp` claimed a
 clean run; `hello_simp` counts logged errors and exits 1 if there were any, and it quits on
 `Event.QUIT`, so an X11 window-manager close works.
+
+**Explicit sync, both paths** (2026-10-31, `docs/plans/2026-10-31-explicit-sync-design.md`).
+The recipe's last item, "pace it with `wp_linux_drm_syncobj`", is done. Each dma-buf commit
+now carries an acquire point and a release point on a per-slot DRM timeline: one timeline
+per slot, commit n at points 2n-1 and 2n. The GL path's acquire fence is an EGL native
+fence, and `hello_vulkan_dmabuf`'s is a `SYNC_FD` export of the submit's semaphore. A slot
+is reused only when its release point signals, since the protocol makes `wl_buffer.release`
+undefined, and that also replaces the copy path's `POLLOUT` read-fence wait. Measured with
+a throwaway timing patch, then reverted: Simp's end-of-frame CPU wait on the Iris Xe fell
+from 3.2-4.1 ms (`glFinish`) to 0.13-0.17 ms, with no release-point wait in 1440 frames.
+Live on Hyprland 0.57:
+
+| Run                                                  | Result                                                                                              |
+|------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| Nine Simp examples, Intel                            | All rc 0, frames correct, explicit sync on in every log                                             |
+| `hello_simp`, six floated resizes, 5 s hidden        | Two slot reallocations (retire and reap by release point); alive while hidden; animating after      |
+| `simp_multiple_windows`, Intel                       | Both windows on explicit sync, B cycling colours, clean close                                       |
+| `hello_vulkan_dmabuf`, Intel driver-first (tiled)    | Resizes, hidden workspace, 600 bounded frames: rc 0, no warnings                                    |
+| `hello_vulkan_dmabuf --copy-path`, Intel             | Same                                                                                                |
+| `hello_vulkan_dmabuf`, RTX 3050 Ti (copy path)       | Same; `bufinfo` shows both NVIDIA-exported buffers attached to `0000:00:02.0`, Hyprland read fences |
+| `JAI_WAYLAND_EXPLICIT_SYNC=0` / `--no-explicit-sync` | The previous `glFinish` / queue-wait paths, rc 0                                                    |
+
+The nested-Hyprland sandbox could not be used for this. A nested Hyprland runs on the
+Wayland backend and does not advertise `wp_linux_drm_syncobj_manager_v1`, so every
+explicit-sync run went straight to the live instance; the nested one exercised the
+fallback instead. Every buffer commit there is the one NVIDIA's own driver already makes
+on this laptop. Still to run: the dGPU-only boot, with NVIDIA as the compositor's GPU.
 
 **Tooling notes for this compositor:** Hyprland 0.57's Lua `hyprctl dispatch` runs
 dispatchers (`hl.dsp.window.close({ window = "address:..." })`, `hl.dsp.window.float`,
