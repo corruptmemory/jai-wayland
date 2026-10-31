@@ -16,10 +16,40 @@ Gpu_Vendor :: enum {
 }
 
 Render_Node_Info :: struct {
-    path:      string;
-    name:      string;
-    vendor_id: u32;
-    vendor:    Gpu_Vendor;
+    path:       string;
+    name:       string;
+    vendor_id:  u32;
+    vendor:     Gpu_Vendor;
+    major:      u32;      // the node's dev_t, from /sys/class/drm/<name>/dev (0:0 when unread)
+    minor:      u32;
+    pci_device: string;   // the GPU's PCI address, e.g. "0000:00:02.0" ("" when unread)
+}
+
+// The GPU a compositor composites on, as its dmabuf feedback names it (main_device,
+// decoded to major:minor). Compositors report either the card node or the render
+// node, so matching falls back to the PCI device behind the node.
+Device_Preference :: struct {
+    major:      u32;
+    minor:      u32;
+    pci_device: string;
+    valid:      bool;
+}
+
+device_preference :: (major: u32, minor: u32) -> Device_Preference {
+    return .{ major = major, minor = minor, pci_device = drm_node_pci_device(major, minor), valid = true };
+}
+
+// The PCI address of the device behind any DRM node (card or render), from the
+// last component of /sys/dev/char/M:m/device ("../../../0000:00:02.0"). "" if absent.
+drm_node_pci_device :: (major: u32, minor: u32) -> string {
+    return pci_device_from_link(tprint("/sys/dev/char/%:%/device", major, minor));
+}
+
+pci_device_from_link :: (link_path: string) -> string {
+    buf: [512] u8;
+    n := readlink(temp_c_string(link_path), buf.data, buf.count);
+    if n <= 0  return "";
+    return copy_string(render_node_name_from_path(to_string(buf.data, n)));
 }
 
 discover_render_nodes :: (nodes: *[..] Render_Node_Info) -> bool {
@@ -35,11 +65,19 @@ discover_render_nodes :: (nodes: *[..] Render_Node_Info) -> bool {
         if !parsed  vendor_id = 0;
 
         node := Render_Node_Info.{
-            path      = copy_string(tprint("/dev/dri/%", name)),
-            name      = copy_string(name),
-            vendor_id = vendor_id,
-            vendor    = vendor_from_id(vendor_id),
+            path       = copy_string(tprint("/dev/dri/%", name)),
+            name       = copy_string(name),
+            vendor_id  = vendor_id,
+            vendor     = vendor_from_id(vendor_id),
+            pci_device = pci_device_from_link(tprint("/sys/class/drm/%/device", name)),
         };
+        dev_text, dev_ok := read_entire_file(tprint("/sys/class/drm/%/dev", name), log_errors = false);
+        if dev_ok {
+            found, major_text, minor_text := split_from_left(trim(dev_text), #char ":");
+            major, major_ok := string_to_int(major_text, 10, u32);
+            minor, minor_ok := string_to_int(minor_text, 10, u32);
+            if found && major_ok && minor_ok { node.major = major; node.minor = minor; }
+        }
         array_add(nodes, node);
     }
 
@@ -60,7 +98,12 @@ select_render_node :: () -> Render_Node_Info, bool {
     return selected, ok;
 }
 
-choose_render_node :: (nodes: [] Render_Node_Info) -> Render_Node_Info, bool {
+// Selection policy, first match wins: the JAI_WAYLAND_RENDER_NODE path, the
+// JAI_WAYLAND_GPU_VENDOR name, the compositor's GPU when the caller knows it
+// (`preference`), then the first node. Preferring the compositor's GPU is what keeps
+// a hybrid laptop's client on the GPU whose buffers its compositor can read, whatever
+// order the kernel numbered the render nodes in; the dGPU stays an explicit opt-in.
+choose_render_node :: (nodes: [] Render_Node_Info, preference := Device_Preference.{}) -> Render_Node_Info, bool {
     override_ptr := getenv("JAI_WAYLAND_RENDER_NODE");
     if override_ptr != null {
         override := to_string(override_ptr);
@@ -83,6 +126,16 @@ choose_render_node :: (nodes: [] Render_Node_Info) -> Render_Node_Info, bool {
         return .{}, false;
     }
 
+    if preference.valid {
+        for node: nodes  if node.major == preference.major && node.minor == preference.minor  return node, true;
+        if preference.pci_device {
+            for node: nodes  if node.pci_device == preference.pci_device  return node, true;
+        }
+        log("The compositor's main device %:% (%) matches no render node; using the first", preference.major, preference.minor,
+            ifx preference.pci_device then preference.pci_device else "PCI device unknown", flags = .WARNING);
+    }
+
+    if !nodes  return .{}, false;
     return nodes[0], true;
 }
 

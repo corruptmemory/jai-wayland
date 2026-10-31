@@ -223,6 +223,17 @@ bucketed-slot cap can be the window's own monitor instead of the global max, and
 
 ### 11. Compositor `main_device` → render-node choice
 
+**Done 2026-10-31** (step 4 of the laptop's copy-path work). `choose_render_node` takes a
+`Device_Preference` built from the decoded `main_device` and ranks it after the two
+`JAI_WAYLAND_*` overrides, matching by major:minor and then by the PCI device behind
+`/sys/dev/char/M:m/device` (for a compositor that reports its card node).
+`Wayland_Support` reads the surface feedback before the shared EGL context exists, and
+`hello_vulkan_dmabuf` prefers the Vulkan device whose primary or render node matches.
+`tests/gpu_test.jai` covers the policy on a made-up laptop with the dGPU numbered first,
+and a mutation that disables the rung fails it. On `nomad-artix` both still land on the
+Intel iGPU by default; `JAI_WAYLAND_GPU_VENDOR=nvidia` still selects the dGPU, which then
+presents through the shm readback.
+
 `Dmabuf_Feedback_Info.main_device` is already collected here and unused.
 `modules/gpu/device.jai` picks env override → vendor override → first node.
 game-bootstrap decodes the 8 little-endian bytes as a `dev_t`, splits major/minor

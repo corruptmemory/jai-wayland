@@ -211,12 +211,12 @@ wl_choose_gl_backend :: () -> Wl_Gl_Backend {
 
 // Bring up render-node selection (modules/gpu) + EGL/GBM/GL loaders, writing
 // into the passed struct. (hello_gl.jai:370-424 init_gl_stack.)
-wl_egl_init :: (egl: *Wl_Egl_State) -> bool {
+wl_egl_init :: (egl: *Wl_Egl_State, preference: Gpu.Device_Preference) -> bool {
     nodes: [..] Gpu.Render_Node_Info;
     if !Gpu.discover_render_nodes(*nodes)  return false;
     Gpu.print_render_nodes(nodes);
 
-    selected, selected_ok := Gpu.choose_render_node(nodes);
+    selected, selected_ok := Gpu.choose_render_node(nodes, preference);
     if !selected_ok  return false;
     log("Selected render node: % (% id=0x%)",
         selected.path,
@@ -278,9 +278,11 @@ wl_egl_destroy :: (egl: *Wl_Egl_State) {
 wl_shared_egl: Wl_Egl_State;
 wl_shared_egl_initialized: bool;
 
-wl_ensure_shared_egl :: () -> bool {
+// The first window to bring up GL picks the GPU for every window: the context is
+// shared. `preference` is the compositor's main device when that window knew it.
+wl_ensure_shared_egl :: (preference := Gpu.Device_Preference.{}) -> bool {
     if !wl_shared_egl_initialized {
-        if !wl_egl_init(*wl_shared_egl)  return false;
+        if !wl_egl_init(*wl_shared_egl, preference)  return false;
         wl_shared_egl_initialized = true;
     }
 
@@ -741,17 +743,6 @@ wl_read_back_slot :: (slot: *Wl_Gl_Slot, logical_w: s32, logical_h: s32) {
 
 GPU_Relation :: enum { SAME; DIFFERENT; UNKNOWN; }
 
-// The PCI device behind a DRM node, as the relative link /sys/dev/char/M:m/device
-// holds ("../../../0000:00:02.0"). A card node and a render node of one GPU give the
-// same string, so comparing these accepts a compositor that reports either node.
-wl_drm_node_device :: (major: u32, minor: u32) -> string {
-    path := tprint("/sys/dev/char/%:%/device", major, minor);
-    buf: [512] u8;
-    n := readlink(temp_c_string(path), buf.data, buf.count);
-    if n <= 0  return "";
-    return copy_temporary_string(to_string(buf.data, n));
-}
-
 // Whether the shared EGL context renders on the compositor's main device. Without
 // dmabuf feedback the main device is unknown, which only matters on a box with more
 // than one GPU: with one render node, the compositor can only be on that GPU.
@@ -778,8 +769,10 @@ wl_gl_compositor_relation :: (dmabuf: *Wl.Dmabuf_Info, dmabuf_ok: bool, surface:
     if !main_ok  return .UNKNOWN;
     if main_major == gl_major && main_minor == gl_minor  return .SAME;
 
-    gl_device   := wl_drm_node_device(gl_major, gl_minor);
-    main_device := wl_drm_node_device(main_major, main_minor);
+    // A card node and a render node of one GPU share a PCI device, so this accepts a
+    // compositor that reports either.
+    gl_device   := Gpu.drm_node_pci_device(gl_major, gl_minor);
+    main_device := Gpu.drm_node_pci_device(main_major, main_minor);
     same := gl_device != "" && gl_device == main_device;
     log("Wayland_Support: GL renders on %:% (%), the compositor composites on %:% (%): %",
         gl_major, gl_minor, gl_device, main_major, main_minor, main_device, ifx same then "same GPU" else "different GPU");
@@ -1215,14 +1208,25 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
 // slots at the window's current size. Leaves wl_initted=true on success.
 wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     wl_install_foreign_router();
-    if !wl_ensure_shared_egl() {
+
+    // The compositor's main device, before the GPU is chosen: by default GL renders
+    // on the GPU the compositor composites on (modules/gpu choose_render_node).
+    dmabuf_info, dmabuf_ok := Wl.get_dmabuf_info();
+    if dmabuf_ok  ww.wl_dmabuf_info = dmabuf_info;
+    preference: Gpu.Device_Preference;
+    if !wl_shared_egl_initialized && dmabuf_ok && dmabuf_info.feedback_supported {
+        feedback, feedback_ok := Wl.get_surface_dmabuf_feedback(*ww.wl_dmabuf_info.dmabuf, *ww.surface);
+        if feedback_ok && feedback.complete {
+            major, minor, ok := Wl.dev_major_minor(feedback.main_device);
+            if ok  preference = Gpu.device_preference(major, minor);
+        }
+    }
+
+    if !wl_ensure_shared_egl(preference) {
         log_error("Wayland_Support: EGL/GBM init failed");
         return false;
     }
     if !wl_make_current()  return false;
-
-    dmabuf_info, dmabuf_ok := Wl.get_dmabuf_info();
-    if dmabuf_ok  ww.wl_dmabuf_info = dmabuf_info;
 
     // Decided before any slot exists: a BO-backed slot hands the compositor a dma-buf
     // straight from the GL GPU, which only that GPU is sure to read.

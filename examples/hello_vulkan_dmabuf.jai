@@ -156,17 +156,20 @@ main :: () {
     }
     print("Configured window: %x%\n", win_width, win_height);
 
-    ctx: Vulkan_Context;
-    if !init_vulkan_context(*ctx)  return;
-    defer destroy_vulkan_context(*ctx);
-
-    // The feedback names the compositor's main device, and when the Vulkan device is a
-    // different GPU it is also the set of layouts the compositor can read.
+    // The feedback names the compositor's main device, which picks the Vulkan device
+    // (its GPU by default) and decides between the probe and the copy path.
     feedback: Dmabuf_Feedback_Info;
     feedback_ok := false;
     if dmabuf_info.feedback_supported {
         feedback, feedback_ok = get_surface_dmabuf_feedback(*dmabuf_info.dmabuf, *surface);
     }
+    main_major, main_minor: u32;
+    main_known := false;
+    if feedback_ok && feedback.complete  main_major, main_minor, main_known = dev_major_minor(feedback.main_device);
+
+    ctx: Vulkan_Context;
+    if !init_vulkan_context(*ctx, main_major, main_minor, main_known)  return;
+    defer destroy_vulkan_context(*ctx);
     // Decided before the first probe: a probe already hands the compositor a real dma-buf.
     relation := compositor_gpu_relation(ctx.physical, feedback, feedback_ok);
     copy_path := force_copy_path || relation != .SAME;
@@ -488,7 +491,7 @@ release_retired_slot :: (ctx: *Vulkan_Context, batch: *MessageBuilder, retired: 
     return false;
 }
 
-init_vulkan_context :: (ctx: *Vulkan_Context) -> bool {
+init_vulkan_context :: (ctx: *Vulkan_Context, main_major: u32, main_minor: u32, main_known: bool) -> bool {
     if !Vulkan.init_vulkan() {
         print("Could not load Vulkan runtime.\n");
         return false;
@@ -521,7 +524,7 @@ init_vulkan_context :: (ctx: *Vulkan_Context) -> bool {
     }
 
     ok: bool;
-    ctx.physical, ok = choose_physical_device(ctx.instance);
+    ctx.physical, ok = choose_physical_device(ctx.instance, main_major, main_minor, main_known);
     if !ok  return false;
 
     props: Vulkan.VkPhysicalDeviceProperties;
@@ -598,7 +601,11 @@ get_loader_api_version :: () -> Vulkan.VkVersion {
     return api_version;
 }
 
-choose_physical_device :: (instance: Vulkan.VkInstance) -> Vulkan.VkPhysicalDevice, bool {
+// The first device that can export DMA-BUF memory, preferring the one on the
+// compositor's GPU (its DRM primary or render node is the feedback's main device) when
+// that is known: on a hybrid laptop that keeps it off the dGPU, whatever order the
+// loader lists devices in. VK_DRIVER_FILES narrows the list to pick a GPU explicitly.
+choose_physical_device :: (instance: Vulkan.VkInstance, main_major: u32, main_minor: u32, main_known: bool) -> Vulkan.VkPhysicalDevice, bool {
     count: u32;
     result := Vulkan.vkEnumeratePhysicalDevices(instance, *count, null);
     if result != .SUCCESS || count == 0  return null, false;
@@ -609,15 +616,32 @@ choose_physical_device :: (instance: Vulkan.VkInstance) -> Vulkan.VkPhysicalDevi
     result = Vulkan.vkEnumeratePhysicalDevices(instance, *count, devices.data);
     if result != .SUCCESS  return null, false;
 
+    first: Vulkan.VkPhysicalDevice;
     for 0..count - 1 {
-        if device_supports_extension(devices[it], Vulkan.VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME) &&
-           device_supports_extension(devices[it], Vulkan.VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME) &&
-           device_supports_extension(devices[it], Vulkan.VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME)
+        if !device_supports_extension(devices[it], Vulkan.VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME) ||
+           !device_supports_extension(devices[it], Vulkan.VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME) ||
+           !device_supports_extension(devices[it], Vulkan.VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME)
+        {
+            continue;
+        }
+        if !first  first = devices[it];
+        if !main_known  break;
+
+        drm, drm_ok := vulkan_device_drm_properties(devices[it]);
+        if !drm_ok  continue;
+        major := cast(s64) main_major;
+        minor := cast(s64) main_minor;
+        if (drm.hasPrimary != 0 && drm.primaryMajor == major && drm.primaryMinor == minor) ||
+           (drm.hasRender  != 0 && drm.renderMajor  == major && drm.renderMinor  == minor)
         {
             return devices[it], true;
         }
     }
 
+    if first {
+        if main_known  print("No Vulkan device is on the compositor's GPU (%:%); using the first that can export DMA-BUF memory.\n", main_major, main_minor);
+        return first, true;
+    }
     print("No Vulkan physical device supports DRM-modifier DMA-BUF export.\n");
     return null, false;
 }
