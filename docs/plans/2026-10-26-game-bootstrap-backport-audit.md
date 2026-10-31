@@ -434,6 +434,36 @@ Wayland driver (`winewayland.drv`; checked in Proton Experimental 11.0-20261027b
 third-party docs say the same of the others), so `PROTON_ENABLE_WAYLAND=1` only works in
 GE-Proton and Proton-CachyOS, and every Proton game here goes through XWayland.
 
+**Step 1 of the recipe, the headless proof, passes** (2026-10-31, `./build.sh -
+headless_cross_gpu`, `examples/headless_cross_gpu.jai`; no compositor involved). The
+RTX 3050 Ti uploads a pattern that differs at every pixel into a device-local optimal image,
+copies it with `vkCmdCopyImageToBuffer` into a `VkBuffer` (linear by construction, so no
+`LINEAR` image modifier is needed) whose memory is NVIDIA's type 3 (`HOST_VISIBLE |
+HOST_COHERENT`) in heap 1, the non-device-local heap, and exports it with
+`vkGetMemoryFdKHR`. The image is 250x130 with rows padded to a 1024-byte pitch, so the
+copy's `bufferRowLength` and the importer's pitch are both exercised. Intel's EGL imports
+the fd as `ABGR8888` with modifier `LINEAR`, the iGPU samples it in a draw (as a compositor
+does, so its GPU reads the pages, not a CPU mapping), and all 32500 pixels read back
+right, as does a CPU read of the exported memory. `fdinfo` names the exporter `drm`
+(nvidia-drm), and `bufinfo` (root, read from a debugger stopped after the draw) lists
+`0000:00:02.0`, the iGPU, as attached, with a signalled read fence from its draw: the same
+picture as `vkcube`'s frames above. Three details the proof turned up:
+
+- **System memory is a heap property on a dGPU, and the opposite on an iGPU.** A memory
+  type's own `DEVICE_LOCAL` bit does not exclude VRAM: NVIDIA's type 5 is resizable-BAR,
+  host-visible and device-local at once. So the test requires a heap without
+  `DEVICE_LOCAL`. An integrated GPU flags every heap device-local although all of its
+  memory is system memory, so for it any type qualifies.
+- **The read must be a sample, not a framebuffer attachment.** A blit's read side
+  attaches the import to a framebuffer, which NVIDIA refuses for `LINEAR`
+  (`GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT`). A compositor only samples client buffers.
+- **The reverse direction (Intel renders, NVIDIA imports) stops at the sampler.** Intel
+  exports from its own memory (`exp_name i915`) and NVIDIA's EGL imports the fd, but lists
+  `LINEAR ABGR8888` as external-only: it can be sampled only as
+  `GL_TEXTURE_EXTERNAL_OES`, which a desktop-GL `GL_TEXTURE_2D` sampler cannot declare
+  (`GL_INVALID_OPERATION` at `glEGLImageTargetTexture2DOES`). The test SKIPs there, naming
+  the reason. A compositor on NVIDIA has to sample such buffers as external textures.
+
 **Fixed along the way:** slot initialisation logs why it failed, and a failed GL bring-up
 exits with an error instead of drawing into no framebuffer while `hello_simp` claimed a
 clean run; `hello_simp` counts logged errors and exits 1 if there were any, and it quits on
