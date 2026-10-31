@@ -161,6 +161,11 @@ Wl_Gl_Slot :: struct {
     height:    s32;
     bo_backed: bool;
     in_flight: bool;
+    // SHM_READBACK only: the wl_shm memory the compositor reads, mapped here, that
+    // every present glReadPixels the FBO into.
+    shm_fd:    s32 = -1;
+    shm_data:  *void;
+    shm_size:  s64;
     // Placeholders for EGL_KHR_fence_sync + wp_linux_drm_syncobj_v1 explicit sync.
     // Currently unused — glFinish() provides coarse but correct GPU ordering.
     acquire_fence_fd: s32 = -1;
@@ -183,12 +188,14 @@ Wl_Gl_Backend :: enum {
     AUTO;                // try GBM_BO, fall back to MESA_TEXTURE_EXPORT if unavailable
     GBM_BO;              // GBM BO → EGLImage → FBO; hard-fail if extensions absent
     MESA_TEXTURE_EXPORT; // EGL_MESA_image_dma_buf_export path
+    SHM_READBACK;        // texture FBO, glReadPixels into wl_shm each present: for a compositor on another GPU
 }
 
 wl_gl_backend_name :: (b: Wl_Gl_Backend) -> string {
     if b == {
         case .GBM_BO;              return "gbm_bo";
         case .MESA_TEXTURE_EXPORT; return "mesa_texture_export";
+        case .SHM_READBACK;        return "shm_readback";
         case .AUTO;                return "auto";
     }
     return "unknown";
@@ -479,6 +486,12 @@ wl_slot_init :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State, dmabuf: *Wl.Zwp_Linux_Dma
 {
     // Each path returns why it failed; the level depends on whether anything follows.
     // An AUTO BO failure is only a warning, since the Mesa fallback may still work.
+    if backend == .SHM_READBACK {
+        ok, why := wl_slot_init_shm(slot, batch, width, height);
+        if !ok  log_error("Wayland_Support: shm readback slot failed: %", why);
+        else if log_success  log("Initialized shm readback slot buffer=% %x%", slot.buffer.id, width, height);
+        return ok;
+    }
     if backend == .MESA_TEXTURE_EXPORT {
         ok, why := wl_slot_init_mesa(slot, egl, dmabuf, batch, format, modifier, width, height);
         if !ok  log_error("Wayland_Support: Mesa texture-export slot failed: %", why);
@@ -641,6 +654,147 @@ wl_slot_make_buffer :: (batch: *Wl.MessageBuilder, dmabuf: *Wl.Zwp_Linux_Dmabuf_
     Wl.zwp_linux_buffer_params_v1_destroy(batch, *params);
 }
 
+// ─────────────────────── The shm readback path ────────────────────────────
+// A dma-buf the GL GPU renders is only safe to hand a compositor on the SAME GPU:
+// on the hybrid laptop Hyprland 0.57 on the Intel iGPU accepted NVIDIA-rendered
+// buffers, block-linear and LINEAR alike, then aborted inside Mesa iris on its next
+// frame (2026-10-31). When the GL render node is not the compositor's main device,
+// each slot renders into a plain texture FBO and every present reads it back into
+// wl_shm memory: one GPU -> CPU copy per frame, which every compositor can take and
+// none can choke on. (The Vulkan example's copy path keeps the copy on the GPU, into
+// a system-memory dma-buf; GL has no portable way to write into one.)
+
+wl_shm_global: Wl.Wl_Shm;
+wl_have_shm: bool;
+
+wl_ensure_shm :: () -> bool {
+    if wl_have_shm  return true;
+    _, advertised := Wl.get_global("wl_shm");
+    if !advertised  return false;
+    batch: Wl.MessageBuilder;
+    wl_shm_global = Wl.Wl_Shm.{ id = Wl.allocate_id() };
+    Wl.wl_registry_bind(*batch, Wl.registry(), *wl_shm_global);
+    Wl.wayland_send(*batch);
+    wl_have_shm = true;
+    return true;
+}
+
+MFD_CLOEXEC :: 0x0001;
+
+wl_slot_init_shm :: (slot: *Wl_Gl_Slot, batch: *Wl.MessageBuilder, width: s32, height: s32) -> ok: bool, why: string {
+    if !wl_have_shm  return false, "the compositor advertises no wl_shm";
+
+    glGenTextures(1, *slot.tex);
+    glBindTexture(GL_TEXTURE_2D, slot.tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, cast(GLsizei) width, cast(GLsizei) height, 0, GL_RGBA, GL_UNSIGNED_BYTE, null);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenFramebuffers(1, *slot.fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, slot.fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, slot.tex, 0);
+    wl_attach_depth_rbo(slot, width, height);  // depth buffer for 3D apps (skeletal-animation)
+    status := glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if status != GL_FRAMEBUFFER_COMPLETE
+        return false, tprint("the texture framebuffer is incomplete (status 0x%)", formatInt(status, base=16));
+
+    stride := width * 4;
+    slot.shm_size = cast(s64) stride * height;
+    slot.shm_fd = Wl.memfd_create("jai-wayland-shm".data, MFD_CLOEXEC);
+    if slot.shm_fd < 0  return false, tprint("memfd_create failed (errno %)", errno());
+    if ftruncate(slot.shm_fd, slot.shm_size) != 0  return false, tprint("ftruncate(%) failed (errno %)", slot.shm_size, errno());
+    mapped := mmap(null, cast(u64) slot.shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, slot.shm_fd, 0);
+    if mapped == cast(*void) -1  return false, tprint("mmap(%) failed (errno %)", slot.shm_size, errno());
+    slot.shm_data = mapped;
+
+    // One pool per slot, destroyed as soon as its buffer exists: a wl_buffer keeps
+    // its pool's memory, so there is no pool to track. The fd stays open until the
+    // slot dies, because the batch carrying it may not have been sent yet.
+    pool := Wl.Wl_Shm_Pool.{ id = Wl.allocate_id() };
+    Wl.wl_shm_create_pool(batch, *wl_shm_global, pool.id, cast(Wl.Fd) slot.shm_fd, cast(s32) slot.shm_size);
+    slot.buffer = Wl.Wl_Buffer.{ id = Wl.allocate_id() };
+    Wl.wl_shm_pool_create_buffer(batch, *pool, slot.buffer.id, offset = 0, width = width, height = height,
+        stride = stride, format = cast(u32) Wl.Wl_Shm_Format.ARGB8888);
+    Wl.wl_shm_pool_destroy(batch, *pool);
+
+    slot.stride = cast(u32) stride;
+    slot.format = cast(u32) Wl.Wl_Shm_Format.ARGB8888;
+    slot.width  = width;
+    slot.height = height;
+    return true, "";
+}
+
+// Copy the rendered region of a readback slot into its shm memory. Rows land in GL
+// order (row 0, the bottom of the image, first), exactly as a BO-backed slot's
+// texture lies in memory, so the FLIPPED_180 buffer transform and the viewport crop
+// apply unchanged. GL_BGRA bytes are wl_shm ARGB8888 on a little-endian CPU. Only
+// the logical region is read: a bucketed slot can be much larger than the window.
+wl_read_back_slot :: (slot: *Wl_Gl_Slot, logical_w: s32, logical_h: s32) {
+    w := min(logical_w, slot.width);
+    h := min(logical_h, slot.height);
+    if w <= 0 || h <= 0  return;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, slot.fbo);
+    glPixelStorei(GL_PACK_ROW_LENGTH, slot.width);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glReadPixels(0, 0, cast(GLsizei) w, cast(GLsizei) h, GL_BGRA, GL_UNSIGNED_BYTE, slot.shm_data);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+}
+
+GPU_Relation :: enum { SAME; DIFFERENT; UNKNOWN; }
+
+// The PCI device behind a DRM node, as the relative link /sys/dev/char/M:m/device
+// holds ("../../../0000:00:02.0"). A card node and a render node of one GPU give the
+// same string, so comparing these accepts a compositor that reports either node.
+wl_drm_node_device :: (major: u32, minor: u32) -> string {
+    path := tprint("/sys/dev/char/%:%/device", major, minor);
+    buf: [512] u8;
+    n := readlink(temp_c_string(path), buf.data, buf.count);
+    if n <= 0  return "";
+    return copy_temporary_string(to_string(buf.data, n));
+}
+
+// Whether the shared EGL context renders on the compositor's main device. Without
+// dmabuf feedback the main device is unknown, which only matters on a box with more
+// than one GPU: with one render node, the compositor can only be on that GPU.
+wl_gl_compositor_relation :: (dmabuf: *Wl.Dmabuf_Info, dmabuf_ok: bool, surface: *Wl.Wl_Surface) -> GPU_Relation {
+    st: stat_t;
+    if fstat(wl_shared_egl.drm_fd, *st) != 0  return .UNKNOWN;
+    rdev: [8] u8;
+    memcpy(rdev.data, *st.st_rdev, 8);
+    gl_major, gl_minor, gl_ok := Wl.dev_major_minor(rdev);
+    if !gl_ok  return .UNKNOWN;
+
+    feedback: Wl.Dmabuf_Feedback_Info;
+    feedback_ok := false;
+    if dmabuf_ok && dmabuf.feedback_supported  feedback, feedback_ok = Wl.get_surface_dmabuf_feedback(*dmabuf.dmabuf, surface);
+    if !feedback_ok || !feedback.complete {
+        nodes: [..] Gpu.Render_Node_Info;
+        nodes.allocator = temp;
+        Gpu.discover_render_nodes(*nodes);
+        if nodes.count == 1  return .SAME;
+        log("Wayland_Support: the compositor sent no dmabuf feedback and this box has % render nodes, so which GPU it composites on is unknown", nodes.count);
+        return .UNKNOWN;
+    }
+    main_major, main_minor, main_ok := Wl.dev_major_minor(feedback.main_device);
+    if !main_ok  return .UNKNOWN;
+    if main_major == gl_major && main_minor == gl_minor  return .SAME;
+
+    gl_device   := wl_drm_node_device(gl_major, gl_minor);
+    main_device := wl_drm_node_device(main_major, main_minor);
+    same := gl_device != "" && gl_device == main_device;
+    log("Wayland_Support: GL renders on %:% (%), the compositor composites on %:% (%): %",
+        gl_major, gl_minor, gl_device, main_major, main_minor, main_device, ifx same then "same GPU" else "different GPU");
+    return ifx same then GPU_Relation.SAME else .DIFFERENT;
+}
+
+// JAI_WAYLAND_COPY_PATH=1 forces the shm readback on the compositor's own GPU too:
+// the way to exercise this path on a single-GPU box. (A library cannot take
+// command-line arguments; its knobs are JAI_WAYLAND_* variables, like the render
+// node override.)
+wl_copy_path_forced :: () -> bool {
+    value := getenv("JAI_WAYLAND_COPY_PATH");
+    return value != null && to_string(value) == "1";
+}
+
 // ─────────────────────── Slot teardown / retire ───────────────────────────
 // (Ported from hello_gl.jai:643-685.)
 
@@ -654,6 +808,8 @@ wl_slot_destroy :: (slot: *Wl_Gl_Slot, egl: Wl_Egl_State) {
     if slot.image_fd >= 0  close(slot.image_fd);
     if slot.acquire_fence_fd >= 0  close(slot.acquire_fence_fd);
     if slot.release_fence_fd >= 0  close(slot.release_fence_fd);
+    if slot.shm_data != null  munmap(slot.shm_data, cast(u64) slot.shm_size);
+    if slot.shm_fd >= 0  close(slot.shm_fd);
 }
 
 // In-flight slots whose compositor-held buffer hasn't been released yet are moved
@@ -723,6 +879,7 @@ Wayland_Window :: struct {
     wl_dmabuf_info: Wl.Dmabuf_Info;              // bound zwp_linux_dmabuf_v1 + advertised formats
     wl_format:      u32;                         // chosen DRM fourcc
     wl_modifier:    u64;                         // chosen DRM modifier
+    wl_backend:     Wl_Gl_Backend;               // SHM_READBACK when the compositor is on another GPU; else AUTO
 
     // wp_viewport crops the bucketed buffer to the logical surface size.
     wl_viewport:      Wl.Wp_Viewport;
@@ -1017,6 +1174,7 @@ wl_present_and_pace :: (ww: *Wayland_Window) {
     }
 
     slot := *ww.wl_slots[ww.wl_current];
+    if slot.shm_data != null  wl_read_back_slot(slot, ww.width, ww.height);
     batch: Wl.MessageBuilder;
     frame_callback_id := Wl.cache_alloc(*ww.wl_frame_cache);
     ww.wl_pending_frame_callback = frame_callback_id;
@@ -1064,21 +1222,39 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     if !wl_make_current()  return false;
 
     dmabuf_info, dmabuf_ok := Wl.get_dmabuf_info();
-    if !dmabuf_ok {
-        log_error("Wayland_Support: compositor does not advertise zwp_linux_dmabuf_v1");
-        return false;
-    }
-    ww.wl_dmabuf_info = dmabuf_info;
+    if dmabuf_ok  ww.wl_dmabuf_info = dmabuf_info;
 
-    format, modifier, have_format := wl_choose_dmabuf_format(wl_shared_egl.gbm, ww.wl_dmabuf_info, *ww.surface);
-    if !have_format {
-        log_error("Wayland_Support: no GBM-usable ABGR/XBGR 8888 dmabuf format advertised");
-        return false;
+    // Decided before any slot exists: a BO-backed slot hands the compositor a dma-buf
+    // straight from the GL GPU, which only that GPU is sure to read.
+    ww.wl_backend = .AUTO;
+    if wl_copy_path_forced() {
+        log("Wayland_Support: JAI_WAYLAND_COPY_PATH=1: presenting through the shm readback");
+        ww.wl_backend = .SHM_READBACK;
+    } else if !dmabuf_ok {
+        log("Wayland_Support: the compositor advertises no zwp_linux_dmabuf_v1; presenting through the shm readback");
+        ww.wl_backend = .SHM_READBACK;
+    } else if wl_gl_compositor_relation(*ww.wl_dmabuf_info, dmabuf_ok, *ww.surface) != .SAME {
+        log("Wayland_Support: the compositor may not be able to read this GPU's buffers; presenting through the shm readback (one GPU -> CPU copy per frame)");
+        ww.wl_backend = .SHM_READBACK;
     }
-    ww.wl_format   = format;
-    ww.wl_modifier = modifier;
-    log("Wayland_Support: using format=0x% modifier=0x%",
-        formatInt(format, base=16), formatInt(modifier, base=16));
+
+    if ww.wl_backend == .SHM_READBACK {
+        if !wl_ensure_shm() {
+            log_error("Wayland_Support: the shm readback needs wl_shm, which the compositor does not advertise");
+            return false;
+        }
+        ww.wl_format = cast(u32) Wl.Wl_Shm_Format.ARGB8888;
+    } else {
+        format, modifier, have_format := wl_choose_dmabuf_format(wl_shared_egl.gbm, ww.wl_dmabuf_info, *ww.surface);
+        if !have_format {
+            log_error("Wayland_Support: no GBM-usable ABGR/XBGR 8888 dmabuf format advertised");
+            return false;
+        }
+        ww.wl_format   = format;
+        ww.wl_modifier = modifier;
+        log("Wayland_Support: using format=0x% modifier=0x%",
+            formatInt(format, base=16), formatInt(modifier, base=16));
+    }
 
     // Decide the slot allocation capacity. With wp_viewporter we allocate at the
     // bucketed (grow-only) capacity and present only the logical sub-rect via the
@@ -1088,7 +1264,7 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     wl_window_init_viewport(ww);
     if ww.wl_have_viewport  cap_w, cap_h = wl_target_capacity(ww.width, ww.height, 0, 0);
 
-    backend := wl_choose_gl_backend();
+    backend := ifx ww.wl_backend == .SHM_READBACK then Wl_Gl_Backend.SHM_READBACK else wl_choose_gl_backend();
     batch: Wl.MessageBuilder;
     for * slot, i: ww.wl_slots {
         if !wl_slot_init(slot, wl_shared_egl, *ww.wl_dmabuf_info.dmabuf, *batch,
@@ -1130,7 +1306,7 @@ wl_realloc_slots :: (ww: *Wayland_Window, w: s32, h: s32) -> bool {
     wl_retire_slots(*retire_batch, *ww.wl_retired, ww.wl_slots, wl_shared_egl);
     Wl.wayland_send(*retire_batch);
 
-    backend := wl_choose_gl_backend();
+    backend := ifx ww.wl_backend == .SHM_READBACK then Wl_Gl_Backend.SHM_READBACK else wl_choose_gl_backend();
     alloc_batch: Wl.MessageBuilder;
     for * slot, i: ww.wl_slots {
         if !wl_slot_init(slot, wl_shared_egl, *ww.wl_dmabuf_info.dmabuf, *alloc_batch,

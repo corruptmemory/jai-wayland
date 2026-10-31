@@ -487,6 +487,37 @@ attached and read fences from the Hyprland process on it, the same picture as NV
 WSI. With nothing else changed, Intel without the flag still takes the driver-first path
 (Intel tiled `0x0100000000000001` accepted).
 
+**Step 3, the GL path, presents across GPUs** (2026-10-31, `Wayland_Support`). This also
+closes the gap noted above, where the GL path was only safe because NVIDIA's BO allocation
+happened to fail. Before allocating any slot, `wl_window_init_gl` checks that the GL
+render node is the compositor's main device: major:minor first, then the PCI device behind
+`/sys/dev/char/M:m/device`. If it is not, the window presents through a `wl_shm` readback.
+Each slot is a texture FBO plus memfd shm (`ARGB8888`), and every present `glReadPixels`es
+the logical region into it, rows in GL order, so the flip and the crop are unchanged. A
+compositor without `zwp_linux_dmabuf_v1` gets the same path, and `JAI_WAYLAND_COPY_PATH=1`
+forces it. GL has no portable way to write into a system-memory dma-buf (NVIDIA cannot
+render into, or attach to a framebuffer, a `LINEAR` import), so the readback is the
+portable choice. It costs one GPU -> CPU copy per frame; zero-copy would need GL/Vulkan
+memory interop. Live on Hyprland 0.57, forced onto the RTX 3050 Ti
+(`JAI_WAYLAND_GPU_VENDOR=nvidia`):
+
+| Example                  | Result                                                                |
+|--------------------------|-----------------------------------------------------------------------|
+| `hello_simp`             | Animating; quad centred after floating shrinks to 500x350 and 900x700 |
+| `invaders`               | Animating                                                             |
+| `skeletal_animation`     | Depth-tested mesh and UI correct, animating                           |
+| `getrect_example`        | Widgets, text and colour picker upright and correct                   |
+| `getrect_lh_example`     | Renders                                                               |
+| `treemap`                | Renders                                                               |
+| `codex_view`             | Renders                                                               |
+| `simp_example`           | Animating                                                             |
+| `simp_multiple_windows`  | Both windows (6 readback slots), animating                            |
+| `simp_render_to_texture` | Animating                                                             |
+
+Every run exited 0 through the compositor's close, with no errors logged, and Hyprland
+stayed up throughout. Intel by default still takes the BO-backed dma-buf path
+(`ABGR8888`, `LINEAR`), and all 140 tests pass.
+
 **Fixed along the way:** slot initialisation logs why it failed, and a failed GL bring-up
 exits with an error instead of drawing into no framebuffer while `hello_simp` claimed a
 clean run; `hello_simp` counts logged errors and exits 1 if there were any, and it quits on

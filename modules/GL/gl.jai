@@ -126,6 +126,8 @@ GL_CLAMP_TO_EDGE              :: 0x812F;
 // --- Pixel packing ---
 GL_UNPACK_ALIGNMENT  :: 0x0CF5;
 GL_UNPACK_ROW_LENGTH :: 0x0CF2;
+GL_PACK_ALIGNMENT    :: 0x0D05;
+GL_PACK_ROW_LENGTH   :: 0x0D02;
 GL_PIXEL_PACK_BUFFER :: 0x88EB;
 
 // --- Framebuffer objects ---
