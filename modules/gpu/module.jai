@@ -9,3 +9,4 @@
 
 #load "device.jai";
 #load "dmabuf_bo.jai";
+#load "syncobj.jai";

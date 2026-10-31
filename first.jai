@@ -57,6 +57,12 @@ build :: () {
             // GL / gpu imports need the modules/-first path, as hello_simp's do.
             build_and_run_test("pacing_tests", "pacing_tests", "tests/pacing_test.jai", "build_tests", upstream_import_path());
             set_build_options_dc(.{do_output=false});
+          case "syncobj_test";
+            set_build_options_dc(.{do_output=false});
+            // modules/gpu's DRM sync objects on a render node, no compositor. Uses the
+            // modules/-first path so the gpu instance is the one Wayland_Support imports.
+            build_and_run_test("syncobj_tests", "syncobj_tests", "tests/syncobj_test.jai", "build_tests", upstream_import_path());
+
           case "gl_picker_test";
             // Imports Wayland_Support by file, as pacing_test does. Needs a DRM
             // render node (no compositor) and says SKIP without one.
@@ -238,7 +244,7 @@ build :: () {
             );
             set_build_options_dc(.{do_output=false});
           case;
-            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'dmabuf_test', 'registry_test', 'gpu_test', 'pacing_test', 'gl_picker_test', 'input_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_shim_registry', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'headless_cross_gpu', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'hello_vkwl_swapchain', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
+            compiler_report(tprint("Unknown argument '%'. Valid options: 'compile_only' (build-only modifier, precedes a target), 'test', 'gen_test', 'generate', 'compile_test', 'wire_test', 'xkb_test', 'dmabuf_test', 'registry_test', 'gpu_test', 'syncobj_test', 'pacing_test', 'gl_picker_test', 'input_test', 'marshal_test', 'unmarshal_test', 'hello_screens', 'hello_globals', 'hello_shim_registry', 'hello_window', 'dump_keymap', 'headless_gl', 'headless_vulkan', 'headless_vulkan_dmabuf', 'headless_cross_gpu', 'hello_dmabuf', 'hello_gl', 'hello_vulkan_dmabuf', 'hello_vkwl_swapchain', 'x11_smoke', 'hello_x11_gl', 'hello_simp', 'hello_clipboard', 'invaders', 'skeletal_animation', 'getrect_example', 'getrect_lh_example', 'treemap', 'codex_view', 'simp_example', 'simp_multiple_windows', 'simp_render_to_texture'.\n", arg));
         }
     }
 }
