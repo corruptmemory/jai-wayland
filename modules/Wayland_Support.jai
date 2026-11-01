@@ -78,11 +78,16 @@ running_wayland :: () -> bool {
 // present; see docs/plans/2026-05-31-wayland-async-present.md.)
 SIMP_WL_SLOT_COUNT :: 3;
 
-// Slot allocation capacity is bucketed: the logical size rounded up to
-// BUCKET_STEP, capped at output resolution, grow-only. This decouples the
-// logical window size (what Simp renders / what the compositor sees via
-// wp_viewport) from the BO/FBO/wl_buffer allocation size, so interactive resize
-// stops reallocating the whole slot stack on every configure.
+// Slot allocation WIDTH is bucketed: the logical width rounded up to BUCKET_STEP,
+// capped at output resolution, grow-only, so a horizontal resize re-crops through
+// wp_viewport instead of reallocating the slot stack. The HEIGHT is the logical
+// height exactly, so the crop's source rect always starts at row 0: under
+// set_buffer_transform(FLIPPED_180) spare height puts the visible rows at
+// y = cap_h - log_h, and Hyprland 0.57's CWLSurface::computeDamage intersects the
+// damage with the source rect without subtracting its origin. Once that offset
+// reached log_h the window's damage was empty: Hyprland stopped repainting it while
+// still sending frame callbacks, and the panel cycled stale frames (one per slot);
+// screencopy renders fresh, so screenshots never showed it (2026-10-31).
 // See docs/plans/2026-06-03-wayland-bucketed-slots-design.md.
 BUCKET_STEP :: 256;
 
@@ -130,16 +135,23 @@ wl_output_cap :: () -> (w: s32, h: s32) {
     return wl_output_cap_w, wl_output_cap_h;
 }
 
-// Grow-only bucketed capacity for a logical size: round up to BUCKET_STEP, cap at
-// output resolution, never below the current capacity, and never below the
-// logical size itself (logical can exceed the output cap on odd configs).
+// Slot capacity for a logical size. Width: round up to BUCKET_STEP, cap at the
+// output width, never below the current capacity, and never below the logical
+// width itself (logical can exceed the output cap on odd configs). Height: the
+// logical height exactly (see BUCKET_STEP for why). cur_cap_h is unused and kept
+// so both dimensions read alike at the call sites.
 wl_target_capacity :: (logical_w: s32, logical_h: s32, cur_cap_w: s32, cur_cap_h: s32) -> (w: s32, h: s32) {
-    cap_w, cap_h := wl_output_cap();
+    cap_w, _ := wl_output_cap();
     want_w := min(wl_round_up_to_step(logical_w, BUCKET_STEP), cap_w);
-    want_h := min(wl_round_up_to_step(logical_h, BUCKET_STEP), cap_h);
     out_w := max(max(want_w, cur_cap_w), logical_w);
-    out_h := max(max(want_h, cur_cap_h), logical_h);
-    return out_w, out_h;
+    return out_w, logical_h;
+}
+
+// Whether a window's slots must be reallocated to reach the target capacity: to
+// grow the width, or for ANY change of height (a shrink too, or the old, taller
+// buffers would bring the crop offset back).
+wl_capacity_needs_realloc :: (target_w: s32, target_h: s32, cur_cap_w: s32, cur_cap_h: s32) -> bool {
+    return target_w > cur_cap_w || target_h != cur_cap_h;
 }
 
 // One slot holds a GL texture + FBO + EGLImage + (optional) GBM BO + the
@@ -525,7 +537,10 @@ wl_window_init_viewport :: (ww: *Wayland_Window) {
 // in memory). The source rectangle is in surface coordinates AFTER buffer_transform
 // (viewporter.xml), and set_buffer_transform(FLIPPED_180) is a pure VERTICAL flip:
 // X is unchanged, but the first rows of the buffer become the LAST rows of the
-// surface. So src = (0, cap_h - log_h, log_w, log_h).
+// surface. So src = (0, cap_h - log_h, log_w, log_h), which is (0, 0, log_w, log_h)
+// now that the capacity height is the logical height (see BUCKET_STEP: Hyprland
+// 0.57 mis-places the damage of a source rect that does not start at row 0). The
+// cap_h - log_h stays so the content is still placed right if the two ever differ.
 // Probe with a sub-region pattern after a LARGE shrink: glClear ignores the
 // viewport and fills the whole capacity buffer, so a clear-only test passes any
 // crop, and a crop off by cap_h - log_h is invisible while log_h is close to cap_h.
@@ -1529,8 +1544,8 @@ wl_window_init_gl :: (ww: *Wayland_Window) -> bool {
     }
 
     // Decide the slot allocation capacity. With wp_viewporter we allocate at the
-    // bucketed (grow-only) capacity and present only the logical sub-rect via the
-    // viewport crop; without it we fall back to allocating at the exact logical size.
+    // bucketed width (grow-only) and the exact height, and present only the logical
+    // sub-rect via the viewport crop; without it, at the exact logical size.
     cap_w := ww.width;
     cap_h := ww.height;
     wl_window_init_viewport(ww);
@@ -1623,11 +1638,12 @@ wl_realloc_slots :: (ww: *Wayland_Window, w: s32, h: s32) -> bool {
 
 // Resize the window's render slots to the new LOGICAL size (new_w, new_h).
 //
-// With wp_viewporter (ww.wl_have_viewport): slot allocation is bucketed and
-// grow-only — we reallocate only when the bucketed target capacity must grow past
-// the current capacity, and otherwise just re-crop the existing oversized buffers
-// to the new logical region via wp_viewport. Returns true only when slots were
-// actually reallocated (caller rebinds the FBO); a crop-only update returns false.
+// With wp_viewporter (ww.wl_have_viewport): the slot width is bucketed and
+// grow-only and the height exact, so we reallocate when the width must grow past
+// the current capacity or the height changes at all, and otherwise just re-crop
+// the existing wider buffers to the new logical width via wp_viewport. Returns
+// true only when slots were actually reallocated (caller rebinds the FBO); a
+// crop-only update returns false.
 //
 // Without viewporter: falls back to the exact pre-bucketing behavior — capacity ==
 // logical, realloc on any size change, no crop. Returns true if it reallocated,
@@ -1643,11 +1659,11 @@ wl_window_resize_gl :: (ww: *Wayland_Window, new_w: s32, new_h: s32) -> bool {
         return wl_realloc_slots(ww, new_w, new_h);
     }
 
-    // Bucketed path: grow-only capacity, crop to the logical region.
+    // Bucketed path: grow-only width, exact height, crop to the logical region.
     target_w, target_h := wl_target_capacity(new_w, new_h, ww.wl_slot_width, ww.wl_slot_height);
 
     realloc := false;
-    if target_w > ww.wl_slot_width || target_h > ww.wl_slot_height {
+    if wl_capacity_needs_realloc(target_w, target_h, ww.wl_slot_width, ww.wl_slot_height) {
         if !wl_realloc_slots(ww, target_w, target_h)  return false;
         realloc = true;
     }

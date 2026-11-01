@@ -15,8 +15,43 @@ main :: () {
 
     test_orphan_take_returns_true_once();
     test_orphan_cap_evicts_oldest();
+    test_capacity_height_is_exact();
 
     print("\n=== All pacing tests passed ===\n");
+}
+
+// Slot capacity keeps spare WIDTH (bucketed, grow-only) but takes the logical
+// HEIGHT exactly, so the viewport crop always starts at row 0. Under
+// set_buffer_transform(FLIPPED_180) any spare height puts the crop at
+// y = cap_h - log_h, and Hyprland 0.57's CWLSurface::computeDamage intersects the
+// damage with the source rect without subtracting its origin: once that offset
+// reaches log_h the window's damage is empty and the compositor stops repainting
+// it (simp_multiple_windows froze on the panel, 2026-10-31). The output cap is
+// seeded so wl_output_cap() never asks a compositor.
+test_capacity_height_is_exact :: () {
+    WS.wl_output_cap_initialized = true;
+    WS.wl_output_cap_w = 2048;
+    WS.wl_output_cap_h = 1280;
+
+    check :: (lw: s32, lh: s32, cw: s32, ch: s32, want_w: s32, want_h: s32) #expand {
+        w, h := WS.wl_target_capacity(lw, lh, cw, ch);
+        assert(w == want_w && h == want_h, "wl_target_capacity(%, %, %, %) = %x%, want %x%", lw, lh, cw, ch, w, h, want_w, want_h);
+    }
+    check(1016, 618,    0,    0, 1024, 618);   // fresh window: width rounds up, height exact
+    check(1016, 450, 1024, 1244, 1024, 450);   // height shrinks with the window
+    check( 700, 450, 1024,  618, 1024, 450);   // width stays grow-only
+    check(1100, 900, 1024,  450, 1280, 900);   // width grows a bucket, height grows exactly
+    check(2100, 900,    0,    0, 2100, 900);   // logical wider than the output cap
+
+    // The resize decision: any HEIGHT change reallocates (a grow-only test would
+    // keep the old, taller buffers and with them the crop offset); width
+    // reallocates only to grow.
+    assert( WS.wl_capacity_needs_realloc(1024, 450, 1024, 618), "a height shrink must reallocate");
+    assert( WS.wl_capacity_needs_realloc(1024, 900, 1024, 618), "a height grow must reallocate");
+    assert( WS.wl_capacity_needs_realloc(1280, 618, 1024, 618), "a width grow must reallocate");
+    assert(!WS.wl_capacity_needs_realloc(1024, 618, 1024, 618), "an unchanged capacity must not reallocate");
+
+    print("  PASS: capacity_height_is_exact\n");
 }
 
 // An orphaned id is taken back once; a second take, or a take of an id never
