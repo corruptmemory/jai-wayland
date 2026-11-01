@@ -50,6 +50,12 @@ main :: () {
     while !quit {
         update_window_events();
         for events_this_frame {
+            // A window-manager close. On X11 this is the only way it arrives:
+            // Simp.window_should_close answers for Wayland windows only.
+            if it.type == .QUIT {
+                quit = true;
+                continue;
+            }
             // Echo text input (Ctrl/Alt/Meta chords must NOT produce these).
             if it.type == .TEXT_INPUT {
                 cp := it.utf32;
