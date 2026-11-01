@@ -584,6 +584,31 @@ either way).
 | `JAI_WAYLAND_EXPLICIT_SYNC=0` / `--no-explicit-sync` | The `glFinish` / queue-wait paths, rc 0, frames correct                                      |
 | `JAI_WAYLAND_COPY_PATH=1`                            | The `wl_shm` readback on the compositor's own GPU, rc 0, frames correct                      |
 
+**X11 in dGPU-only mode, same day** (i3 on XLibre, NVIDIA's own X driver, no PRIME).
+`glxinfo` lists 132 GLX visuals, 96 of them multisampled (24 each at 2, 4, 8 and 16
+samples), where PRIME offload listed 12 with none, so the MSAA step-down (`3c1e5dd`) never
+fires: each Simp window's visual has the sample count it asked for (`DEFAULT_MSAA` is 4;
+`simp_example` asks for 8 and gets 8), and no `no GLX visual` warning is logged.
+
+| Run (X11, dGPU-only)                          | Result                                                                                                                                                                                               |
+|-----------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `x11_smoke`, `hello_x11_gl`                   | rc 0, triangle renders, `ldd` lists only libc                                                                                                                                                        |
+| Ten Simp examples, `hello_clipboard` included | All render and map `libGLX_nvidia`; visual `0x39` (4 samples) for nine, `0x43` (8) for `simp_example`; rc 0 on an i3 close (`WM_DELETE_WINDOW`), both windows of the multi, except `hello_clipboard` |
+| `hello_clipboard`, fixed                      | Ignored the close: it read only `Simp.window_should_close`, which answers for Wayland windows only. Now quits on `.QUIT` as `hello_simp` does; `c` read back by `xclip`, `xclip`'s text pasted, rc 0 |
+| `skeletal_animation`, mouse camera            | After ESC, horizontal pointer motion yaws the camera and vertical motion pitches it; rc 0                                                                                                            |
+| `hello_simp`, floated resizes through i3      | 900x700, 1600x1100, 500x350 all applied, quad centred at each, no warnings, rc 0                                                                                                                     |
+
+`hello_clipboard`'s miss dates from the example's first commit (`b019369`), which was only
+ever closed through a Wayland compositor; it is not a regression from the backport.
+
+**Tooling notes for X11:** these windows set no `_NET_WM_PID`, so `xdotool getwindowpid`
+finds nothing; find the program as the descendant of `./build.sh` whose `/proc/<pid>/exe`
+is under `build/`. It is a grandchild (`build.sh` -> `jai-linux` -> the program, through
+`Autorun`), so killing `build.sh`'s direct child on a hang orphans it with its window up;
+kill the whole tree. ImageMagick, `scrot` and `maim` are absent on the laptop:
+`ffmpeg -f x11grab -video_size WxH -i :0.0+X,Y -frames:v 1` grabs a window from its
+`xwininfo` geometry.
+
 **Tooling notes for this compositor:** Hyprland 0.57's Lua `hyprctl dispatch` runs
 dispatchers (`hl.dsp.window.close({ window = "address:..." })`, `hl.dsp.window.float`,
 `hl.dsp.window.resize({ x = ..., y = ..., window = ... })`); a bare `hyprctl eval` of one
