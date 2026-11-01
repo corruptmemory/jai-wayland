@@ -353,7 +353,24 @@ build_and_run_upstream_example :: (
 
     binary := tprint("%/build/%", #filepath, executable_name);
     result := run_command(binary, working_directory = upstream_dir);
-    if result.exit_code != 0  exit(result.exit_code);
+    // Say how the program ended unless it exited 0, as Autorun does for our own
+    // targets. A signal the Jai runtime does not catch (SIGTERM, SIGKILL, the
+    // SIGABRT of a C library's abort) leaves exit_code at -1, which used to
+    // make build.sh exit 255 with no message. A signal now exits 128 + n, the
+    // shell's convention; a non-zero exit keeps the program's own code.
+    if result.type == {
+        case .EXITED;
+            if result.exit_code != 0 {
+                log_error("[first.jai] % exited with code %.", executable_name, result.exit_code);
+                exit(result.exit_code);
+            }
+        case .SIGNALED;
+            log_error("[first.jai] % quit due to signal %.", executable_name, result.signal);
+            exit(128 + result.signal);
+        case;
+            log_error("[first.jai] % did not run to completion: %", executable_name, result);
+            exit(1);
+    }
 }
 
 Runtime_Link :: struct {

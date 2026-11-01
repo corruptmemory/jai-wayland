@@ -676,10 +676,18 @@ Not exercised: explicit sync, Wayland resizes, and the Hyprland 0.57 freeze work
 
 Found, none of it from the pull:
 
-- An upstream example killed by a signal makes `./build.sh` exit 255 with no message.
-  `build_and_run_upstream_example` does `exit(result.exit_code)` on `run_command`'s result,
-  whose exit code is -1 for a signal; our own targets go through `Autorun`, which names the
-  signal. A crash of an upstream example would look the same.
+- An upstream example killed by a signal the Jai runtime does not catch made `./build.sh`
+  exit 255 with no message. `build_and_run_upstream_example` did `exit(result.exit_code)` on
+  `run_command`'s result, whose exit code is -1 for a signal; our own targets go through
+  `Autorun`, which names the signal. Reproduced on `invaders`: SIGTERM and SIGABRT (the
+  signal of a C library's `abort()`, a Mesa assert for one) each gave rc 255 and nothing
+  in the log. A segfault was never silent: the runtime catches SIGSEGV, prints
+  `Segmentation fault` with a stack trace and exits 1. **Fixed the same night:** any end
+  other than exit 0 is now logged, as Autorun does. A signal logs
+  `[first.jai] invaders quit due to signal N.` and exits 128 + N (SIGTERM 143, SIGABRT
+  134), a non-zero exit logs `exited with code N` and keeps the code, and an i3 close still
+  exits 0 with no message. 157 tests pass and the nine upstream targets still build under
+  `compile_only` without running.
 - CLAUDE.md, AGENTS.md, README.md and `build.sh` still named beta 0.2.029, though both
   machines ran this round on 0.2.030; the stamp moved with this record.
 - `simp_example` gets no MSAA on Wayland (`Chosen MSAA: 0`, the single-sample slot FBOs).

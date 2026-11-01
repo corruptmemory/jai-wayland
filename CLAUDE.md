@@ -64,7 +64,7 @@ Both delegate to `first.jai`, which uses Jai's compile-time metaprogramming to c
 
 ## Architecture
 
-**Build metaprogram** (`first.jai`): Creates workspaces for the main build and test suites. Tests auto-run after compilation via `Autorun`.
+**Build metaprogram** (`first.jai`): Creates workspaces for the main build and test suites. Tests auto-run after compilation via `Autorun`. The upstream examples run through `run_command` instead, and every end other than exit 0 is logged the way Autorun reports our own targets: `[first.jai] <program> exited with code N.` keeps N as the exit code, and `quit due to signal N.` exits 128 + N, so `./build.sh`'s exit code tells a SIGTERM (143) from a SIGABRT (134). A segfault never gets that far: the Jai runtime catches SIGSEGV, prints a stack trace and exits 1.
 
 **XML parser** (`src/xml.jai`):
 - Zero-copy pull parser yielding `Xml_Event` values (OPEN_TAG, CLOSE_TAG, ATTRIBUTE, CHARACTER_DATA, COMMENT, PROCESSING_INSTRUCTION)
