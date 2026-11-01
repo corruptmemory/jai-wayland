@@ -6,6 +6,8 @@ Status: **Done (2026-06-03).** Implemented and validated. One correction from th
 
 > **Correction (2026-10-31):** the crop source rect `(0, 0, log_w, log_h)` recorded here is wrong. The viewport source rect is in surface coordinates after `buffer_transform`, so under FLIPPED_180 it is `(0, cap_h - log_h, log_w, log_h)`. `(0, 0)` only looked right while `log_h` was close to `cap_h`; on Hyprland 0.57 a large shrink showed only the clear colour. Fixed in `wl_update_viewport_crop`; see CLAUDE.md Next Steps #2.
 
+> **Second correction (2026-10-31): only the width is bucketed now.** With spare height the crop starts at `y = cap_h - log_h`, and Hyprland 0.57's `CWLSurface::computeDamage` never subtracts the source rect's origin, so once that offset reached `log_h` the window's damage was empty and Hyprland stopped repainting it (frame callbacks kept coming). `simp_multiple_windows` froze on the panel from startup, invisible to every screencopy-based check. The capacity height is now the logical height (`wl_target_capacity`), and any height change reallocates (`wl_capacity_needs_realloc`); width keeps its grow-only bucket. Details and the scanout check in CLAUDE.md Next Steps #2.
+
 ## Motivation
 
 Compositor-driven resize currently reallocates the entire per-window slot stack

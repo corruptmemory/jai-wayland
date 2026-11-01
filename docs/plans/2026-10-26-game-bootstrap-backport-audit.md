@@ -584,6 +584,36 @@ either way).
 | `JAI_WAYLAND_EXPLICIT_SYNC=0` / `--no-explicit-sync` | The `glFinish` / queue-wait paths, rc 0, frames correct                                      |
 | `JAI_WAYLAND_COPY_PATH=1`                            | The `wl_shm` readback on the compositor's own GPU, rc 0, frames correct                      |
 
+**`simp_multiple_windows` froze on the panel, same day.** The user saw it flicker and
+stutter (B's colour jumping, A's quad not turning) while every recording looked perfect.
+Read straight from the scanout with `kmsgrab`, the panel cycled three frozen images, one
+per Hyprland output buffer, for the whole run. Cause: Hyprland 0.57's
+`CWLSurface::computeDamage` intersects a surface's damage with its viewport source rect
+without subtracting the rect's origin. Our crop started at `y = cap_h - log_h` (the
+bucketed height under `FLIPPED_180`), so once that offset reached the window's height the
+damage was empty and Hyprland stopped repainting it, while still sending frame callbacks.
+Opening B shrinks A from full height to 618 with a 1280-row capacity, so the example froze
+from startup; a floated `hello_simp` froze after a shrink. A screencopy session renders
+fresh and forced a full repaint, which is why `grim`, `wf-recorder` and the user's capture
+never showed it. Fixed by bucketing only the width: the capacity height is now the logical
+height, so the source starts at row 0 (`wl_target_capacity`, `wl_capacity_needs_realloc`,
+with `pacing_test`'s new capacity test).
+
+| Real scanout (~226 frames)          | Distinct images  |
+|-------------------------------------|------------------|
+| two windows, before                 | 3                |
+| two windows, explicit sync off      | 3                |
+| two windows, viewport crop disabled | 209              |
+| `hello_simp`, never resized         | 210              |
+| `hello_simp` shrunk, before         | 31               |
+| two windows, after                  | 212              |
+| `hello_simp` shrunk / grown, after  | 212 / 211        |
+| two windows, shm readback, after    | 213              |
+| two windows under XWayland          | 212              |
+
+After the fix the quad's rotation on the scanout matches XWayland's (median step 0.96 vs
+0.98 degrees a frame); both show a few backward steps only in the first half second.
+
 **X11 in dGPU-only mode, same day** (i3 on XLibre, NVIDIA's own X driver, no PRIME).
 `glxinfo` lists 132 GLX visuals, 96 of them multisampled (24 each at 2, 4, 8 and 16
 samples), where PRIME offload listed 12 with none, so the MSAA step-down (`3c1e5dd`) never
