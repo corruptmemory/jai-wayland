@@ -599,17 +599,17 @@ never showed it. Fixed by bucketing only the width: the capacity height is now t
 height, so the source starts at row 0 (`wl_target_capacity`, `wl_capacity_needs_realloc`,
 with `pacing_test`'s new capacity test).
 
-| Real scanout (~226 frames)          | Distinct images  |
-|-------------------------------------|------------------|
-| two windows, before                 | 3                |
-| two windows, explicit sync off      | 3                |
-| two windows, viewport crop disabled | 209              |
-| `hello_simp`, never resized         | 210              |
-| `hello_simp` shrunk, before         | 31               |
-| two windows, after                  | 212              |
-| `hello_simp` shrunk / grown, after  | 212 / 211        |
-| two windows, shm readback, after    | 213              |
-| two windows under XWayland          | 212              |
+| Real scanout (~226 frames)          | Distinct images |
+|-------------------------------------|-----------------|
+| two windows, before                 | 3               |
+| two windows, explicit sync off      | 3               |
+| two windows, viewport crop disabled | 209             |
+| `hello_simp`, never resized         | 210             |
+| `hello_simp` shrunk, before         | 31              |
+| two windows, after                  | 212             |
+| `hello_simp` shrunk / grown, after  | 212 / 211       |
+| two windows, shm readback, after    | 213             |
+| two windows under XWayland          | 212             |
 
 After the fix the quad's rotation on the scanout matches XWayland's (median step 0.96 vs
 0.98 degrees a frame); both show a few backward steps only in the first half second.
@@ -644,6 +644,57 @@ dispatchers (`hl.dsp.window.close({ window = "address:..." })`, `hl.dsp.window.f
 `hl.dsp.window.resize({ x = ..., y = ..., window = ... })`); a bare `hyprctl eval` of one
 returns `ok` and does nothing. A shell that outlives a compositor restart (herdr) keeps a
 stale `HYPRLAND_INSTANCE_SIGNATURE`.
+
+## Live checks (2026-11-01, desktop: i3/X11 and a nested Weston, AMD RX 7900 GRE)
+
+`godlike-artix`, one GPU (render node 226:128, primary `card1`), i3 on XLibre, Jai beta
+0.2.030, master `7614149`: the laptop's 22 commits since `aaf1b8a`, run on AMD for the
+first time. Nothing in them failed here, and no code changed. With no Wayland session up,
+a nested Weston 15.0.1 (X11 backend) stood in for the compositor. It advertises
+`zwp_linux_dmabuf_v1` v5 with feedback (main device 226:128, one tranche of 406 formats)
+and `wp_viewporter`, but not `wp_linux_drm_syncobj_manager_v1`.
+
+| Check                                                                           | Result        | Evidence                                                                                                                                                                                                                     |
+|---------------------------------------------------------------------------------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 14 test suites                                                                  | pass          | 157 tests. `syncobj_test` runs all 11 on radeonsi, the GL native fence included (the laptop covered Intel and NVIDIA); `gl_picker_test` runs instead of skipping and rejects radeonsi's multi-plane DCC `ABGR8888` modifiers |
+| `headless_gl`, `headless_vulkan(_dmabuf)`                                       | pass          | The BO-backed FBO reads back `(51, 153, 204, 255)`; RADV exports `0x0200000028a6bf04`                                                                                                                                        |
+| `headless_cross_gpu`                                                            | skip          | By design on one GPU: `Vulkan device 0 … is the importer's GPU; skipped`                                                                                                                                                     |
+| `x11_smoke`, `hello_x11_gl`                                                     | pass          | `ldd` lists only libc; the triangle animates (60 distinct images in a 2 s capture at 30 fps); rc 0 on an i3 close                                                                                                            |
+| Simp stack on X11 (10 examples and `hello_clipboard`)                           | pass          | All render; animated ones give 60 distinct images in 2 s, static UIs 1; rc 0 on `i3-msg kill` (`WM_DELETE_WINDOW`), both windows of the multi, `hello_clipboard` included (`9241696`)                                        |
+| MSAA step-down on X11 (`3c1e5dd`)                                               | not triggered | Mesa's GLX has multisampled visuals: `simp_example` logs `Wanted MSAA: 8` / `Chosen MSAA: 8` and no `no GLX visual` warning                                                                                                  |
+| `hello_simp` on Weston, 600 frames                                              | pass          | `Using dmabuf surface feedback`; `ABGR8888` with `DRM_FORMAT_MOD_INVALID` from Weston's tranche (Hyprland 0.56.2's gave the tiled `0x0200000028a01f04`); three BO-backed slots; 600 frames in 10.6 s; rc 0                   |
+| `hello_simp`, `JAI_WAYLAND_COPY_PATH=1`                                         | pass          | The `wl_shm` readback (`3dffebb`) on AMD: three slots at 1024x600 (width bucketed, height exact); 60/60 distinct images; rc 0                                                                                                |
+| `hello_vulkan_dmabuf`, 600 frames                                               | pass          | `Compositor main device 226:128; Vulkan device primary 226:1 render 226:128 -> same GPU`; the driver-first probe has `0x0200000028a01f04` accepted first; rc 0                                                               |
+| `hello_vulkan_dmabuf --copy-path`                                               | pass          | `memory type 2 (system memory) modifier=LINEAR`, stride 2560, so the rule that skips `DEVICE_LOCAL` heaps holds on a resizable-BAR card; 60/60; rc 0                                                                         |
+| Explicit sync                                                                   | not exercised | Nested Weston does not advertise the global; both paths log the reason and fall back (`glFinish`, waiting for the GPU)                                                                                                       |
+| `hello_gl`, `hello_window`, nine upstream examples, `hello_clipboard` on Weston | pass          | All present and render; animated ones 60/60; no module logged an error. Stopped with SIGTERM after the capture: Weston has no close binding, and the examples do not handle Alt+F4 themselves                                |
+| `hello_globals`, `hello_dmabuf`, `hello_screens`, `dump_keymap` on Weston       | pass          | rc 0; evdev 16 decodes to `q` / `Q`                                                                                                                                                                                          |
+| Linkage                                                                         | pass          | None of the 29 binaries in `build/` links `libX11`, `libxcb`, `libGL`, `libGLX`, `libEGL`, `libgbm`, `libvulkan` or `libwayland-client`                                                                                      |
+
+Not exercised: explicit sync, Wayland resizes, and the Hyprland 0.57 freeze workaround
+(exact slot height). They need a DRM-backed Hyprland and `tools/kmscheck.sh`.
+
+Found, none of it from the pull:
+
+- An upstream example killed by a signal makes `./build.sh` exit 255 with no message.
+  `build_and_run_upstream_example` does `exit(result.exit_code)` on `run_command`'s result,
+  whose exit code is -1 for a signal; our own targets go through `Autorun`, which names the
+  signal. A crash of an upstream example would look the same.
+- CLAUDE.md, AGENTS.md, README.md and `build.sh` still named beta 0.2.029, though both
+  machines ran this round on 0.2.030; the stamp moved with this record.
+- `simp_example` gets no MSAA on Wayland (`Chosen MSAA: 0`, the single-sample slot FBOs).
+  The 2026-10-26 section above records it; CLAUDE.md's known gaps now list it too.
+
+**Tooling notes for this desktop:** `weston --backend=x11 --width=1600 --height=1000
+--socket=wayland-jw --idle-time=0` (Artix `world` repo, installed 2026-11-01), its window
+floated in i3, clients run with `WAYLAND_DISPLAY=wayland-jw`, which is all
+`running_wayland()` checks. i3 runs no X compositor, so an `x11grab` of Weston's window
+reads the pixels Weston presented and would show a client it had stopped repainting, as
+`kmsgrab` does on Hyprland; count distinct images with `ffmpeg … -t 2 -f framemd5 -`.
+`xwininfo` is absent here too; `xdotool getwindowgeometry --shell` gives the geometry. With
+`./build.sh`'s output redirected to a file, `[Autorun] Running:` arrives only when the
+compiler exits, after the program's own output, so wait for the program's process (the
+descendant whose `/proc/<pid>/exe` is under `build/`), not for that line.
 
 ## V2 invariants
 
