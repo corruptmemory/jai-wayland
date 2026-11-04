@@ -672,7 +672,8 @@ and `wp_viewporter`, but not `wp_linux_drm_syncobj_manager_v1`.
 | Linkage                                                                         | pass          | None of the 29 binaries in `build/` links `libX11`, `libxcb`, `libGL`, `libGLX`, `libEGL`, `libgbm`, `libvulkan` or `libwayland-client`                                                                                      |
 
 Not exercised: explicit sync, Wayland resizes, and the Hyprland 0.57 freeze workaround
-(exact slot height). They need a DRM-backed Hyprland and `tools/kmscheck.sh`.
+(exact slot height). They need a DRM-backed Hyprland and `tools/kmscheck.sh`, and ran on
+2026-11-03 (next section).
 
 Found, none of it from the pull:
 
@@ -703,6 +704,109 @@ reads the pixels Weston presented and would show a client it had stopped repaint
 `./build.sh`'s output redirected to a file, `[Autorun] Running:` arrives only when the
 compiler exits, after the program's own output, so wait for the program's process (the
 descendant whose `/proc/<pid>/exe` is under `build/`), not for that line.
+
+## Live checks (2026-11-03, desktop: Hyprland 0.57.0, AMD RX 7900 GRE, two monitors)
+
+`godlike-artix`, one GPU (render node 226:128, primary `card1`), kernel 7.2.14, Jai beta
+0.2.030, master `e3d8caa`. DP-2 is 2560x1440 at 75 Hz; HDMI-A-1 is 1920x1200 at 75 Hz, rotated
+(`transform=3`). This is the check the 2026-11-01 section could not do: Hyprland advertises
+`wp_linux_drm_syncobj_manager_v1`, so explicit sync ran on AMD for the first time, and 0.57 is
+the version with the viewport-damage bug. No library code changed; the only bug found was in
+`tools/kmscheck.sh` (below). Scanout results are read with `kmsgrab` through VAAPI at 60 Hz.
+
+| Check                     | Result | Evidence                                                                                                                                                                                                                                                                                                                                          |
+|---------------------------|--------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 14 test suites            | pass   | 157 tests; `gl_picker_test` runs rather than skipping                                                                                                                                                                                                                                                                                             |
+| Compositor                | pass   | `zwp_linux_dmabuf_v1` v5, main device 226:128, one tranche of 96 formats; `hello_globals`, `hello_dmabuf`, `hello_screens` (two distinct outputs), `dump_keymap` rc 0                                                                                                                                                                             |
+| Explicit sync, GL         | pass   | `explicit sync on (wp_linux_drm_syncobj_v1): GL fences instead of glFinish`; `ABGR8888` `0x200000028a01f04`; no warnings                                                                                                                                                                                                                          |
+| Explicit sync, Vulkan     | pass   | `Explicit sync: on (… SYNC_FD semaphores, timelines on the render node)`; `same GPU`; driver-first has `0x0200000028a01f04` accepted first; rc 0, also with `--no-explicit-sync`                                                                                                                                                                  |
+| 14 windowed examples      | pass   | `hello_gl`, `hello_vulkan_dmabuf`, `hello_simp`, `invaders`, `skeletal_animation`, `simp_example`, `simp_render_to_texture`, `simp_multiple_windows` LIVE; `hello_window`, `hello_clipboard`, both GetRect showcases, `treemap`, `codex_view` steady; each rendered correctly and exited 0 on a compositor close, or `q` for the two raw examples |
+| Forced copy paths         | pass   | `JAI_WAYLAND_COPY_PATH=1`: readback slots, LIVE, also both windows of the multi. `hello_vulkan_dmabuf --copy-path`: `memory type 2 (system memory) modifier=LINEAR`, explicit sync on, LIVE                                                                                                                                                       |
+| Resizes                   | pass   | `hello_simp` floated and shrunk to 500x350, grown to 1600x1100; five more Simp programs floated at 900x700: frames correct. Three resizes each on both Vulkan paths, `--no-explicit-sync`, `hello_gl`, `hello_window` and the readback path: rc 0, no warnings                                                                                    |
+| Reallocation              | pass   | Slot inits across just the last resize: width 1000 to 800, 800 to 1000, and 1000 to 1100 at the same height, 12 -> 12 (capacity already 1280 from the tiled size, grow-only); height 700 to 500, 12 -> 15                                                                                                                                         |
+| Hidden window             | pass   | `hello_simp` 5 s on a hidden workspace and back: LIVE, no warnings. Two windows with B hidden: A stays LIVE (221 of 235). B hidden 6 s and back: both LIVE, top 221 and bottom 162 distinct                                                                                                                                                       |
+| Keyboard                  | pass   | Sub-frame tap registers; Shift gives `A`; Ctrl gives no text; a key held 2 s gives 36 repeats (25/s after 600 ms predicts about 35)                                                                                                                                                                                                               |
+| Clipboard                 | pass   | `c` read back by `wl-paste`; `wl-copy` text pasted with `p`; `c` then `p` reads its own selection without deadlock                                                                                                                                                                                                                                |
+| Pointer                   | pass   | A click at surface (300, 500) on `hello_window` logs `(300, 500)`; in `getrect_example` a click toggles a checkbox and typed keys land at the click position in a text field; `invaders`' ship follows the arrow key                                                                                                                              |
+| X11 path through XWayland | pass   | 11 Simp-stack programs, `hello_x11_gl` and `x11_smoke`: render, animated ones LIVE, rc 0 on a compositor close; `simp_example` `Wanted MSAA: 8` / `Chosen MSAA: 8`; no Wayland path in any log                                                                                                                                                    |
+| Leaks                     | pass   | 30 s soaks of `hello_simp` (explicit sync on and off) and `hello_vulkan_dmabuf`, plus 30 resizes on the explicit and copy paths of both (`hello_simp`: 99 slot inits): file descriptors flat (10-12), RSS stable, rc 0, no warnings                                                                                                               |
+
+**The freeze fix, with a control** (`5ad9525` reverted in a throwaway worktree). The bug
+reproduces on AMD, the fix cures it, explicit sync is unrelated, and `kmscheck` tells them apart:
+
+| Real scanout (about 235 frames)   | Distinct images                | Verdict |
+|-----------------------------------|--------------------------------|---------|
+| two windows, current              | 221 (top half 221, bottom 166) | LIVE    |
+| two windows, explicit sync off    | 221 (top half 221, bottom 159) | LIVE    |
+| two windows, shm readback         | 220 (top half 220, bottom 154) | LIVE    |
+| `hello_simp` shrunk to 500x350    | 220                            | LIVE    |
+| two windows, fix reverted         | 3 (top half 3, bottom 3)       | FROZEN  |
+| two windows, reverted, sync off   | 3                              | FROZEN  |
+| `hello_simp` shrunk, fix reverted | 26                             | PARTIAL |
+
+A fairly fixed number of each capture's frames repeat an earlier image however long it runs (21
+of 180, 14 of 235, 23 of 360), and consecutive frames almost always differ, so that looks like
+the capture starting up, not missed frames. The bottom window's lower count is probably its
+slow colour change; its count under the reverted fix is what matters.
+
+**End-of-frame CPU wait** (throwaway timing patch around `wl_finish_frame`, 240-frame averages,
+window 1192x1884). About 3-4 times shorter and less sensitive to the frame's work, but small in
+absolute terms: `glFinish` was already cheap on this card, where the Iris Xe's was 3-4 ms.
+
+| Program              | Explicit sync on | `glFinish`   |
+|----------------------|------------------|--------------|
+| `hello_simp`         | 0.05-0.07 ms     | 0.17-0.18 ms |
+| `skeletal_animation` | 0.10 ms          | 0.29-0.30 ms |
+| `getrect_example`    | 0.12-0.14 ms     | 0.50-0.51 ms |
+
+**`kmscheck` blanked the screen.** Its first runs here made Jim's terminal flash, content to
+black to content, about ten times per run, soon after each window appeared. Its capture went
+through `hwmap=derive_device=vulkan`, which on this card reads solid black and blanks the live
+buffer. A second reader on VAAPI watched the side monitor's plane while the Vulkan path read
+the same plane:
+
+| Side monitor's plane, watched through VAAPI | Watcher saw                                                        |
+|---------------------------------------------|--------------------------------------------------------------------|
+| idle wallpaper, no Vulkan capture           | 0 black frames of 180                                              |
+| idle wallpaper, Vulkan capture from 1.5 s   | black from frame 114 to the end of the capture (246 of 360 frames) |
+| `hello_simp`, no Vulkan capture             | 0 black frames of 180                                              |
+| `hello_simp`, Vulkan capture from 1.5 s     | 3 black frames as it started                                       |
+
+The Vulkan reader itself got 180 black frames of 180 both times. The scanout modifier is
+`0x200000028a67f04`. Why it happens is unproven; resetting compression metadata on import is a
+guess. Windows on workspace 7, read through VAAPI, gave no flashing, and neither did the
+two-window test beside the terminal with no capture running, so resizing the terminal was not
+the cause. `kmscheck` now reads through VAAPI except on NVIDIA.
+
+Other `kmscheck` fixes from the same runs: it read the first plane with a framebuffer, which
+here was the other monitor (a box that fit read `STATIC` from the wrong screen); it now follows
+the windows' monitor, takes `--plane`, and refuses `--region` without `--plane` on two monitors.
+A rotated monitor's plane is not in layout coordinates, so it captures all of that plane. It
+closed any new window, so it now only touches windows whose process runs from the repo's
+`build/`. And an unchanging picture can read as two images cycling: the three output buffers
+differed in 3082 of 576,000 pixels, by at most 4 levels of 255, identically under different
+programs and not in every run. That looks like compositor noise, though its source was not
+pinned down. Images differing in under 1% of their bytes now count as one, and the reverted
+fix still reads FROZEN with that rule in place.
+
+Not exercised: drag-and-drop (Jim can test it with PCManFM: `./build.sh - getrect_example`, then
+drop a file on it), `skeletal_animation`'s mouse camera on Wayland, touch (no device), the
+Vulkan path's wait time, and `kmscheck`'s new code on NVIDIA and Intel. The plane and rotation
+logic is new there, and Intel's Vulkan path has never been run.
+
+**Reported by Jim, not investigated:** the laptop's trackpad registers no input events, while
+its touchpoint works like a mouse. Not established: whether that is only in these examples, and
+on which backend. A touchpad normally reaches a Wayland client as `wl_pointer` through the
+compositor, not `wl_touch`, so the untested touch path does not explain it.
+
+**Tooling notes for this desktop:** a session here may run inside `herdr` with another Claude
+beside it. Workspace 7 (HDMI-A-1) is visible and usually empty, and
+`hyprctl dispatch 'hl.dsp.exec_cmd("/path/launch.sh", { workspace = "7 silent" })'` opens there
+without moving focus or resizing the terminal, but only the first window a launch opens follows
+the rule. Workspaces 1-6 are on DP-2 and 7-10 on HDMI-A-1, so moving a window to 8 takes it to
+the other monitor. `hl.dsp.cursor.move({ x = ..., y = ... })` takes global coordinates.
+`wl-copy` keeps the caller's stderr, so `script 2>&1 | cut` never finishes: give it
+`>/dev/null 2>&1`. Save the clipboard before a copy test; it may hold Jim's data.
 
 ## V2 invariants
 

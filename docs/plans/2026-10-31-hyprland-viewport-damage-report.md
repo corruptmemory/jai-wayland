@@ -29,14 +29,16 @@ swapchain buffer), which looks like flicker plus a frozen or jumping animation.
 The bug is invisible to screenshots and screen recorders: screencopy renders a fresh frame
 of the current client buffers, and an active screencopy session also leads to full repaints,
 which clears the stale content until the next time the condition is hit. It shows on the
-real scanout (a phone camera, or `kmsgrab`).
+real scanout (a phone camera, or `kmsgrab`; on AMD read it through VAAPI, since
+`hwmap=derive_device=vulkan` blanked the live buffer on an RX 7900 GRE).
 
 ### Version
 
 - Hyprland 0.57.0 (commit `0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`). `computeDamage` is
   unchanged on `main` as of 2026-10-31.
 - Observed on an NVIDIA RTX 3050 Ti laptop, driver 615.78.08, Hyprland compositing on that
-  GPU, output 2560x1600 at scale 1.25. Nothing in the code path is GPU-specific.
+  GPU, output 2560x1600 at scale 1.25. Also reproduced on an AMD RX 7900 GRE desktop (same
+  Hyprland commit, Mesa, 2560x1440 at scale 1). Nothing in the code path is GPU-specific.
 
 ### The code
 
@@ -68,7 +70,7 @@ and none at all once `s >= h`.
    lies inside the buffer, so the request is valid.
 2. Every frame it redraws the visible region, damages the whole buffer
    (`wl_surface.damage_buffer(0, 0, 1024, 1280)`), requests a frame callback and commits.
-3. Watch the panel itself (phone camera or `kmsgrab`), not a screenshot.
+3. Watch the panel itself (phone camera or `kmsgrab`; through VAAPI on AMD), not a screenshot.
 
 Expected: the window animates. Actual: the window's region stops updating while the client
 keeps getting frame callbacks; with several output buffers it alternates between stale
@@ -85,13 +87,16 @@ origin is dropped regardless of the transform. We did not test without one.
 Distinct images in the window region over about 226 consecutive scanout frames (`kmsgrab`,
 60 Hz), from a client that animates every frame:
 
-| Configuration                                     | Distinct images |
-|---------------------------------------------------|-----------------|
-| two windows, source y offset 662, height 618      | 3               |
-| one window, source y offset 830, height 450       | 31              |
-| same client, viewport crop disabled (offset 0)    | 209             |
-| same client, source kept at (0, 0) (our fix)      | 212             |
-| the same program under XWayland                   | 212             |
+| Configuration                                  | Distinct images |
+|------------------------------------------------|-----------------|
+| two windows, source y offset 662, height 618   | 3               |
+| one window, source y offset 830, height 450    | 31              |
+| same client, viewport crop disabled (offset 0) | 209             |
+| same client, source kept at (0, 0) (our fix)   | 212             |
+| the same program under XWayland                | 212             |
+
+On the AMD desktop, over about 235 frames, the same client gave 3 distinct images in the two-window
+configuration, against 221 with the source at (0, 0).
 
 A screen recording (`wf-recorder`) of the broken configuration shows every frame correctly.
 
